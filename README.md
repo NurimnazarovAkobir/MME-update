@@ -102,9 +102,9 @@ keyingi davrga o'tkazadi.
 - **Internet orqali yangilash** (1.3): shu ikki fayl internetdagi https manzilga qo'yiladi (masalan, GitHub Releases:
   `https://github.com/<foydalanuvchi>/<repo>/releases/latest/download/`). Manzil `config.py` dagi
   `DEFAULT_UPDATE_URL` ga yoziladi (hamma nusxalar uchun) yoki «Yangilash» bo'limida kiritiladi. Dastur ochilganda
-  va keyin har 3 soatda fonda tekshiradi; internet bo'lmasa, tekshiruv jimgina o'tkazib yuboriladi.
+  va keyin har yarim soatda fonda tekshiradi; internet bo'lmasa, tekshiruv jimgina o'tkazib yuboriladi.
 - **«Yangilash» bo'limi** (Windows Update kabi): holat, oxirgi tekshiruv vaqti, «Yangilanishlarni tekshirish» tugmasi.
-  Yangi versiya topilsa, oyna chiqmaydi — menyuda «Yangilash ●» belgisi va sahifada «Yuklab olish va o'rnatish»
+  Yangi versiya topilsa, oyna chiqmaydi — menyuda «Yangilash» yonida qizil doirada «1» belgisi va sahifada «Yuklab olish va o'rnatish»
   havolasi paydo bo'ladi. Manbalarni (manzil, papka, fayl) faqat rahbar o'zgartiradi. Yangi versiya chiqarish: `APP_VERSION` ni
   oshirish → `build.bat` → `dist\MME-Ombor.exe` va `dist\versiya.txt` ni o'sha manzilga yuklash.
 - **O'rnatish**: `Ornatish.bat` dasturni ko'chiradi, ish stoli va «Pusk»ga yorliq qo'yadi va Windows ning

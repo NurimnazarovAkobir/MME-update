@@ -23,7 +23,7 @@ from ombor.services import Services  # noqa: E402
 from ombor.session import Session  # noqa: E402
 from ombor.ui import update_page as update_page_module  # noqa: E402
 from ombor.ui import updater as updater_module  # noqa: E402
-from ombor.ui.main_window import MainWindow  # noqa: E402
+from ombor.ui.main_window import BADGE_ROLE, MainWindow  # noqa: E402
 from ombor.ui.update_page import LAST_CHECK_KEY, UpdatePage  # noqa: E402
 from tests.test_ui import discard_widgets  # noqa: E402
 
@@ -232,10 +232,13 @@ class UpdatePageTests(OnlineTestCase):
         self.services.settings.set(update.UPDATE_URL_KEY, self.url)
         window = MainWindow(self.services, self.admin, self.folder / "ombor.db")
         row = window._update_row
-        self.assertNotIn("●", window._menu.item(row).text())
+        self.assertIsNone(window._menu.item(row).data(BADGE_ROLE))
         window._pages.widget(row).check()
         self.assertTrue(window._notice.isHidden())
-        self.assertTrue(self._wait(lambda: "●" in window._menu.item(row).text()))
+        # Menyuda «Yangilash» yonida qizil doirada «1» paydo bo'ladi — foydalanuvchi o'zi tekshirishi shart emas.
+        self.assertTrue(self._wait(lambda: window._menu.item(row).data(BADGE_ROLE) == 1))
+        self.assertEqual(window._menu.item(row).text().strip(), "Yangilash")
+        window._menu.viewport().grab()  # belgi chizilishi xatosiz o'tadi
         # Qaysi bo'lim ochiq bo'lmasin, sahifalar ustida «yangilang» degan yo'lak ko'rinadi.
         self.assertFalse(window._notice.isHidden())
         self.assertIn("99.0", window._notice_text.text())

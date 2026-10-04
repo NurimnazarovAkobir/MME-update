@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer
+from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QStackedWidget,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
@@ -46,6 +48,32 @@ MENU_ICON_SIZE = 20
 NEW_RECEIPT_KEY, NEW_ISSUE_KEY, NEW_PRODUCT_KEY = "F2", "F3", "F4"
 REFRESH_INTERVAL_MS = 10_000
 NOTIFICATION_MS = 15_000
+BADGE_ROLE = Qt.ItemDataRole.UserRole + 1  # menyu qatoridagi belgi soni
+BADGE_SIZE, BADGE_MARGIN = 22, 14
+
+
+class MenuBadgeDelegate(QStyledItemDelegate):
+    """Menyu qatorining o'ng chetida qizil doira ichida son chizadi (masalan, yangilanish kelganda «1»)."""
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
+        super().paint(painter, option, index)
+        count = index.data(BADGE_ROLE)
+        if not count:
+            return
+        size = BADGE_SIZE
+        circle = QRectF(option.rect.right() - size - BADGE_MARGIN, option.rect.center().y() - size / 2 + 1, size, size)
+        font = QFont(option.font)
+        font.setPointSize(9)
+        font.setBold(True)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(theme.palette().danger))
+        painter.drawEllipse(circle)
+        painter.setPen(QColor("#ffffff"))
+        painter.setFont(font)
+        painter.drawText(circle, Qt.AlignmentFlag.AlignCenter, str(count))
+        painter.restore()
 
 
 class MainWindow(QMainWindow):
@@ -107,6 +135,7 @@ class MainWindow(QMainWindow):
         self._menu.setObjectName("sidebar")
         self._menu.setIconSize(QSize(MENU_ICON_SIZE, MENU_ICON_SIZE))
         self._menu.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._menu.setItemDelegate(MenuBadgeDelegate(self._menu))
         self._rows: dict[Destination, int] = {}
         for row, (title, glyph, page, destination) in enumerate(pages):
             self._menu.addItem(QListWidgetItem(menu_icon(glyph, colors.sidebar_text, "#ffffff"), f"  {title}"))
@@ -205,8 +234,9 @@ class MainWindow(QMainWindow):
     def _show_update_badge(self, available: bool) -> None:
         """Yangi versiya chiqqanda «Yangilash» yonida belgi — oyna chiqarib ishni to'xtatmaydi."""
         item = self._menu.item(self._update_row)
-        item.setText(f"  {self._update_title}  ●" if available else f"  {self._update_title}")
+        item.setData(BADGE_ROLE, 1 if available else None)  # qizil doiradagi «1» — MenuBadgeDelegate chizadi
         item.setToolTip(tr("Dasturning yangi versiyasi bor") if available else "")
+        self._menu.viewport().update()
         version = self._update_page.offered_version
         self._notice_text.setText(tr("Dasturning yangi versiyasi chiqdi: {0}. Dasturni yangilang.").format(version))
         self._notice.setVisible(available)

@@ -26,7 +26,7 @@ from .widgets import button, card, label
 
 LAST_CHECK_KEY = "update_checked"  # shu kompyuterda oxirgi tekshiruv vaqti
 FIRST_CHECK_DELAY_MS = 2_000  # dastur ochilgach, oyna chizilib bo'lgandan keyin
-RECHECK_INTERVAL_MS = 3 * 60 * 60 * 1000  # dastur kun bo'yi ochiq tursa ham yangilanishni ko'radi
+RECHECK_INTERVAL_MS = 30 * 60 * 1000  # dastur ochiq turganda har yarim soatda o'zi tekshiradi
 STATUS_ICON_SIZE = 64
 
 
