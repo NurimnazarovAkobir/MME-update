@@ -73,6 +73,23 @@ def is_installed_program() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
+def is_windows_program(path: Path | str) -> bool:
+    """Fayl haqiqiy Windows dasturimi (sarlavhasi bo'yicha).
+
+    Dastur bo'lmagan faylni (masalan, chala yuklangan yoki buzilgan) ishga tushirishga urinilsa, Windows
+    «Unsupported 16-Bit Application» degan oyna chiqaradi — shuning uchun avval sarlavhasi tekshiriladi.
+    """
+    try:
+        with open(path, "rb") as file:
+            header = file.read(64)
+            if len(header) < 64 or header[:2] != b"MZ":
+                return False
+            file.seek(int.from_bytes(header[60:64], "little"))
+            return file.read(4) == b"PE\0\0"
+    except OSError:
+        return False
+
+
 def can_run(exe: Path | str) -> bool:
     """Windows shu faylni ishga tushirishga ruxsat beradimi.
 
@@ -82,7 +99,7 @@ def can_run(exe: Path | str) -> bool:
     Smart App Control ning qarori barqaror emas: bitta faylni goh o'tkazadi, goh bloklaydi. Shuning uchun
     birinchi rad javobida darhol voz kechilmaydi — bir necha marta, oraliq bilan urinib ko'riladi.
     """
-    if not Path(exe).is_file():
+    if not is_windows_program(exe):
         return False
     for attempt in range(TRIAL_ATTEMPTS):
         if attempt:

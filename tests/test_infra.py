@@ -1,10 +1,12 @@
 """Shifrlash, tarmoq (umumiy baza), shaxsiy sozlamalar va yangilash testlari."""
 
 import sqlite3 as plain_sqlite
+import sys
 import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest import mock
 
 from ombor import update
 from ombor.auth import Auth, LockedAuth
@@ -264,9 +266,16 @@ class UpdateTests(FolderTestCase):
         self.assertFalse(self.current.with_name("MME-Ombor-eski.exe").exists())
 
     def test_file_that_cannot_be_started_is_not_runnable(self):
+        """Dastur bo'lmagan fayl ishga tushirib ko'rilmaydi ham: aks holda Windows xato oynasini chiqaradi."""
         self._publish("1.3")
-        self.assertFalse(update.can_run(self.updates / update.EXE_NAME))  # bu haqiqiy dastur emas
-        self.assertFalse(update.can_run(self.folder / "yoq.exe"))
+        fake_with_mz = self.updates / "soxta.exe"
+        fake_with_mz.write_bytes(b"MZ" + b"dastur emas " * 20)
+        with mock.patch.object(update.subprocess, "Popen") as launch:
+            self.assertFalse(update.can_run(self.updates / update.EXE_NAME))
+            self.assertFalse(update.can_run(fake_with_mz))
+            self.assertFalse(update.can_run(self.folder / "yoq.exe"))
+        launch.assert_not_called()
+        self.assertTrue(update.is_windows_program(sys.executable))
 
     def test_trial_start_exits_immediately(self):
         import subprocess
