@@ -78,7 +78,7 @@ class UiTestCase(unittest.TestCase):
 
 class MainWindowTests(UiTestCase):
     def test_every_page_opens_for_each_role(self):
-        for user, pages in ((self.admin, 8), (self.keeper, 7), (self.viewer, 7)):
+        for user, pages in ((self.admin, 9), (self.keeper, 8), (self.viewer, 8)):
             window = self.window(user)
             self.assertEqual(window._menu.count(), pages, user.role)
             for row in range(window._menu.count()):

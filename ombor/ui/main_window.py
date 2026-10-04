@@ -32,6 +32,7 @@ from .movements_page import MovementsPage
 from .products_page import ProductsPage
 from .reports_page import ReportsPage
 from .settings_page import SettingsPage
+from .update_page import UpdatePage
 from .widgets import label
 
 SIDEBAR_WIDTH = 250
@@ -86,6 +87,11 @@ class MainWindow(QMainWindow):
         ]
         if session.is_admin:
             pages.append((tr("Tarix"), Glyph.CLOCK, HistoryPage(self._warehouse), None))
+        self._update_title = tr("Yangilash")
+        update_page = UpdatePage(services, session)
+        update_page.availability_changed.connect(self._show_update_badge)
+        self._update_row = len(pages)
+        pages.append((self._update_title, Glyph.SYNC, update_page, None))
         pages.append((tr("Sozlamalar"), Glyph.SETTINGS, SettingsPage(services, session, db_path), None))
 
         colors = theme.palette()
@@ -183,6 +189,12 @@ class MainWindow(QMainWindow):
         item = self._menu.item(self._rows[Destination.PRODUCTS])
         item.setText(f"  {self._products_title}  ⚠ {count}" if count else f"  {self._products_title}")
         item.setToolTip(tr("{0} ta mahsulot kam qolgan yoki tugagan").format(count) if count else "")
+
+    def _show_update_badge(self, available: bool) -> None:
+        """Yangi versiya chiqqanda «Yangilash» yonida belgi — oyna chiqarib ishni to'xtatmaydi."""
+        item = self._menu.item(self._update_row)
+        item.setText(f"  {self._update_title}  ●" if available else f"  {self._update_title}")
+        item.setToolTip(tr("Dasturning yangi versiyasi bor") if available else "")
 
     def _open_destination(self, destination: Destination) -> None:
         self._menu.setCurrentRow(self._rows[destination])

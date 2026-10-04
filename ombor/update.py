@@ -13,6 +13,7 @@ import os
 import shutil
 import sys
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -29,6 +30,15 @@ CHECK_TIMEOUT_SECONDS = 6  # internet sekin yoki yo'q bo'lsa, tekshiruv shundan 
 DOWNLOAD_TIMEOUT_SECONDS = 30
 DOWNLOAD_CHUNK = 256 * 1024
 MIN_EXE_BYTES = 1024 * 1024  # bundan kichik fayl dastur emas (masalan, xato sahifasi)
+
+
+@dataclass(frozen=True)
+class Offer:
+    """Topilgan yangi versiya: papkadagi tayyor fayl (`exe`) yoki internetdan yuklab olinadigan (`url`)."""
+
+    version: str
+    exe: Path | None = None
+    url: str = ""
 
 
 def parse_version(text: str) -> tuple[int, ...]:
@@ -155,3 +165,15 @@ def download(base_url: str, target: Path | str, progress: Callable[[int, int], N
             tr("Yangi versiyani yuklab bo'lmadi. Internetni tekshirib, keyinroq qayta urinib ko'ring.")
         ) from error
     return target
+
+
+def find(folder: str, url: str, current: str = APP_VERSION) -> Offer | None:
+    """Yangi versiyani avval yangilanishlar papkasidan, keyin internetdan qidiradi; topilmasa — None.
+
+    Hech qachon xato ko'tarmaydi: papka yoki internetga yetib bo'lmasa, o'sha manba o'tkazib yuboriladi.
+    """
+    local = available(folder, current) if folder else None
+    if local:
+        return Offer(local[0], exe=local[1])
+    version = available_online(url, current)
+    return Offer(version, url=url) if version else None

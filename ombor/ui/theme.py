@@ -271,6 +271,14 @@ QMainWindow, QDialog, QScrollArea, #page {{ background: {page}; }}
 #badgeGood {{ color: {good}; background: {good_soft}; }}
 #badgeOut {{ color: {tile_out}; background: {tile_out_soft}; }}
 #badgeWarning {{ color: {warning}; background: {warning_soft}; }}
+#statusGood, #statusAccent {{
+    font-family: "Segoe MDL2 Assets"; font-size: 24pt; border-radius: 32px;
+}}
+#statusGood {{ color: {good}; background: {good_soft}; }}
+#statusAccent {{ color: {accent}; background: {accent_soft}; }}
+#statusTitle {{ font-size: 15pt; font-weight: 600; }}
+QProgressBar {{ background: {header}; border: none; border-radius: 3px; max-height: 6px; }}
+QProgressBar::chunk {{ background: {accent}; border-radius: 3px; }}
 #subtitle {{ color: {muted}; font-size: 10pt; }}
 #dateText {{ font-size: 11pt; }}
 
@@ -293,6 +301,9 @@ QPushButton:disabled {{ color: {disabled}; }}
 QPushButton[role="primary"] {{ background: {accent}; border-color: {accent}; color: white; font-weight: 600; }}
 QPushButton[role="primary"]:hover {{ background: {accent_dark}; }}
 QPushButton[role="danger"] {{ color: {danger}; }}
+QPushButton[role="link"] {{ background: transparent; border: none; color: {accent}; padding: 6px 8px; }}
+QPushButton[role="link"]:hover {{ text-decoration: underline; }}
+QPushButton[role="link"]:disabled {{ color: {disabled}; }}
 QPushButton[role="segment"] {{ border-radius: 0; margin-left: -1px; padding: 7px 16px; }}
 QPushButton[role="segment"]:checked {{
     background: {accent}; border-color: {accent}; color: white; font-weight: 600;

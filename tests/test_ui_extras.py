@@ -234,7 +234,7 @@ class SettingsCardsTests(UiTestCase):
     def test_admin_sees_network_and_update_cards_but_keeper_does_not(self):
         admin = self.button_texts(SettingsPage(self.services, Session(self.admin), self.folder / "ombor.db"))
         keeper = self.button_texts(SettingsPage(self.services, Session(self.keeper), self.folder / "ombor.db"))
-        for text in ("Bazani umumiy papkaga ko'chirish", "Fayldan yangilash", "Guruhlarni tahrirlash", "+ Yangi ombor"):
+        for text in ("Bazani umumiy papkaga ko'chirish", "Guruhlarni tahrirlash", "+ Yangi ombor"):
             self.assertIn(text, admin)
             self.assertNotIn(text, keeper)
 

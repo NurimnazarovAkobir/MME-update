@@ -116,28 +116,6 @@ class StartupTests(unittest.TestCase):
             self.assertEqual(self._run(self._first_run), 1)
         report.assert_called_once()
 
-    def test_update_is_offered_from_the_update_folder(self):
-        self._run(self._first_run)
-        updates = self.folder / "yangilanish"
-        updates.mkdir()
-        (updates / "versiya.txt").write_text("99.0", encoding="utf-8")
-        (updates / "MME-Ombor.exe").write_bytes(b"yangi")
-        conn = connect(self.db_path)
-        application.Settings(conn).set(application.update.UPDATE_FOLDER_KEY, str(updates))
-        conn.close()
-        self.windows.clear()
-        with (
-            mock.patch.object(application.update, "is_installed_program", return_value=True),
-            mock.patch.object(application, "confirm", return_value=True) as question,
-            mock.patch.object(application.update, "install") as install,
-            mock.patch.object(application, "restart_application") as restart,
-        ):
-            self.assertEqual(self._run(self._login), 0)
-        question.assert_called_once()
-        install.assert_called_once_with(updates / "MME-Ombor.exe")
-        restart.assert_called_once()
-        self.assertEqual(self.windows, [])
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -13,12 +13,18 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QMessageBox, QWidget  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton  # noqa: E402
 
 from ombor import update  # noqa: E402
+from ombor.database import connect  # noqa: E402
 from ombor.errors import WarehouseError  # noqa: E402
+from ombor.models import Role, User  # noqa: E402
+from ombor.services import Services  # noqa: E402
+from ombor.session import Session  # noqa: E402
+from ombor.ui import update_page as update_page_module  # noqa: E402
 from ombor.ui import updater as updater_module  # noqa: E402
-from ombor.ui.updater import OnlineUpdater  # noqa: E402
+from ombor.ui.main_window import MainWindow  # noqa: E402
+from ombor.ui.update_page import LAST_CHECK_KEY, UpdatePage  # noqa: E402
 from tests.test_ui import discard_widgets  # noqa: E402
 
 NEW_EXE = b"MZ" + b"yangi versiya " * 120_000  # ~1.7 MB
@@ -106,14 +112,25 @@ class DownloadTests(OnlineTestCase):
         self.assertFalse((self.folder / "yangi.exe").exists())
 
 
-class OnlineUpdaterTests(OnlineTestCase):
-    """Fon tekshiruvi → taklif → yuklab olish → o'rnatish zanjiri (o'rnatishning o'zi almashtirilgan)."""
+class UpdatePageTests(OnlineTestCase):
+    """«Yangilash» sahifasi: tekshiruv → menyuda belgi va taklif → yuklab olish → o'rnatish."""
 
     def setUp(self):
         super().setUp()
         self.app = QApplication.instance() or QApplication([])
         self.addCleanup(discard_widgets)
-        self.parent = QWidget()
+        self.conn = connect(":memory:")
+        self.addCleanup(self.conn.close)
+        self.services = Services.create(self.conn, self.folder / "zaxira")
+        self.admin = Session(User(1, "Rahbar", Role.ADMIN))
+        self.keeper = Session(User(2, "Vali", Role.KEEPER))
+
+    def page(self, session=None, url=None) -> UpdatePage:
+        self.services.settings.set(update.UPDATE_URL_KEY, self.url if url is None else url)
+        page = UpdatePage(self.services, session or self.admin)
+        self.states = []
+        page.availability_changed.connect(self.states.append)
+        return page
 
     def _wait(self, condition, seconds: float = 15) -> bool:
         deadline = time.monotonic() + seconds
@@ -124,54 +141,100 @@ class OnlineUpdaterTests(OnlineTestCase):
             time.sleep(0.02)
         return False
 
-    def test_found_update_is_downloaded_and_installed(self):
+    def test_up_to_date_state(self):
+        self.publish(update.APP_VERSION)
+        page = self.page()
+        self.assertIn("hali tekshirilmagan", page._status_detail.text())
+        page.check()
+        self.assertTrue(self._wait(lambda: page._check_button.isEnabled()))
+        self.assertEqual(page._status_title.text(), "Dastur yangilangan")
+        self.assertIn("bugun", page._status_detail.text())
+        self.assertTrue(page._offer_card.isHidden())
+        self.assertEqual(self.states, [])
+        self.assertTrue(self.services.prefs.get(LAST_CHECK_KEY))
+
+    def test_new_version_shows_the_offer_and_the_menu_badge(self):
         self.publish("99.0")
+        page = self.page()
+        page.check()
+        self.assertTrue(self._wait(lambda: self.states))
+        self.assertEqual(self.states, [True])
+        self.assertEqual(page._status_title.text(), "Yangilanish mavjud")
+        self.assertFalse(page._offer_card.isHidden())
+        self.assertIn("99.0", page._offer_text.text())
+
+    def test_download_and_install_from_the_offer(self):
+        self.publish("99.0")
+        page = self.page()
+        page.check()
+        self.assertTrue(self._wait(lambda: self.states))
         with (
-            mock.patch.object(updater_module, "confirm", return_value=True) as question,
+            mock.patch.object(update_page_module.update, "is_installed_program", return_value=True),
             mock.patch.object(updater_module.update, "install") as install,
-            mock.patch.object(updater_module, "restart_application") as restart,
+            mock.patch.object(update_page_module, "restart_application") as restart,
             mock.patch.object(QMessageBox, "information"),
             mock.patch.object(updater_module.tempfile, "gettempdir", return_value=str(self.folder)),
         ):
-            OnlineUpdater(self.url, self.parent).check()
+            page._install_link.click()
+            self.assertFalse(page._install_link.isEnabled())
             self.assertTrue(self._wait(lambda: restart.called))
-        self.assertIn("99.0", question.call_args.args[2])
-        downloaded = Path(install.call_args.args[0])
-        self.assertEqual(downloaded.read_bytes(), NEW_EXE)
+        self.assertEqual(Path(install.call_args.args[0]).read_bytes(), NEW_EXE)
 
-    def test_declined_update_downloads_nothing(self):
-        self.publish("99.0")
-        with (
-            mock.patch.object(updater_module, "confirm", return_value=False) as question,
-            mock.patch.object(updater_module.update, "download") as download,
-        ):
-            OnlineUpdater(self.url, self.parent).check()
-            self.assertTrue(self._wait(lambda: question.called))
-            self._wait(lambda: False, seconds=0.3)
-        download.assert_not_called()
-
-    def test_no_internet_only_reports_nothing_found(self):
-        updater = OnlineUpdater(self.dead_url(), self.parent)
-        outcome = []
-        updater.nothing_found.connect(lambda: outcome.append("yo'q"))
-        updater.found.connect(outcome.append)
-        with mock.patch.object(updater_module, "confirm") as question:
-            updater.check()
-            self.assertTrue(self._wait(lambda: outcome))
-        self.assertEqual(outcome, ["yo'q"])
-        question.assert_not_called()
-
-    def test_broken_download_shows_a_message_and_keeps_the_program(self):
+    def test_broken_download_reports_and_lets_the_user_retry(self):
         self.publish("99.0", exe=b"buzilgan")
+        page = self.page()
+        page.check()
+        self.assertTrue(self._wait(lambda: self.states))
         with (
-            mock.patch.object(updater_module, "confirm", return_value=True),
+            mock.patch.object(update_page_module.update, "is_installed_program", return_value=True),
             mock.patch.object(updater_module.update, "install") as install,
             mock.patch.object(QMessageBox, "warning") as warning,
             mock.patch.object(updater_module.tempfile, "gettempdir", return_value=str(self.folder)),
         ):
-            OnlineUpdater(self.url, self.parent).check()
+            page._install_link.click()
             self.assertTrue(self._wait(lambda: warning.called))
         install.assert_not_called()
+        self.assertTrue(page._install_link.isEnabled())
+        self.assertTrue(page._progress.isHidden())
+
+    def test_no_internet_is_silent_unless_the_user_asked(self):
+        page = self.page(url=self.dead_url())
+        with mock.patch.object(QMessageBox, "information") as information:
+            page.check()
+            self.assertTrue(self._wait(lambda: page._check_button.isEnabled()))
+            information.assert_not_called()
+            page._check_button.click()
+            self.assertTrue(self._wait(lambda: information.called))
+        self.assertEqual(page._status_title.text(), "Dastur yangilangan")
+        self.assertEqual(self.states, [])
+
+    def test_update_folder_is_checked_before_the_internet(self):
+        folder = self.folder / "papka"
+        folder.mkdir()
+        (folder / update.VERSION_FILE).write_text("50.0", encoding="utf-8")
+        (folder / update.EXE_NAME).write_bytes(NEW_EXE)
+        self.publish("99.0")
+        offer = update.find(str(folder), self.url)
+        self.assertEqual((offer.version, offer.exe), ("50.0", folder / update.EXE_NAME))
+        self.assertEqual(update.find("", self.url).url, self.url)
+        self.assertIsNone(update.find("", ""))
+        self.assertIsNone(update.find(str(self.folder / "yoq"), self.dead_url()))
+
+    def test_only_admin_sees_the_sources(self):
+        admin = [b.text() for b in self.page(self.admin).findChildren(QPushButton)]
+        keeper = [b.text() for b in self.page(self.keeper).findChildren(QPushButton)]
+        self.assertIn("Internet manzilini kiritish", admin)
+        self.assertNotIn("Internet manzilini kiritish", keeper)
+        self.assertIn("Yangilanishlarni tekshirish", keeper)
+
+    def test_main_window_marks_the_menu_item(self):
+        self.publish("99.0")
+        self.services.settings.set(update.UPDATE_URL_KEY, self.url)
+        window = MainWindow(self.services, self.admin, self.folder / "ombor.db")
+        row = window._update_row
+        self.assertNotIn("●", window._menu.item(row).text())
+        window._pages.widget(row).check()
+        self.assertTrue(self._wait(lambda: "●" in window._menu.item(row).text()))
 
 
 if __name__ == "__main__":

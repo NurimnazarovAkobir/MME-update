@@ -26,6 +26,9 @@ class Glyph:
     MONEY = "\ue8c7"
     ARROW_UP = "\ue74a"
     ARROW_DOWN = "\ue74b"
+    SYNC = "\ue895"
+    INFO = "\ue946"
+    CHECK = "\ue73e"
     CHEVRON = "\ue76c"
 
 

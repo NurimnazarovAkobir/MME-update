@@ -11,7 +11,7 @@ O'CHIRISH
   Ma'lumotlar (baza va zaxira nusxalar) o'chirilmaydi.
 
 YANGILASH
-  Dastur ichida: Sozlamalar > Dasturni yangilash > "Fayldan yangilash" va yangi
+  Dastur ichida: "Yangilash" bo'limi > "Fayldan yangilash" va yangi
   MME-Ombor.exe ni ko'rsating. Yoki yangi to'plamdagi Ornatish.bat ni qayta ishga tushiring.
   Ma'lumotlar saqlanib qoladi.
 
