@@ -1,6 +1,6 @@
 """Dastur sozlamalari: bazadagi kalit-qiymat juftliklari."""
 
-import sqlite3
+from .driver import sqlite3
 
 
 class Settings:

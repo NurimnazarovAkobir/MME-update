@@ -1,11 +1,11 @@
 """Zaxira nusxa: qo'lda saqlash, avtomatik kunlik nusxalar va zaxiradan tiklash."""
 
 import shutil
-import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 
 from .database import prepare
+from .driver import sqlite3
 from .errors import WarehouseError
 from .i18n import tr
 from .migrations import SCHEMA_VERSION

@@ -1,14 +1,14 @@
 """Omborning asosiy amallari: mahsulotlar, kirim va chiqim, o'zgarishlar tarixi."""
 
-import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Callable, Iterable
 
 from .catalog import display_name
 from .config import CURRENCY
-from .costing import recalculate_costs
-from .database import period_filter
+from .costing import recalculate_costs, warehouse_stocks
+from .database import MAIN_WAREHOUSE_ID, MAIN_WAREHOUSE_NAME, period_filter
+from .driver import sqlite3
 from .errors import WarehouseError
 from .formatting import fmt_date, fmt_money, fmt_qty
 from .i18n import tr
@@ -22,12 +22,15 @@ from .models import (
     Period,
     Product,
     ProductStock,
+    Store,
+    Transfer,
 )
 from .settings import Settings
 
 SUGGESTION_FIELDS = ("person", "counterparty")
 GROUP_REQUIRED_KEY = "group_required"
 PRODUCT_ENTITY = "product"
+TRANSFER_ENTITY = "transfer"
 
 # Dastur o'zi yaratadigan yozuvlarning «yetkazib beruvchi / obyekt» maydoni. Bazada shu
 # (o'zbekcha) ko'rinishda saqlanadi, ekranda esa tanlangan tilda ko'rsatiladi.
@@ -68,8 +71,14 @@ def _to_movement(row: sqlite3.Row) -> MovementDetails:
     values = dict(row)
     values["kind"] = MovementKind(values["kind"])
     values["date"] = date.fromisoformat(values["date"])
-    values["is_service"] = bool(values["is_service"])
+    for flag in ("is_service", "is_return", "on_credit"):
+        values[flag] = bool(values[flag])
     return MovementDetails(**values)
+
+
+def store_name(name: str) -> str:
+    """Ombor nomi; dastur o'zi yaratgan «Asosiy ombor» tanlangan tilda ko'rsatiladi."""
+    return tr("Asosiy ombor") if name == MAIN_WAREHOUSE_NAME else name
 
 
 def _describe_movement(movement: MovementDetails) -> str:
@@ -82,6 +91,8 @@ def _describe_movement(movement: MovementDetails) -> str:
         f"{fmt_qty(m.quantity)} {m.unit}",
         f"{fmt_money(price)} {CURRENCY}" if price else "",
         f"№ {m.doc_number}" if m.doc_number else "",
+        tr("Qaytarish") if m.is_return else "",
+        tr("Qarzga") if m.on_credit else "",
         m.person,
         display_counterparty(m.counterparty),
     )
@@ -101,15 +112,30 @@ class Warehouse:
 
     # --- Mahsulotlar -------------------------------------------------------
 
-    def products(self, search: str = "") -> list[ProductStock]:
+    def products(self, search: str = "", warehouse_id: int | None = None) -> list[ProductStock]:
+        """Mahsulotlar; `warehouse_id` berilsa, qoldiq faqat shu ombor bo'yicha ko'rsatiladi."""
         rows = self._conn.execute("SELECT * FROM product_stock ORDER BY name")
-        return [p for p in map(_to_product, rows) if _matches(search, p.name, p.note)]
+        found = [p for p in map(_to_product, rows) if _matches(search, p.name, p.note, p.barcode)]
+        if warehouse_id is not None:
+            stocks = warehouse_stocks(self._conn, warehouse_id)
+            for product in found:
+                product.local_stock = stocks.get(product.id, 0.0)
+        return found
 
-    def product(self, product_id: int) -> ProductStock:
+    def product(self, product_id: int, warehouse_id: int | None = None) -> ProductStock:
         row = self._conn.execute("SELECT * FROM product_stock WHERE id = ?", (product_id,)).fetchone()
         if row is None:
             raise WarehouseError(tr("Mahsulot topilmadi."))
-        return _to_product(row)
+        product = _to_product(row)
+        if warehouse_id is not None:
+            product.local_stock = warehouse_stocks(self._conn, warehouse_id).get(product_id, 0.0)
+        return product
+
+    def product_by_barcode(self, barcode: str) -> ProductStock | None:
+        """Shtrix-kod bo'yicha mahsulot (skaner o'qigan kod); topilmasa — None."""
+        code = barcode.strip()
+        row = self._conn.execute("SELECT * FROM product_stock WHERE barcode = ?", (code,)).fetchone() if code else None
+        return _to_product(row) if row else None
 
     def attention_count(self) -> int:
         """Kam qolgan yoki tugagan mahsulotlar soni."""
@@ -124,6 +150,14 @@ class Warehouse:
             raise WarehouseError(tr("O'lchov birligini tanlang."))
         if product.min_stock < 0:
             raise WarehouseError(tr("Minimal qoldiq manfiy bo'lishi mumkin emas."))
+        barcode, alt_unit = product.barcode.strip(), product.alt_unit.strip()
+        if alt_unit and product.alt_factor <= 0:
+            raise WarehouseError(tr("Qo'shimcha birlik necha asosiy birlikka tengligini kiriting."))
+        if alt_unit.casefold() == product.unit.strip().casefold():
+            alt_unit = ""
+        owner = self.product_by_barcode(barcode)
+        if owner is not None and owner.id != product.id:
+            raise WarehouseError(tr("Bu shtrix-kod «{0}» mahsulotiga berilgan.").format(owner.name))
 
         values = (
             name,
@@ -131,13 +165,17 @@ class Warehouse:
             0 if product.is_service else product.min_stock,
             product.note.strip(),
             int(product.is_service),
+            barcode,
+            alt_unit,
+            product.alt_factor if alt_unit else 0,
         )
         saved = Product(name, product.unit.strip(), is_service=product.is_service)
         try:
             with self._conn:
                 if product.id is None:
                     cursor = self._conn.execute(
-                        "INSERT INTO products (name, unit, min_stock, note, is_service) VALUES (?, ?, ?, ?, ?)",
+                        "INSERT INTO products (name, unit, min_stock, note, is_service, barcode, alt_unit, alt_factor)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         values,
                     )
                     self._log(HistoryAction.ADD, PRODUCT_ENTITY, cursor.lastrowid, _describe_product(saved))
@@ -148,7 +186,8 @@ class Warehouse:
                         tr("Bu mahsulot bo'yicha yozuvlar bor, shuning uchun uning turini o'zgartirib bo'lmaydi.")
                     )
                 self._conn.execute(
-                    "UPDATE products SET name = ?, unit = ?, min_stock = ?, note = ?, is_service = ? WHERE id = ?",
+                    "UPDATE products SET name = ?, unit = ?, min_stock = ?, note = ?, is_service = ?,"
+                    " barcode = ?, alt_unit = ?, alt_factor = ? WHERE id = ?",
                     (*values, product.id),
                 )
                 self._log(
@@ -170,6 +209,7 @@ class Warehouse:
                 self._conn.execute(
                     "DELETE FROM movements WHERE product_id = ? AND deleted_at IS NOT NULL", (product_id,)
                 )
+                self._conn.execute("DELETE FROM transfers WHERE product_id = ?", (product_id,))
                 self._conn.execute("DELETE FROM products WHERE id = ?", (product_id,))
                 self._log(HistoryAction.DELETE, PRODUCT_ENTITY, product_id, _describe_product(product))
         except sqlite3.IntegrityError as error:
@@ -194,12 +234,16 @@ class Warehouse:
         period: Period = Period(),
         search: str = "",
         limit: int | None = None,
+        warehouse_id: int | None = None,
     ) -> list[MovementDetails]:
         """Yozuvlarni eng yangisidan boshlab qaytaradi; `kind` berilmasa — kirim ham, chiqim ham."""
         where, params = period_filter(period)
         if kind is not None:
             where += " AND kind = ?"
             params.append(kind.value)
+        if warehouse_id is not None:
+            where += " AND warehouse_id = ?"
+            params.append(warehouse_id)
         rows = self._conn.execute(f"SELECT * FROM movement_details WHERE {where} ORDER BY date DESC, id DESC", params)
         found = [
             m
@@ -278,7 +322,15 @@ class Warehouse:
             self._recalculate({movement.product_id})
             self._log(HistoryAction.RESTORE, movement.kind.value, movement_id, _describe_movement(movement))
 
-    def adjust_stock(self, product_id: int, actual: float, day: date, author: str, note: str = "") -> int | None:
+    def adjust_stock(
+        self,
+        product_id: int,
+        actual: float,
+        day: date,
+        author: str,
+        note: str = "",
+        warehouse_id: int = MAIN_WAREHOUSE_ID,
+    ) -> int | None:
         """Inventarizatsiya: hisobdagi qoldiqni sanalgan (`actual`) qoldiqqa tenglashtiradi.
 
         Farq ortiqcha bo'lsa kirim, kamomad bo'lsa chiqim yozuvi yaratiladi va uning
@@ -286,7 +338,7 @@ class Warehouse:
         """
         if actual < 0:
             raise WarehouseError(tr("Haqiqiy qoldiq manfiy bo'lishi mumkin emas."))
-        product = self.product(product_id)
+        product = self.product(product_id, warehouse_id)
         if product.is_service:
             raise WarehouseError(tr("Xizmatning qoldig'i yuritilmaydi."))
         difference = round(actual - product.stock, 6)
@@ -304,13 +356,126 @@ class Warehouse:
                 counterparty=INVENTORY_SURPLUS if is_surplus else INVENTORY_SHORTAGE,
                 note=f"{note.strip()} ({details})" if note.strip() else details,
                 created_by=author,
+                warehouse_id=warehouse_id,
             )
         )
 
-    def take_inventory(self, counted: dict[int, float], day: date, author: str, note: str = "") -> int:
-        """Inventarizatsiya varag'i: `counted` — mahsulot id -> sanalgan qoldiq. Tuzatilgan mahsulotlar sonini qaytaradi."""
-        adjusted = [self.adjust_stock(product_id, actual, day, author, note) for product_id, actual in counted.items()]
+    def take_inventory(
+        self,
+        counted: dict[int, float],
+        day: date,
+        author: str,
+        note: str = "",
+        warehouse_id: int = MAIN_WAREHOUSE_ID,
+    ) -> int:
+        """Inventarizatsiya varag'i: `counted` — mahsulot id -> shu omborda sanalgan qoldiq.
+
+        Tuzatilgan mahsulotlar sonini qaytaradi.
+        """
+        adjusted = [
+            self.adjust_stock(product_id, actual, day, author, note, warehouse_id)
+            for product_id, actual in counted.items()
+        ]
         return sum(movement_id is not None for movement_id in adjusted)
+
+    # --- Omborlar va ko'chirish ----------------------------------------------
+
+    def stores(self) -> list[Store]:
+        """Omborlar; birinchisi — har doim bor «Asosiy ombor»."""
+        rows = self._conn.execute("SELECT id, name FROM warehouses ORDER BY id")
+        return [Store(row["id"], store_name(row["name"])) for row in rows]
+
+    def save_store(self, name: str, store_id: int | None = None) -> int:
+        """Yangi ombor qo'shadi yoki mavjudining nomini o'zgartiradi."""
+        name = name.strip()
+        if not name:
+            raise WarehouseError(tr("Ombor nomini kiriting."))
+        try:
+            with self._conn:
+                if store_id is None:
+                    return self._conn.execute("INSERT INTO warehouses (name) VALUES (?)", (name,)).lastrowid
+                self._conn.execute("UPDATE warehouses SET name = ? WHERE id = ?", (name, store_id))
+                return store_id
+        except sqlite3.IntegrityError as error:
+            raise WarehouseError(tr("«{0}» nomli ombor allaqachon bor.").format(name)) from error
+
+    def delete_store(self, store_id: int) -> None:
+        if store_id == MAIN_WAREHOUSE_ID:
+            raise WarehouseError(tr("Asosiy omborni o'chirib bo'lmaydi."))
+        used = self._conn.execute(
+            "SELECT 1 FROM movements WHERE warehouse_id = :id"
+            " UNION ALL SELECT 1 FROM transfers WHERE from_id = :id OR to_id = :id LIMIT 1",
+            {"id": store_id},
+        ).fetchone()
+        if used:
+            raise WarehouseError(tr("Bu ombor bo'yicha yozuvlar bor, shuning uchun uni o'chirib bo'lmaydi."))
+        with self._conn:
+            self._conn.execute("DELETE FROM warehouses WHERE id = ?", (store_id,))
+
+    def transfer(self, transfer: Transfer) -> int:
+        """Mahsulotni bir ombordan boshqasiga ko'chiradi; umumiy qoldiq va tannarx o'zgarmaydi."""
+        if transfer.quantity <= 0:
+            raise WarehouseError(tr("Miqdor noldan katta bo'lishi kerak."))
+        if transfer.from_id == transfer.to_id:
+            raise WarehouseError(tr("Boshqa omborni tanlang: mahsulot shu omborning o'zida turibdi."))
+        if transfer.date > self._today():
+            raise WarehouseError(tr("Sana bugundan keyin bo'lishi mumkin emas."))
+        product = self.product(transfer.product_id)
+        if product.is_service:
+            raise WarehouseError(tr("Xizmatning qoldig'i yuritilmaydi."))
+        with self._conn:
+            cursor = self._conn.execute(
+                "INSERT INTO transfers (date, product_id, quantity, from_id, to_id, note, created_by)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    transfer.date.isoformat(),
+                    transfer.product_id,
+                    transfer.quantity,
+                    transfer.from_id,
+                    transfer.to_id,
+                    transfer.note.strip(),
+                    transfer.created_by,
+                ),
+            )
+            self._recalculate({transfer.product_id})
+            names = {store.id: store.name for store in self.stores()}
+            summary = " · ".join(
+                (
+                    fmt_date(transfer.date),
+                    product.name,
+                    f"{fmt_qty(transfer.quantity)} {product.unit}",
+                    f"{names[transfer.from_id]} → {names[transfer.to_id]}",
+                )
+            )
+            self._log(HistoryAction.ADD, TRANSFER_ENTITY, cursor.lastrowid, summary)
+        return cursor.lastrowid
+
+    def transfers(self, period: Period = Period()) -> list[Transfer]:
+        """Ko'chirishlar, eng yangisidan boshlab."""
+        where, params = period_filter(period, "t.date")
+        rows = self._conn.execute(
+            f"""
+            SELECT t.id, t.date, t.product_id, t.quantity, t.from_id, t.to_id, t.note, t.created_by,
+                   p.name AS product_name, p.unit, f.name AS from_name, w.name AS to_name
+            FROM transfers t
+            JOIN products p ON p.id = t.product_id
+            JOIN warehouses f ON f.id = t.from_id
+            JOIN warehouses w ON w.id = t.to_id
+            WHERE {where} ORDER BY t.date DESC, t.id DESC
+            """,
+            params,
+        )
+        return [
+            Transfer(
+                **{
+                    **dict(row),
+                    "date": date.fromisoformat(row["date"]),
+                    "from_name": store_name(row["from_name"]),
+                    "to_name": store_name(row["to_name"]),
+                }
+            )
+            for row in rows
+        ]
 
     def import_products(self, rows: Iterable[ImportedProduct], day: date, author: str) -> ImportResult:
         """Excel dan o'qilgan mahsulotlarni qo'shadi.
@@ -388,6 +553,10 @@ class Warehouse:
             raise WarehouseError(tr("Miqdor noldan katta bo'lishi kerak."))
         if movement.price < 0 or movement.sale_price < 0:
             raise WarehouseError(tr("Narx manfiy bo'lishi mumkin emas."))
+        if movement.on_credit and not movement.counterparty.strip():
+            raise WarehouseError(tr("Qarzga yozish uchun kimdan olingani yoki kimga berilgani ko'rsatilishi kerak."))
+        # Sotuv narxi: chiqimda, shuningdek xaridordan qaytgan mahsulotda (qaytariladigan narx).
+        keeps_sale_price = movement.kind is MovementKind.OUT or movement.is_return
 
         values = (
             movement.kind.value,
@@ -395,13 +564,16 @@ class Warehouse:
             movement.product_id,
             movement.quantity,
             movement.price if movement.kind is MovementKind.IN else 0,
-            movement.sale_price if movement.kind is MovementKind.OUT else 0,
+            movement.sale_price if keeps_sale_price else 0,
             movement.category.strip(),
             movement.subcategory.strip(),
             movement.person.strip(),
             movement.counterparty.strip(),
             movement.note.strip(),
             movement.doc_number.strip(),
+            int(movement.is_return),
+            int(movement.on_credit),
+            movement.warehouse_id,
         )
         with self._conn:
             previous = self.movement(movement.id) if movement.id is not None else None
@@ -412,8 +584,8 @@ class Warehouse:
             if previous is None:
                 cursor = self._conn.execute(
                     "INSERT INTO movements (kind, date, product_id, quantity, price, sale_price,"
-                    " category, subcategory, person, counterparty, note, doc_number, created_by)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " category, subcategory, person, counterparty, note, doc_number, is_return, on_credit,"
+                    " warehouse_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (*values, movement.created_by),
                 )
                 movement_id = cursor.lastrowid
@@ -421,8 +593,8 @@ class Warehouse:
                 affected_products.add(previous.product_id)
                 self._conn.execute(
                     "UPDATE movements SET kind = ?, date = ?, product_id = ?, quantity = ?, price = ?, sale_price = ?,"
-                    " category = ?, subcategory = ?, person = ?, counterparty = ?, note = ?, doc_number = ?"
-                    " WHERE id = ?",
+                    " category = ?, subcategory = ?, person = ?, counterparty = ?, note = ?, doc_number = ?,"
+                    " is_return = ?, on_credit = ?, warehouse_id = ? WHERE id = ?",
                     (*values, movement.id),
                 )
                 movement_id = movement.id

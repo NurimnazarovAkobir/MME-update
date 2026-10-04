@@ -1,11 +1,11 @@
 """Statistika va hisobotlar."""
 
-import sqlite3
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
 
 from .database import period_filter
+from .driver import sqlite3
 from .i18n import tr
 from .models import Granularity, MovementKind, Period
 from .warehouse import display_counterparty

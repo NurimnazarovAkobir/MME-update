@@ -1,12 +1,14 @@
 """Dasturning bitta bazaga ulangan barcha xizmatlari."""
 
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
 from .analytics import Analytics
 from .auth import Auth
 from .backup import Backup
+from .catalog import GroupCatalog
+from .debts import Debts
+from .driver import sqlite3
 from .reports import Reports
 from .settings import Settings
 from .warehouse import Warehouse
@@ -20,6 +22,8 @@ class Services:
     auth: Auth
     backup: Backup
     settings: Settings
+    debts: Debts
+    groups: GroupCatalog
 
     @classmethod
     def create(cls, conn: sqlite3.Connection, backup_folder: Path) -> "Services":
@@ -30,4 +34,6 @@ class Services:
             auth=Auth(conn),
             backup=Backup(conn, backup_folder),
             settings=Settings(conn),
+            debts=Debts(conn),
+            groups=GroupCatalog(conn),
         )

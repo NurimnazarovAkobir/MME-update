@@ -122,6 +122,13 @@ class Product:
     note: str = ""
     id: int | None = None
     is_service: bool = False
+    barcode: str = ""
+    alt_unit: str = ""  # qo'shimcha o'lchov birligi (masalan, asosiysi kg bo'lsa — tonna)
+    alt_factor: float = 0.0  # 1 qo'shimcha birlik = shuncha asosiy birlik
+
+    @property
+    def has_alt_unit(self) -> bool:
+        return bool(self.alt_unit) and self.alt_factor > 0
 
 
 @dataclass
@@ -132,20 +139,35 @@ class ProductStock(Product):
     qty_out: float = 0.0
     amount_in: float = 0.0
     amount_out: float = 0.0
+    # Bitta ombor bo'yicha ko'rilayotganda — shu ombordagi qoldiq; None — barcha omborlar bo'yicha.
+    local_stock: float | None = None
 
     @property
-    def stock(self) -> float:
+    def total_stock(self) -> float:
+        """Barcha omborlardagi qoldiq."""
         return 0.0 if self.is_service else round(self.qty_in - self.qty_out, 6)
 
     @property
-    def value(self) -> float:
-        """Ombordagi qoldiqning qiymati: kirimlar summasi minus chiqimlar tannarxi."""
-        return max(self.amount_in - self.amount_out, 0.0) if self.stock > 0 else 0.0
+    def stock(self) -> float:
+        """Ko'rilayotgan ombordagi qoldiq (ombor tanlanmagan bo'lsa — hammasi)."""
+        if self.is_service:
+            return 0.0
+        return self.total_stock if self.local_stock is None else round(self.local_stock, 6)
 
     @property
     def average_price(self) -> float:
-        """Ombordagi qoldiqning o'rtacha tannarxi; keyingi chiqim shu narxda baholanadi."""
-        return self.value / self.stock if self.stock > 0 else 0.0
+        """Qoldiqning o'rtacha tannarxi (barcha omborlar uchun bitta); keyingi chiqim shu narxda baholanadi."""
+        total = self.total_stock
+        return max(self.amount_in - self.amount_out, 0.0) / total if total > 0 else 0.0
+
+    @property
+    def value(self) -> float:
+        """Qoldiqning qiymati: kirimlar summasi minus chiqimlar tannarxi."""
+        if self.stock <= 0:
+            return 0.0
+        if self.local_stock is None:
+            return max(self.amount_in - self.amount_out, 0.0)
+        return self.stock * self.average_price
 
     @property
     def status(self) -> StockStatus:
@@ -174,6 +196,10 @@ class Movement:
     `counterparty` — kirimda yetkazib beruvchi, chiqimda obyekt.
     `created_by` — yozuvni kiritgan foydalanuvchi; keyin o'zgarmaydi.
     `doc_number` — hujjat (nakladnoy) raqami; bir hujjatdagi mahsulotlar bir xil raqam bilan yoziladi.
+    `is_return` — qaytarish: kirimda xaridordan qaytgan mahsulot (`price` — omborga qaytadigan tannarx,
+    `sale_price` — xaridorga qaytariladigan narx); chiqimda yetkazib beruvchiga qaytarilgan mahsulot
+    (`sale_price` — yetkazib beruvchi qaytaradigan narx).
+    `on_credit` — qarzga: summasi kontragent bilan hisob-kitobga (debts.py) tushadi.
     """
 
     kind: MovementKind
@@ -189,6 +215,9 @@ class Movement:
     note: str = ""
     created_by: str = ""
     doc_number: str = ""
+    is_return: bool = False
+    on_credit: bool = False
+    warehouse_id: int = 1
     id: int | None = None
 
 
@@ -203,13 +232,15 @@ class MovementDetails(Movement):
     profit: float = 0.0  # sotuv summasi minus tannarx; sotuv bo'lmasa 0
 
     is_service: bool = False
+    warehouse_name: str = ""
+    cost_of_sales: float = 0.0  # sotilgan mahsulot tannarxi (qaytarishda manfiy)
     created_at: str = ""  # bazaga yozilgan vaqt: 'YYYY-MM-DD HH:MM:SS'
     deleted_at: str | None = None
     deleted_by: str = ""
 
     @property
     def is_sale(self) -> bool:
-        return self.sale_price > 0
+        return self.kind is MovementKind.OUT and not self.is_return and self.sale_price > 0
 
     @property
     def created_on(self) -> date | None:
@@ -245,6 +276,60 @@ class HistoryEntry:
     entity_id: int | None
     summary: str
     previous: str
+
+
+@dataclass(frozen=True)
+class Store:
+    """Ombor (sklad). Bittasi — «Asosiy ombor» — har doim bor."""
+
+    id: int
+    name: str
+
+
+@dataclass(frozen=True)
+class Transfer:
+    """Mahsulotni bir ombordan boshqasiga ko'chirish."""
+
+    date: date
+    product_id: int
+    quantity: float
+    from_id: int
+    to_id: int
+    note: str = ""
+    created_by: str = ""
+    id: int | None = None
+    product_name: str = ""
+    unit: str = ""
+    from_name: str = ""
+    to_name: str = ""
+
+
+@dataclass(frozen=True)
+class Payment:
+    """To'lov. `kind`: IN — yetkazib beruvchiga to'ladik; OUT — xaridor bizga to'ladi."""
+
+    kind: MovementKind
+    date: date
+    counterparty: str
+    amount: float
+    note: str = ""
+    created_by: str = ""
+    id: int | None = None
+
+
+@dataclass(frozen=True)
+class Balance:
+    """Bitta kontragent bilan hisob-kitob: qarzga berilgan/olingan, qaytarilgan, to'langan."""
+
+    counterparty: str
+    credited: float
+    returned: float
+    paid: float
+
+    @property
+    def debt(self) -> float:
+        """Qolgan qarz; manfiy bo'lsa — ortiqcha to'langan."""
+        return self.credited - self.returned - self.paid
 
 
 @dataclass(frozen=True)

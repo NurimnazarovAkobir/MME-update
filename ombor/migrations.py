@@ -1,11 +1,11 @@
 """Eski versiyada yaratilgan bazani yangi versiyaga o'tkazish."""
 
-import sqlite3
-
+from . import catalog
 from .costing import recalculate_costs
+from .driver import sqlite3
 from .models import Role
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 LEGACY_PASSWORD_KEY = "password"
 LEGACY_ADMIN_NAME = "Rahbar"
 # 3-versiyagacha «boshlang'ich qoldiq» belgisi o'sha paytdagi tilda yozilgan; endi bitta ko'rinishda saqlanadi.
@@ -23,6 +23,7 @@ def migrate(conn: sqlite3.Connection) -> None:
             _move_single_password_to_users(conn)
         _move_groups_to_movements(conn)
         _allow_new_roles(conn)
+        catalog.seed(conn)
         conn.execute(
             "UPDATE movements SET counterparty = ? WHERE counterparty = ?", (OPENING_BALANCE, LEGACY_OPENING_BALANCE)
         )

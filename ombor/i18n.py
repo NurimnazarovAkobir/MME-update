@@ -6,8 +6,9 @@ oldin o'rnatiladi (main.py ga qarang), shuning uchun tilni almashtirish dasturni
 qayta ochishni talab qiladi.
 """
 
-import sqlite3
 from pathlib import Path
+
+from .driver import sqlite3
 
 UZBEK, RUSSIAN = "uz", "ru"
 LANGUAGES = {UZBEK: "O'zbekcha", RUSSIAN: "Русский"}

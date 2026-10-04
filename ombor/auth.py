@@ -7,8 +7,8 @@ Parol dasturga kirishni cheklaydi; ma'lumotlar fayli shifrlanmaydi.
 import hashlib
 import hmac
 import secrets
-import sqlite3
 
+from .driver import sqlite3
 from .errors import WarehouseError
 from .i18n import tr
 from .models import Role, User
