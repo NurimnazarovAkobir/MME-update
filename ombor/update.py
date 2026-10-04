@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,8 @@ VERSION_FILE = "versiya.txt"
 OLD_SUFFIX = "-eski.exe"
 TRIAL_ARGUMENT = "--sinov"  # bu bilan ochilgan dastur darhol yopiladi (main.py)
 TRIAL_TIMEOUT_SECONDS = 120
+TRIAL_ATTEMPTS, TRIAL_PAUSE_SECONDS = 3, 10
+BLOCKED_BY_POLICY = 4551  # Windows xatosi: «An Application Control policy has blocked this file»
 UPDATE_URL_KEY = "update_url"
 CHECK_TIMEOUT_SECONDS = 6  # internet sekin yoki yo'q bo'lsa, tekshiruv shundan uzoq kutmaydi
 DOWNLOAD_TIMEOUT_SECONDS = 30
@@ -75,16 +78,27 @@ def can_run(exe: Path | str) -> bool:
 
     Imzolanmagan dasturni Smart App Control ba'zan bloklaydi; bunday nusxani o'rnatib (yoki tarqatib)
     bo'lmaydi — aks holda ishlab turgan dastur ochilmaydigan nusxa bilan almashib qoladi.
+
+    Smart App Control ning qarori barqaror emas: bitta faylni goh o'tkazadi, goh bloklaydi. Shuning uchun
+    birinchi rad javobida darhol voz kechilmaydi — bir necha marta, oraliq bilan urinib ko'riladi.
     """
-    try:
-        process = subprocess.Popen([str(exe), TRIAL_ARGUMENT])
-    except OSError:
+    if not Path(exe).is_file():
         return False
-    try:
-        return process.wait(TRIAL_TIMEOUT_SECONDS) == 0
-    except subprocess.TimeoutExpired:
-        process.kill()  # eski nusxa sinov belgisini tushunmay ochilib qolgan: demak, ishga tushdi
-        return True
+    for attempt in range(TRIAL_ATTEMPTS):
+        if attempt:
+            time.sleep(TRIAL_PAUSE_SECONDS)
+        try:
+            process = subprocess.Popen([str(exe), TRIAL_ARGUMENT])
+        except OSError as error:
+            if getattr(error, "winerror", None) != BLOCKED_BY_POLICY:
+                return False  # bu umuman dastur emas — qayta urinishdan foyda yo'q
+            continue
+        try:
+            return process.wait(TRIAL_TIMEOUT_SECONDS) == 0
+        except subprocess.TimeoutExpired:
+            process.kill()  # eski nusxa sinov belgisini tushunmay ochilib qolgan: demak, ishga tushdi
+            return True
+    return False
 
 
 def install(
