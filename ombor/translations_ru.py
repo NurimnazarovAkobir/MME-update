@@ -265,7 +265,6 @@ TRANSLATIONS = {
     "Zaxira nusxa (*.db)": "Резервная копия (*.db)",
     "Ko'rinish": "Оформление",
     "Dastur fonini tanlang.": "Выберите цветовую тему программы.",
-    "Dastur tili. O'zgartirilganda dastur shu tilda qayta ochiladi.": "Язык программы. При смене программа откроется заново на выбранном языке.",
     "Och": "Светлая",
     "To'q ko'k (standart)": "Тёмно-синяя (стандартная)",
     "Ko'k": "Синяя",
@@ -553,4 +552,10 @@ TRANSLATIONS = {
     "Ombordan chiqqan mahsulotlar va sotuvlar": "Отпущенные со склада товары и продажи",
     "Omborga kelgan mahsulotlar va xarajatlar": "Поступившие на склад товары и расходы",
     "foyda {0} − xarajatlar {1}": "прибыль {0} − расходы {1}",
+    "Asosiy sozlamalar": "Основные настройки",
+    "Bosilsa, jadvalda faqat shu davr yozuvlari qoladi": "По нажатию в таблице останутся только записи за этот период",
+    "Dastur ishlashini o'zingizga qulay qilib sozlang": "Настройте работу программы под себя",
+    "Dastur tili": "Язык программы",
+    "O'zgartirilganda dastur shu tilda qayta ochiladi.": "При смене программа откроется заново на выбранном языке.",
+    "{0}  ·  {1} ta yozuv": "{0}  ·  записей: {1}",
 }

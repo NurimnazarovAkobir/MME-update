@@ -11,6 +11,7 @@ from ..errors import WarehouseError
 from ..excel_import import COLUMNS, read_products, write_template
 from ..formatting import fmt_money
 from ..i18n import tr
+from ..models import StockStatus
 from ..session import Session
 from ..warehouse import Warehouse
 from .dialogs import InventoryDialog, ProductDialog
@@ -21,6 +22,7 @@ from .widgets import Column, ColumnKind, button
 
 EXCEL_FILTER = tr("Excel fayli (*.xlsx)")
 MAX_SKIPPED_SHOWN = 10
+STATUS_COLUMN = 6
 
 
 class ProductsPage(ListPage):
@@ -28,13 +30,13 @@ class ProductsPage(ListPage):
 
     def __init__(self, warehouse: Warehouse, session: Session):
         columns = (
-            Column(tr("Mahsulot")),
-            Column(tr("Qoldiq"), ColumnKind.QUANTITY),
+            Column(tr("Mahsulot"), style="strong"),
+            Column(tr("Qoldiq"), ColumnKind.QUANTITY, "strong"),
             Column(tr("Birlik")),
             Column(tr("Minimal qoldiq"), ColumnKind.QUANTITY),
             Column(tr("O'rtacha narx"), ColumnKind.MONEY),
-            Column(tr("Qiymati"), ColumnKind.MONEY),
-            Column(tr("Holati")),
+            Column(tr("Qiymati"), ColumnKind.MONEY, "strong"),
+            Column(tr("Holati"), style="strong"),
         )
         super().__init__(
             tr("Mahsulotlar"),
@@ -45,6 +47,16 @@ class ProductsPage(ListPage):
             subtitle=tr("Mahsulotlar ro'yxati va ombordagi qoldiq"),
         )
         self._warehouse = warehouse
+        # «Holati» — rangli yorliq: yetarli yashil, kam qolgan sariq, tugagan qizil.
+        self.table.set_badges(
+            STATUS_COLUMN,
+            {
+                StockStatus.OK.value: "good",
+                StockStatus.LOW.value: "warning",
+                StockStatus.EMPTY.value: "danger",
+                StockStatus.SERVICE.value: "accent",
+            },
+        )
 
         # Ombor tanlagich va «Ko'chirish» faqat bir nechta ombor bo'lganda ko'rinadi.
         self._store = QComboBox()

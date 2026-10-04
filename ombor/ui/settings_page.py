@@ -42,13 +42,16 @@ from .auth_dialogs import (
     show_recovery_code,
 )
 from .extra_dialogs import GroupsDialog, NameDialog
+from .icons import Glyph, icon_label
 from .language import language_box, restart_application
-from .widgets import Column, DataTable, button, card, confirm, label
+from .widgets import Column, DataTable, button, card, confirm, label, page_header
 
 THEME_KEY = "theme"
 
 FILE_FILTER = tr("Zaxira nusxa (*.db)")
-USERS_TABLE_HEIGHT = 150
+USERS_TABLE_HEIGHT = 170
+SECTION_BADGE_SIZE = 36
+FIELD_WIDTH = 320
 
 
 def _button_row(*buttons: QPushButton) -> QWidget:
@@ -72,6 +75,29 @@ def _action(text: str, handler, role: str = "") -> QPushButton:
     widget = button(text, role)
     widget.clicked.connect(handler)
     return widget
+
+
+def _section(glyph: str, tone: str, title: str, *widgets: QWidget) -> QFrame:
+    """Sozlamalar bo'limi: rangli belgi va sarlavha, ostida — mazmuni."""
+    badge = icon_label(glyph, f"badge{tone}")
+    badge.setFixedSize(SECTION_BADGE_SIZE, SECTION_BADGE_SIZE)
+    header = QWidget()
+    row = QHBoxLayout(header)
+    row.setContentsMargins(0, 0, 0, 4)
+    row.setSpacing(12)
+    row.addWidget(badge)
+    row.addWidget(label(title, "sectionTitle"), stretch=1)
+    return card(header, *widgets)
+
+
+def _panel(widget: QWidget) -> QFrame:
+    """Ma'lumot matni uchun ichki ramka (masalan, zaxira papkalari holati)."""
+    frame = QFrame()
+    frame.setObjectName("infoPanel")
+    layout = QVBoxLayout(frame)
+    layout.setContentsMargins(14, 10, 14, 10)
+    layout.addWidget(widget)
+    return frame
 
 
 class SettingsPage(QWidget):
@@ -100,7 +126,10 @@ class SettingsPage(QWidget):
         cards = QVBoxLayout(content)
         cards.setContentsMargins(24, 20, 24, 16)
         cards.setSpacing(14)
-        cards.addWidget(label(tr("Sozlamalar"), "pageTitle"))
+        header, _tools = page_header(
+            Glyph.SETTINGS, tr("Sozlamalar"), tr("Dastur ishlashini o'zingizga qulay qilib sozlang")
+        )
+        cards.addLayout(header)
         cards.addWidget(self._appearance_card())
         cards.addWidget(self._account_card())
         if session.is_admin:
@@ -142,14 +171,24 @@ class SettingsPage(QWidget):
             themes.addItem(palette.title, name)
         themes.setCurrentIndex(max(themes.findData(self._prefs.get(THEME_KEY, theme.DEFAULT_THEME)), 0))
         themes.currentIndexChanged.connect(lambda: self._change_theme(themes.currentData()))
-        themes.setFixedWidth(220)
-        return card(
-            label(tr("Ko'rinish"), "sectionTitle"),
-            _text(tr("Dastur fonini tanlang.")),
-            themes,
-            _text(tr("Dastur tili. O'zgartirilganda dastur shu tilda qayta ochiladi.")),
-            language_box(self._prefs),
-        )
+        languages = language_box(self._prefs)
+        columns = QWidget()
+        row = QHBoxLayout(columns)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(28)
+        for title, hint, control in (
+            (tr("Ko'rinish"), tr("Dastur fonini tanlang."), themes),
+            (tr("Dastur tili"), tr("O'zgartirilganda dastur shu tilda qayta ochiladi."), languages),
+        ):
+            control.setFixedWidth(FIELD_WIDTH)
+            column = QVBoxLayout()
+            column.setSpacing(4)
+            column.addWidget(label(title, "fieldTitle"))
+            column.addWidget(label(hint, "muted"))
+            column.addWidget(control)
+            row.addLayout(column)
+        row.addStretch()
+        return _section(Glyph.SETTINGS, "Accent", tr("Asosiy sozlamalar"), columns)
 
     def _change_theme(self, name: str) -> None:
         self._prefs.set(THEME_KEY, name)
@@ -159,8 +198,10 @@ class SettingsPage(QWidget):
         buttons = [_action(tr("Parolni o'zgartirish"), self._change_password)]
         if self._user.is_admin:
             buttons.append(_action(tr("Yangi tiklash kodi"), self._new_recovery_code))
-        return card(
-            label(tr("Mening hisobim"), "sectionTitle"),
+        return _section(
+            Glyph.PERSON,
+            "Violet",
+            tr("Mening hisobim"),
             _text(tr("Siz {0} ({1}) sifatida kirgansiz.").format(self._user.name, self._user.role.title)),
             _button_row(*buttons),
         )
@@ -169,8 +210,10 @@ class SettingsPage(QWidget):
         group_required = QCheckBox(tr("Kirim va chiqimda guruh tanlash majburiy"))
         group_required.setChecked(self._warehouse.group_required)
         group_required.toggled.connect(lambda checked: setattr(self._warehouse, "group_required", checked))
-        return card(
-            label(tr("Hisob qoidalari"), "sectionTitle"),
+        return _section(
+            Glyph.TAG,
+            "Warning",
+            tr("Hisob qoidalari"),
             _text(tr("Yoqilsa, guruhsiz yozuv saqlanmaydi va hisobotda «(ko'rsatilmagan)» qatori chiqmaydi.")),
             group_required,
             _button_row(_action(tr("Guruhlarni tahrirlash"), lambda: GroupsDialog(self._groups, self).exec())),
@@ -179,8 +222,10 @@ class SettingsPage(QWidget):
     # --- Omborlar ----------------------------------------------------------
 
     def _stores_card(self) -> QFrame:
-        return card(
-            label(tr("Omborlar"), "sectionTitle"),
+        return _section(
+            Glyph.BOX,
+            "Accent",
+            tr("Omborlar"),
             _text(
                 tr(
                     "Bir nechta ombor bo'lsa, kirim va chiqimda ombor tanlanadi, «Mahsulotlar»da esa mahsulotni "
@@ -247,15 +292,19 @@ class SettingsPage(QWidget):
                 "belgisi bilan qo'shiladi va kirim qilib yoziladi — ular sof foydadan ayriladi."
             ),
         )
-        return card(
-            label(tr("Dastur haqida va qisqa yo'riqnoma"), "sectionTitle"),
+        return _section(
+            Glyph.INFO,
+            "Accent",
+            tr("Dastur haqida va qisqa yo'riqnoma"),
             _text(f"{APP_NAME} — {tr('Versiya {0}').format(APP_VERSION)}", "muted"),
             *(_text(f"•  {line}") for line in lines),
         )
 
     def _users_card(self) -> QFrame:
-        return card(
-            label(tr("Foydalanuvchilar"), "sectionTitle"),
+        return _section(
+            Glyph.PEOPLE,
+            "Violet",
+            tr("Foydalanuvchilar"),
             _text(ROLES_HINT),
             self._users,
             _button_row(
@@ -274,8 +323,10 @@ class SettingsPage(QWidget):
             *([_action(tr("Zaxiradan tiklash"), self._restore_backup)] if self._session.can_modify else []),
             _action(tr("Papkani ochish"), self._open_backup_folder),
         ]
-        return card(
-            label(tr("Zaxira nusxa"), "sectionTitle"),
+        return _section(
+            Glyph.IMPORT,
+            "Good",
+            tr("Zaxira nusxa"),
             _text(
                 tr(
                     "Dastur har ochilganda va yopilganda ma'lumotlarning nusxasini o'zi saqlaydi (oxirgi {0} "
@@ -283,7 +334,7 @@ class SettingsPage(QWidget):
                     "fleshka yoki boshqa diskni tanlang."
                 ).format(AUTO_COPIES_KEPT)
             ),
-            self._backup_status,
+            _panel(self._backup_status),
             _button_row(*buttons),
         )
 
@@ -296,8 +347,10 @@ class SettingsPage(QWidget):
         ]
         if self._prefs.uses_shared_folder:
             buttons.append(_action(tr("Shu kompyuterdagi bazaga qaytish"), self._use_local_database))
-        return card(
-            label(tr("Tarmoqda bir nechta kompyuterda ishlash"), "sectionTitle"),
+        return _section(
+            Glyph.SWITCH,
+            "Accent",
+            tr("Tarmoqda bir nechta kompyuterda ishlash"),
             _text(
                 tr(
                     "Baza tarmoqdagi umumiy papkaga qo'yilsa, bir nechta kompyuter bir vaqtda ishlay oladi: "
@@ -375,8 +428,10 @@ class SettingsPage(QWidget):
             if is_on
             else _action(tr("Bazani shifrlash"), self._enable_encryption, "primary")
         )
-        return card(
-            label(tr("Bazani shifrlash"), "sectionTitle"),
+        return _section(
+            Glyph.DOCUMENT,
+            "Out",
+            tr("Bazani shifrlash"),
             _text(
                 tr(
                     "Shifrlangan bazani parolsiz hech qanday dastur o'qiy olmaydi. Diqqat: parol ham, tiklash kodi "

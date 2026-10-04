@@ -1,9 +1,10 @@
 """Interfeys testlari: shtrix-kod, birlik, qaytarish, qarzlar, omborlar, guruhlar va sozlamalar."""
 
+from datetime import date, timedelta
 from unittest import mock
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QPushButton
 
 from ombor import catalog
 from ombor.database import MAIN_WAREHOUSE_ID
@@ -17,6 +18,7 @@ from ombor.ui.labels import LABELS
 from ombor.ui.movements_page import STORE_COLUMN, MovementsPage
 from ombor.ui.products_page import ProductsPage
 from ombor.ui.settings_page import SettingsPage
+from ombor.ui.widgets import RECENCY_ROLE, recency
 from tests.test_ui import TODAY, UiTestCase
 
 
@@ -213,6 +215,32 @@ class FitAndHistoryTests(UiTestCase):
         self.warehouse.save_movement(Movement(MovementKind.IN, TODAY, self.pipe, 1, 10, doc_number="7"))
         page.refresh()
         self.assertFalse(page.table.isColumnHidden(titles["Hujjat №"]))
+
+    def test_recent_dates_are_marked_and_summary_cards_follow_the_same_periods(self):
+        old_day = TODAY - timedelta(days=60)
+        self.warehouse.save_movement(Movement(MovementKind.IN, old_day, self.pipe, 5, 1000))
+        page = self.page()
+        dates = {page.table.item(row, 1).text(): page.table.item(row, 1).data(RECENCY_ROLE) for row in range(3)}
+        self.assertEqual(dates[f"{TODAY:%d.%m.%Y}"], "today")
+        self.assertEqual(dates[f"{old_day:%d.%m.%Y}"], "")
+        today_card, week_card, month_card = page._recent
+        self.assertEqual(today_card._value.text(), "120 ming")  # bugungi ikki kirim: 100 000 + 20 000
+        self.assertIn("2 ta yozuv", today_card._hint.text())
+        today_card.clicked.emit()
+        self.assertEqual(page.table.total_rows(), 2)  # jadvalda faqat bugungilar qoldi
+
+    def test_recency_of_a_date(self):
+        monday = date(2026, 10, 5)
+        friday = date(2026, 10, 9)
+        self.assertEqual(recency(friday, friday), "today")
+        self.assertEqual(recency(monday, friday), "week")
+        self.assertEqual(recency(date(2026, 10, 2), friday), "month")
+        self.assertEqual(recency(date(2026, 9, 30), friday), "")
+        self.assertEqual(recency(date(2026, 10, 10), friday), "month")  # kelajak sanasi «hafta» emas
+
+    def test_print_and_excel_buttons_have_their_own_colours(self):
+        roles = {b.text(): b.property("role") for b in self.page().findChildren(QPushButton)}
+        self.assertEqual((roles["Chop etish"], roles["Excelga chiqarish"]), ("print", "excel"))
 
     def test_history_shows_who_added_what_with_role_and_date(self):
         window = self.window(self.keeper)

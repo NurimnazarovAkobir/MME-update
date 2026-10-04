@@ -1,12 +1,14 @@
 """Kirim va chiqim sahifasi (ikkalasi uchun bitta sinf)."""
 
+from datetime import date
+
 from PySide6.QtWidgets import QDialog
 
 from ..catalog import display_name
 from ..config import CURRENCY
-from ..formatting import fmt_money
+from ..formatting import fmt_compact, fmt_money
 from ..i18n import tr
-from ..models import MovementDetails, MovementKind
+from ..models import MovementDetails, MovementKind, Period
 from ..session import Session
 from ..warehouse import Warehouse, display_counterparty, store_name
 from .dialogs import MovementDialog
@@ -14,7 +16,7 @@ from .icons import Glyph
 from .labels import KindLabels
 from .list_page import ListPage
 from .printing import print_waybill
-from .widgets import Column, ColumnKind, PeriodFilter, button
+from .widgets import THIS_MONTH, THIS_WEEK, TODAY, Column, ColumnKind, PeriodFilter, StatCard, button
 
 # Jadvalda bir vaqtda ko'rsatiladigan eng ko'p qator: juda katta bazada ham sahifa tez ochilishi uchun.
 MAX_ROWS_SHOWN = 2000
@@ -24,20 +26,20 @@ STORE_COLUMN = 2  # bitta ombor bo'lsa, «Ombor» ustuni yashiriladi
 def _columns(labels: KindLabels) -> tuple[Column, ...]:
     """Chiqimda xarid narxi o'rniga sotuv va foyda ustunlari bo'ladi (tannarx jami pastda ko'rinadi)."""
     start = (
-        Column(tr("Sana"), ColumnKind.DATE),
+        Column(tr("Sana"), ColumnKind.DATE, "recent"),
         Column(tr("Hujjat №")),
         Column(tr("Ombor")),
-        Column(tr("Mahsulot")),
-        Column(tr("Miqdor"), ColumnKind.QUANTITY),
+        Column(tr("Mahsulot"), style="strong"),
+        Column(tr("Miqdor"), ColumnKind.QUANTITY, "strong"),
         Column(tr("Birlik")),
     )
     if labels.kind is MovementKind.IN:
-        money = (Column(tr("Narxi"), ColumnKind.MONEY), Column(tr("Summa"), ColumnKind.MONEY))
+        money = (Column(tr("Narxi"), ColumnKind.MONEY), Column(tr("Summa"), ColumnKind.MONEY, "strong"))
     else:
         money = (
             Column(tr("Sotuv narxi"), ColumnKind.MONEY),
-            Column(tr("Sotuv summasi"), ColumnKind.MONEY),
-            Column(tr("Foyda"), ColumnKind.MONEY),
+            Column(tr("Sotuv summasi"), ColumnKind.MONEY, "strong"),
+            Column(tr("Foyda"), ColumnKind.MONEY, "signed"),
         )
     end = (
         Column(tr("Guruh")),
@@ -95,6 +97,18 @@ class MovementsPage(ListPage):
         self._period = PeriodFilter()
         self._period.changed.connect(self.refresh)
         self.header_tools.addWidget(self._period)
+        # Bugun, shu hafta va shu oy — har biri o'z rangida; jadvaldagi sanalar ham shu ranglarda.
+        self._recent = {}
+        for preset, glyph, tone, period_of in (
+            (TODAY, Glyph.CLOCK, "Good", Period.day_of),
+            (THIS_WEEK, Glyph.CALENDAR, "Accent", Period.week_of),
+            (THIS_MONTH, Glyph.CHART, "Violet", Period.month_of),
+        ):
+            stat = StatCard(preset, glyph, tone, clickable=True)
+            stat.setToolTip(tr("Bosilsa, jadvalda faqat shu davr yozuvlari qoladi"))
+            stat.clicked.connect(lambda preset=preset: self._period.select(preset))
+            self._recent[stat] = period_of
+            self.summary.addWidget(stat)
 
         waybill = button(tr("Nakladnoy"), glyph=Glyph.DOCUMENT)
         waybill.setToolTip(tr("Tanlangan yozuvning hujjatini chop etish (bir xil raqamli yozuvlar birga chiqadi)"))
@@ -112,6 +126,15 @@ class MovementsPage(ListPage):
         self.table.hide_empty_columns(self._optional_columns)
         self.table.hide_column(STORE_COLUMN, len(self._warehouse.stores()) < 2)
         self.footer.setText(self._totals(movements))
+        self._show_recent()
+
+    def _show_recent(self) -> None:
+        """Bugun, shu hafta va shu oy bo'yicha jami (qidiruv va davr filtridan qat'i nazar)."""
+        today = date.today()
+        for stat, period_of in self._recent.items():
+            found = self._warehouse.movements(self._labels.kind, period_of(today))
+            amount = sum(m.amount if self._labels.kind is MovementKind.IN else (m.revenue or m.amount) for m in found)
+            stat.set_value(fmt_compact(amount), tr("{0}  ·  {1} ta yozuv").format(CURRENCY, len(found)))
 
     def edit_dialog(self, item_id: int | None) -> QDialog:
         movement = self._warehouse.movement(item_id) if item_id is not None else None

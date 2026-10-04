@@ -101,9 +101,9 @@ class ReportsPage(QWidget):
             table.setObjectName("flatTable")
             self._tabs.addTab(table, glyph_icon(glyph, muted), tab.title)
 
-        print_button = button(tr("Chop etish"), glyph=Glyph.PRINT)
+        print_button = button(tr("Chop etish"), "print", Glyph.PRINT)
         print_button.clicked.connect(lambda: print_table(self, *self._current_report()))
-        excel = button(tr("Excelga chiqarish"), "primary", Glyph.EXPORT)
+        excel = button(tr("Excelga chiqarish"), "excel", Glyph.EXPORT)
         excel.clicked.connect(lambda: export_to_excel(self, *self._current_report()))
 
         header, tools = page_header(Glyph.CHART, tr("Hisobotlar"), tr("Ombor faoliyati bo'yicha barcha hisobotlar"))

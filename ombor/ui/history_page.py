@@ -116,9 +116,9 @@ class HistoryPage(QWidget):
         restore = button(tr("Tanlangan yozuvni tiklash"), "primary", Glyph.UNDO)
         restore.setToolTip(tr("«O'chirilgan yozuvlar»da tanlangan yozuvni hisobga qaytaradi"))
         restore.clicked.connect(self._restore)
-        print_button = button(tr("Chop etish"), glyph=Glyph.PRINT)
+        print_button = button(tr("Chop etish"), "print", Glyph.PRINT)
         print_button.clicked.connect(lambda: print_table(self, *self._current()))
-        excel = button(tr("Excelga chiqarish"), glyph=Glyph.EXPORT)
+        excel = button(tr("Excelga chiqarish"), "excel", Glyph.EXPORT)
         excel.clicked.connect(lambda: export_to_excel(self, *self._current()))
 
         header, tools = page_header(Glyph.CLOCK, tr("Tarix"), tr("Kim, qachon, nimani qo'shgani va o'zgartirgani"))

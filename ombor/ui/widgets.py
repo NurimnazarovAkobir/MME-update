@@ -73,7 +73,14 @@ def button(text: str, role: str = "", glyph: str = "") -> QPushButton:
     widget.setCursor(Qt.CursorShape.PointingHandCursor)
     if glyph:
         colors = theme.palette()
-        tints = {"primary": "#ffffff", "danger": colors.danger, "rowDelete": colors.danger, "rowEdit": colors.accent}
+        tints = {
+            "primary": "#ffffff",
+            "danger": colors.danger,
+            "rowDelete": colors.danger,
+            "rowEdit": colors.accent,
+            "print": colors.violet,
+            "excel": colors.good,
+        }
         tint = tints.get(role, colors.text)
         widget.setIcon(glyph_icon(glyph, tint))
         widget.setIconSize(QSize(BUTTON_ICON_SIZE, BUTTON_ICON_SIZE))
@@ -311,8 +318,12 @@ _NUMERIC_KINDS = (ColumnKind.QUANTITY, ColumnKind.MONEY)
 
 @dataclass(frozen=True)
 class Column:
+    """`style` — katakning ko'rinishi: 'strong' — qalin; 'signed' — musbat yashil, manfiy qizil;
+    'recent' — sana bugun, shu hafta yoki shu oyga tegishli bo'lsa, rangli yorliq bo'lib chiziladi."""
+
     title: str
     kind: ColumnKind = ColumnKind.TEXT
+    style: str = ""
 
 
 class BadgeDelegate(QStyledItemDelegate):
@@ -337,6 +348,58 @@ class BadgeDelegate(QStyledItemDelegate):
         painter.setFont(font)
         width = painter.fontMetrics().horizontalAdvance(text) + 2 * BADGE_PADDING
         badge = QRectF(cell.rect.left() + 10, cell.rect.center().y() - BADGE_HEIGHT / 2 + 1, width, BADGE_HEIGHT)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(theme.soft(color))
+        painter.drawRoundedRect(badge, BADGE_RADIUS, BADGE_RADIUS)
+        painter.setPen(color)
+        painter.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
+        painter.restore()
+
+    def sizeHint(self, option: QStyleOptionViewItem, index):
+        size = super().sizeHint(option, index)
+        size.setWidth(size.width() + 2 * BADGE_PADDING)
+        return size
+
+
+# Sananing yaqinligi -> palitradagi rang: kirim/chiqim sahifasidagi «Bugun / Shu hafta / Shu oy»
+# kartochkalari ham shu ranglarda.
+RECENCY_TONES = {"today": "good", "week": "accent", "month": "violet"}
+RECENCY_ROLE = Qt.ItemDataRole.UserRole + 2
+
+
+def recency(day: date, today: date | None = None) -> str:
+    """'today', 'week', 'month' yoki bo'sh (undan eski)."""
+    today = today or date.today()
+    if day == today:
+        return "today"
+    if Period.week_of(today).start <= day <= today:
+        return "week"
+    if (day.year, day.month) == (today.year, today.month):
+        return "month"
+    return ""
+
+
+class RecencyDelegate(QStyledItemDelegate):
+    """Sana katagini yaqinligiga qarab rangli yorliq qilib chizadi: bugun, shu hafta, shu oy."""
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
+        tone = RECENCY_TONES.get(index.data(RECENCY_ROLE))
+        if tone is None:
+            super().paint(painter, option, index)
+            return
+        cell = QStyleOptionViewItem(option)
+        self.initStyleOption(cell, index)
+        text, cell.text = cell.text, ""
+        cell.widget.style().drawControl(QStyle.ControlElement.CE_ItemViewItem, cell, painter, cell.widget)  # fon
+
+        color = QColor(getattr(theme.palette(), tone))
+        font = QFont(cell.font)
+        font.setWeight(QFont.Weight.DemiBold)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setFont(font)
+        width = min(painter.fontMetrics().horizontalAdvance(text) + 2 * BADGE_PADDING, cell.rect.width() - 6)
+        badge = QRectF(cell.rect.left() + 4, cell.rect.center().y() - BADGE_HEIGHT / 2 + 1, width, BADGE_HEIGHT)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(theme.soft(color))
         painter.drawRoundedRect(badge, BADGE_RADIUS, BADGE_RADIUS)
@@ -390,6 +453,8 @@ class DataTable(QTableWidget):
         self._page = 0
         self._sort_column: int | None = None
         self._sort_descending = False
+        # Asosiy ustunlari ajratilgan jadvalda qolgan matn xiraroq ko'rsatiladi.
+        self._dims_plain_text = any(column.style for column in columns)
 
         titles = [column.title for column in columns]
         self.setHorizontalHeaderLabels([ACTIONS_TITLE, *titles] if row_actions else titles)
@@ -420,6 +485,9 @@ class DataTable(QTableWidget):
                 self._alignment(column) | Qt.TextFlag.TextWordWrap
             )
 
+        for index, column in enumerate(columns):
+            if column.style == "recent":
+                self.setItemDelegateForColumn(index + self._offset, RecencyDelegate(self))
         self.itemDoubleClicked.connect(self._emit_activated)
 
     def set_rows(
@@ -507,11 +575,26 @@ class DataTable(QTableWidget):
                     item.setToolTip(item.text())  # ustun toraytirilganda matn qisqarib ko'rinadi
                 if item_id is not None:
                     item.setData(Qt.ItemDataRole.UserRole, item_id)
+                self._apply_style(item, column, value)
                 if is_flagged:
                     item.setBackground(QColor(theme.palette().warning_row))
                 self.setItem(row_index, column_index, item)
         self._fit_columns()
         self.pages_changed.emit()
+
+    def _apply_style(self, item: QTableWidgetItem, column: Column, value) -> None:
+        """Muhim ustunlarni ajratadi: qalin nom va summalar, rangli foyda, yaqin sanalar."""
+        if column.style in ("strong", "signed"):
+            font = item.font()
+            font.setWeight(QFont.Weight.DemiBold)
+            item.setFont(font)
+        if column.style == "signed" and value:
+            colors = theme.palette()
+            item.setForeground(QColor(colors.good if value > 0 else colors.danger))
+        elif column.style == "recent":
+            item.setData(RECENCY_ROLE, recency(value))
+        elif self._dims_plain_text and not column.style and column.kind is ColumnKind.TEXT:
+            item.setForeground(QColor(theme.palette().muted))  # ikkinchi darajali matn xiraroq
 
     def set_badges(self, column: int, tones: dict[str, str]) -> None:
         """`column` ustunidagi matnlarni rangli yorliq qilib ko'rsatadi (`tones`: matn -> palitra rangi)."""
@@ -590,11 +673,19 @@ class DataTable(QTableWidget):
         if not visible:
             return
         content = {column: max(self.sizeHintForColumn(column), MIN_COLUMN_WIDTH) for column in visible}
+        for column in visible:
+            if self._is_text_column(column) and self._columns[column - self._offset].style:
+                # Asosiy ustunning (masalan, «Mahsulot») sarlavhasi ham kesilmasin.
+                content[column] = max(content[column], header.sectionSizeHint(column))
         widths = {column: max(content[column], header.sectionSizeHint(column)) for column in visible}
         available = self.viewport().width()
         extra = available - sum(widths.values())
         if extra >= 0:
-            widths[visible[-1]] += extra
+            # Ortgan joy ma'lumot ustunlari orasida teng bo'linadi: jadval butun enini egallaydi.
+            data = [column for column in visible if column >= self._offset] or visible
+            for column in data:
+                widths[column] += extra // len(data)
+            widths[data[-1]] += extra % len(data)
         else:
             flexible = [column for column in visible if self._is_text_column(column)]
             fixed = {column: content[column] for column in visible if column not in flexible}
@@ -704,13 +795,14 @@ def export_to_excel(parent: QWidget, table: DataTable, title: str) -> None:
 # --- Davr tanlash ----------------------------------------------------------
 
 ALL_TIME = tr("Barcha vaqt")
+TODAY, THIS_WEEK, THIS_MONTH = tr("Bugun"), tr("Shu hafta"), tr("Shu oy")
 CUSTOM_PERIOD = tr("Tanlangan davr")
 
 _PRESETS = {
     ALL_TIME: lambda today: Period(),
-    tr("Bugun"): Period.day_of,
-    tr("Shu hafta"): Period.week_of,
-    tr("Shu oy"): Period.month_of,
+    TODAY: Period.day_of,
+    THIS_WEEK: Period.week_of,
+    THIS_MONTH: Period.month_of,
     tr("O'tgan oy"): Period.previous_month_of,
     tr("Shu yil"): Period.year_of,
 }
@@ -739,6 +831,10 @@ class PeriodFilter(QWidget):
         self._presets.currentTextChanged.connect(self._on_preset_changed)
         self._start.dateChanged.connect(lambda _: self.changed.emit())
         self._end.dateChanged.connect(lambda _: self.changed.emit())
+
+    def select(self, preset: str) -> None:
+        """Tayyor davrni nomi bo'yicha tanlaydi (masalan, «Bugun»)."""
+        self._presets.setCurrentText(preset)
 
     def period(self) -> Period:
         name = self._presets.currentText()

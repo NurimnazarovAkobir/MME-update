@@ -454,4 +454,14 @@ QHeaderView::section {{ background: transparent; color: {muted}; border-bottom: 
 }}
 #sidebarCard {{ background: {sidebar_hover}; border: 1px solid {border}; border-radius: 12px; }}
 #sidebarCardTitle {{ color: white; font-weight: 600; font-size: 10pt; }}
+
+/* Chop etish va Excel tugmalari o'z rangida: bir qarashda ajraladi. */
+QPushButton[role="print"] {{ color: {violet}; border-color: {violet}; background: {violet_soft}; font-weight: 600; }}
+QPushButton[role="print"]:hover {{ background: {violet}; color: white; }}
+QPushButton[role="excel"] {{ color: {good}; border-color: {good}; background: {good_soft}; font-weight: 600; }}
+QPushButton[role="excel"]:hover {{ background: {good}; color: white; }}
+QTableWidget {{ font-size: 10.5pt; }}
+#fieldTitle {{ font-weight: 600; }}
+#infoPanel {{ background: {header}; border: 1px solid {border}; border-radius: 10px; }}
+#sectionTitle {{ font-size: 12.5pt; font-weight: 700; }}
 """

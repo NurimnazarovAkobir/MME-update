@@ -63,9 +63,9 @@ class ListPage(QWidget):
             self.table.row_activated.connect(self._open)
             self.table.delete_requested.connect(self._delete)
 
-        print_button = button(tr("Chop etish"), glyph=Glyph.PRINT)
+        print_button = button(tr("Chop etish"), "print", Glyph.PRINT)
         print_button.clicked.connect(lambda: print_table(self, self.table, self.export_title()))
-        excel = button(tr("Excelga chiqarish"), glyph=Glyph.EXPORT)
+        excel = button(tr("Excelga chiqarish"), "excel", Glyph.EXPORT)
         excel.clicked.connect(lambda: export_to_excel(self, self.table, self.export_title()))
         toolbar.addStretch()
         for widget in (self.search, print_button, excel):
@@ -77,6 +77,9 @@ class ListPage(QWidget):
         layout.setContentsMargins(24, 20, 24, 16)
         layout.setSpacing(14)
         layout.addLayout(header)
+        self.summary = QHBoxLayout()  # voris sinf ko'rsatkich kartochkalarini shu qatorga qo'yadi
+        self.summary.setSpacing(14)
+        layout.addLayout(self.summary)
         layout.addLayout(toolbar)
         layout.addWidget(table_card(self.table), stretch=1)
         layout.addWidget(self.footer)
