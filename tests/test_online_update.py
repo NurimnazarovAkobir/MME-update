@@ -234,7 +234,14 @@ class UpdatePageTests(OnlineTestCase):
         row = window._update_row
         self.assertNotIn("●", window._menu.item(row).text())
         window._pages.widget(row).check()
+        self.assertTrue(window._notice.isHidden())
         self.assertTrue(self._wait(lambda: "●" in window._menu.item(row).text()))
+        # Qaysi bo'lim ochiq bo'lmasin, sahifalar ustida «yangilang» degan yo'lak ko'rinadi.
+        self.assertFalse(window._notice.isHidden())
+        self.assertIn("99.0", window._notice_text.text())
+        self.assertEqual(window._announced_version, "99.0")
+        window._open_update_page()
+        self.assertEqual(window._menu.currentRow(), row)
 
 
 if __name__ == "__main__":

@@ -543,4 +543,6 @@ TRANSLATIONS = {
     "Yangilanish manbalari": "Источники обновлений",
     "Yangilanishlar papkasi: {0}": "Папка обновлений: {0}",
     "Dasturning yangi versiyasi bor": "Доступна новая версия программы",
+    "Dasturning yangi versiyasi chiqdi: {0}. Dasturni yangilang.": "Вышла новая версия программы: {0}. Обновите программу.",
+    "Keyinroq": "Позже",
 }

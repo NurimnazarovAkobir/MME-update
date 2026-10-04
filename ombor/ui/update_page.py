@@ -87,6 +87,11 @@ class UpdatePage(QWidget):
         self._recheck.timeout.connect(self.check)
         self._recheck.start(RECHECK_INTERVAL_MS)
 
+    @property
+    def offered_version(self) -> str:
+        """Topilgan yangi versiya raqami; yo'q bo'lsa — bo'sh."""
+        return self._offer.version if self._offer else ""
+
     def refresh(self) -> None:
         self._show_state()
 

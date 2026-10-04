@@ -288,6 +288,8 @@ QProgressBar::chunk {{ background: {accent}; border-radius: 3px; }}
 #total {{ font-size: 12pt; font-weight: 600; }}
 
 #card {{ background: {surface}; border: 1px solid {border}; border-radius: 10px; }}
+#notice {{ background: {accent_soft}; border: none; border-bottom: 1px solid {accent}; }}
+#noticeText {{ font-weight: 600; }}
 #card[clickable="true"]:hover {{ border-color: {accent}; }}
 #cardTitle {{ color: {muted}; font-size: 10pt; }}
 #cardValue {{ font-size: 19pt; font-weight: 600; }}

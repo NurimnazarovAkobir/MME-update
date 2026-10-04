@@ -6,11 +6,13 @@ from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QFrame,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
     QStackedWidget,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
@@ -26,14 +28,15 @@ from .dashboard_page import DashboardPage, Destination
 from .debts_page import DebtsPage
 from .dialogs import MovementDialog, ProductDialog
 from .history_page import HistoryPage
-from .icons import Glyph, menu_icon
+from .icon import app_icon
+from .icons import Glyph, icon_label, menu_icon
 from .labels import LABELS
 from .movements_page import MovementsPage
 from .products_page import ProductsPage
 from .reports_page import ReportsPage
 from .settings_page import SettingsPage
 from .update_page import UpdatePage
-from .widgets import label
+from .widgets import button, label
 
 SIDEBAR_WIDTH = 250
 LOGO_SIZE = 48
@@ -42,6 +45,7 @@ MENU_ICON_SIZE = 20
 # Istalgan sahifadan yangi yozuv ochadigan tugmalar (bosh sahifadagi katta tugmalar yordam yozuvida ham bor).
 NEW_RECEIPT_KEY, NEW_ISSUE_KEY, NEW_PRODUCT_KEY = "F2", "F3", "F4"
 REFRESH_INTERVAL_MS = 10_000
+NOTIFICATION_MS = 15_000
 
 
 class MainWindow(QMainWindow):
@@ -88,8 +92,11 @@ class MainWindow(QMainWindow):
         if session.is_admin:
             pages.append((tr("Tarix"), Glyph.CLOCK, HistoryPage(self._warehouse), None))
         self._update_title = tr("Yangilash")
-        update_page = UpdatePage(services, session)
+        self._update_page = UpdatePage(services, session)
+        update_page = self._update_page
         update_page.availability_changed.connect(self._show_update_badge)
+        self._announced_version = ""  # shu versiya haqida Windows bildirishnomasi ko'rsatilgan
+        self._tray: QSystemTrayIcon | None = None
         self._update_row = len(pages)
         pages.append((self._update_title, Glyph.SYNC, update_page, None))
         pages.append((tr("Sozlamalar"), Glyph.SETTINGS, SettingsPage(services, session, db_path), None))
@@ -125,7 +132,12 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(sidebar_panel)
-        layout.addWidget(self._pages)
+        content = QVBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(0)
+        content.addWidget(self._build_update_notice())
+        content.addWidget(self._pages)
+        layout.addLayout(content)
         self.setCentralWidget(central)
 
         if session.can_add:
@@ -195,6 +207,52 @@ class MainWindow(QMainWindow):
         item = self._menu.item(self._update_row)
         item.setText(f"  {self._update_title}  ●" if available else f"  {self._update_title}")
         item.setToolTip(tr("Dasturning yangi versiyasi bor") if available else "")
+        version = self._update_page.offered_version
+        self._notice_text.setText(tr("Dasturning yangi versiyasi chiqdi: {0}. Dasturni yangilang.").format(version))
+        self._notice.setVisible(available)
+        if available and version != self._announced_version:
+            self._announced_version = version
+            self._notify_in_windows(self._notice_text.text())
+        elif not available and self._tray is not None:
+            self._tray.hide()
+
+    def _build_update_notice(self) -> QFrame:
+        """Sahifalar ustidagi yo'lak: qaysi bo'lim ochiq bo'lmasin, yangi versiya chiqqani ko'rinib turadi."""
+        self._notice = QFrame()
+        self._notice.setObjectName("notice")
+        self._notice_text = label("", "noticeText")
+        open_page = button(tr("Yangilash"), "primary")
+        open_page.clicked.connect(self._open_update_page)
+        later = button(tr("Keyinroq"), "link")
+        later.clicked.connect(self._notice.hide)
+        row = QHBoxLayout(self._notice)
+        row.setContentsMargins(24, 10, 24, 10)
+        row.setSpacing(12)
+        row.addWidget(icon_label(Glyph.SYNC, "iconAccent"))
+        row.addWidget(self._notice_text, stretch=1)
+        row.addWidget(open_page)
+        row.addWidget(later)
+        self._notice.hide()
+        return self._notice
+
+    def _open_update_page(self) -> None:
+        if self.isMinimized():
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self._menu.setCurrentRow(self._update_row)
+
+    def _notify_in_windows(self, text: str) -> None:
+        """Windows bildirishnomasi (ekran burchagida): dastur orqada turgan bo'lsa ham ko'rinadi."""
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        if self._tray is None:
+            self._tray = QSystemTrayIcon(app_icon(), self)
+            self._tray.setToolTip(APP_NAME)
+            self._tray.messageClicked.connect(self._open_update_page)
+            self._tray.activated.connect(lambda _reason: self._open_update_page())
+        self._tray.show()
+        self._tray.showMessage(APP_NAME, text, QSystemTrayIcon.MessageIcon.Information, NOTIFICATION_MS)
 
     def _open_destination(self, destination: Destination) -> None:
         self._menu.setCurrentRow(self._rows[destination])
