@@ -558,4 +558,5 @@ TRANSLATIONS = {
     "Dastur tili": "Язык программы",
     "O'zgartirilganda dastur shu tilda qayta ochiladi.": "При смене программа откроется заново на выбранном языке.",
     "{0}  ·  {1} ta yozuv": "{0}  ·  записей: {1}",
+    "Windows (Smart App Control) yangi versiyani ishga tushirishga ruxsat bermadi. Dastur o'zgarmadi — hozirgi versiyada ishlayverasiz.": "Windows (Smart App Control) не разрешил запуск новой версии. Программа не изменена — продолжайте работать в текущей версии.",
 }

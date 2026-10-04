@@ -26,6 +26,8 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+from ombor.update import can_run
+
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PY = ROOT / "ombor" / "config.py"
 SETTINGS = ROOT / "chiqarish.json"
@@ -34,6 +36,7 @@ EXE_NAME, VERSION_FILE = "MME-Ombor.exe", "versiya.txt"
 TEMPLATE = {"papkalar": ["sinov/yangilanish"], "github": {"repo": "", "token": ""}}
 GITHUB_API = "https://api.github.com"
 GITHUB_UPLOADS = "https://uploads.github.com"
+BUILD_ATTEMPTS = 5
 
 
 class ReleaseError(Exception):
@@ -165,6 +168,20 @@ def free_dist_exe(dist: Path = DIST) -> None:
         exe.replace(dist / f"MME-Ombor-ochiq-{datetime.now():%H%M%S}.exe")
 
 
+def build_runnable(attempts: int = BUILD_ATTEMPTS) -> None:
+    """Exe ni yig'adi va Windows uni ishga tushirishga ruxsat berishini tekshiradi.
+
+    Imzolanmagan exe ni Smart App Control ba'zan bloklaydi (har yig'ishda fayl boshqacha chiqadi),
+    shuning uchun bloklangan nusxa hech qachon tarqatilmaydi: qayta yig'iladi.
+    """
+    for attempt in range(1, attempts + 1):
+        run(["cmd", "/c", str(ROOT / "build.bat")], "Yig'ib bo'lmadi (dastur dist papkasidan ochiq bo'lsa, yoping).")
+        if can_run(DIST / EXE_NAME):
+            return
+        print(f"== Windows bu nusxani blokladi ({attempt}-urinish), qayta yig'ilmoqda")
+    raise ReleaseError(f"Windows {attempts} ta nusxaning hammasini blokladi. Birozdan keyin qayta urinib ko'ring.")
+
+
 def release(version: str | None, skip_tests: bool) -> str:
     settings = load_settings()
     old = current_version()
@@ -181,7 +198,7 @@ def release(version: str | None, skip_tests: bool) -> str:
             run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", "."], "Testlar o'tmadi.")
         print("== Yig'ish")
         free_dist_exe()
-        run(["cmd", "/c", str(ROOT / "build.bat")], "Yig'ib bo'lmadi (dastur dist papkasidan ochiq bo'lsa, yoping).")
+        build_runnable()
         if (DIST / VERSION_FILE).read_text(encoding="utf-8").strip() != new:
             raise ReleaseError("Yig'ilgan versiya kutilganidan boshqa chiqdi.")
     except BaseException:

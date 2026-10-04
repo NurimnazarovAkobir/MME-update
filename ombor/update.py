@@ -11,6 +11,7 @@ Yangi versiya uch yo'l bilan o'rnatiladi:
 import http.client
 import os
 import shutil
+import subprocess
 import sys
 import urllib.request
 from dataclasses import dataclass
@@ -25,6 +26,8 @@ UPDATE_FOLDER_KEY = "update_folder"
 EXE_NAME = "MME-Ombor.exe"
 VERSION_FILE = "versiya.txt"
 OLD_SUFFIX = "-eski.exe"
+TRIAL_ARGUMENT = "--sinov"  # bu bilan ochilgan dastur darhol yopiladi (main.py)
+TRIAL_TIMEOUT_SECONDS = 120
 UPDATE_URL_KEY = "update_url"
 CHECK_TIMEOUT_SECONDS = 6  # internet sekin yoki yo'q bo'lsa, tekshiruv shundan uzoq kutmaydi
 DOWNLOAD_TIMEOUT_SECONDS = 30
@@ -67,7 +70,26 @@ def is_installed_program() -> bool:
     return bool(getattr(sys, "frozen", False))
 
 
-def install(new_exe: Path | str, current_exe: Path | str | None = None) -> None:
+def can_run(exe: Path | str) -> bool:
+    """Windows shu faylni ishga tushirishga ruxsat beradimi.
+
+    Imzolanmagan dasturni Smart App Control ba'zan bloklaydi; bunday nusxani o'rnatib (yoki tarqatib)
+    bo'lmaydi — aks holda ishlab turgan dastur ochilmaydigan nusxa bilan almashib qoladi.
+    """
+    try:
+        process = subprocess.Popen([str(exe), TRIAL_ARGUMENT])
+    except OSError:
+        return False
+    try:
+        return process.wait(TRIAL_TIMEOUT_SECONDS) == 0
+    except subprocess.TimeoutExpired:
+        process.kill()  # eski nusxa sinov belgisini tushunmay ochilib qolgan: demak, ishga tushdi
+        return True
+
+
+def install(
+    new_exe: Path | str, current_exe: Path | str | None = None, verify: Callable[[Path], bool] = can_run
+) -> None:
     """Joriy exe ni `new_exe` bilan almashtiradi; eskisi yonida «-eski» nomi bilan qoladi.
 
     Ishlab turgan exe ni o'chirib bo'lmaydi, lekin nomini o'zgartirish mumkin — shuning uchun avval
@@ -79,6 +101,13 @@ def install(new_exe: Path | str, current_exe: Path | str | None = None) -> None:
         raise WarehouseError(tr("Yangi versiya fayli (MME-Ombor.exe) topilmadi."))
     if new_exe.resolve() == current.resolve():
         raise WarehouseError(tr("Bu — hozir ishlab turgan dasturning o'zi. Yangi versiya faylini tanlang."))
+    if not verify(new_exe):
+        raise WarehouseError(
+            tr(
+                "Windows (Smart App Control) yangi versiyani ishga tushirishga ruxsat bermadi. "
+                "Dastur o'zgarmadi — hozirgi versiyada ishlayverasiz."
+            )
+        )
     old = current.with_name(current.stem + OLD_SUFFIX)
     try:
         old.unlink(missing_ok=True)

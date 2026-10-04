@@ -248,12 +248,33 @@ class UpdateTests(FolderTestCase):
 
     def test_install_replaces_the_program_and_keeps_the_old_one_aside(self):
         self._publish("1.3")
-        update.install(self.updates / update.EXE_NAME, self.current)
+        update.install(self.updates / update.EXE_NAME, self.current, verify=lambda exe: True)
         self.assertEqual(self.current.read_bytes(), b"yangi versiya")
         old = self.current.with_name("MME-Ombor-eski.exe")
         self.assertEqual(old.read_bytes(), b"eski versiya")
         update.remove_old_version(self.current)
         self.assertFalse(old.exists())
+
+    def test_blocked_version_is_not_installed(self):
+        """Windows (Smart App Control) yangi nusxani ishga tushirmasa, hozirgi dastur joyida qoladi."""
+        self._publish("1.3")
+        with self.assertRaises(WarehouseError):
+            update.install(self.updates / update.EXE_NAME, self.current, verify=lambda exe: False)
+        self.assertEqual(self.current.read_bytes(), b"eski versiya")
+        self.assertFalse(self.current.with_name("MME-Ombor-eski.exe").exists())
+
+    def test_file_that_cannot_be_started_is_not_runnable(self):
+        self._publish("1.3")
+        self.assertFalse(update.can_run(self.updates / update.EXE_NAME))  # bu haqiqiy dastur emas
+        self.assertFalse(update.can_run(self.folder / "yoq.exe"))
+
+    def test_trial_start_exits_immediately(self):
+        import subprocess
+        import sys
+
+        main = Path(__file__).resolve().parent.parent / "main.py"
+        done = subprocess.run([sys.executable, str(main), update.TRIAL_ARGUMENT], timeout=30)
+        self.assertEqual(done.returncode, 0)
 
     def test_install_rejects_wrong_files(self):
         with self.assertRaises(WarehouseError):
