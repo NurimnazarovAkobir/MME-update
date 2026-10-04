@@ -7,12 +7,14 @@ Parol dasturga kirishni cheklaydi; ma'lumotlar fayli shifrlanmaydi.
 import hashlib
 import hmac
 import secrets
+from typing import Callable
 
 from .driver import sqlite3
 from .errors import WarehouseError
 from .i18n import tr
 from .models import Role, User
 from .settings import Settings
+from .vault import Vault
 
 MIN_PASSWORD_LENGTH = 4
 HASH_ITERATIONS = 200_000
@@ -48,9 +50,11 @@ def _normalize_code(code: str) -> str:
 
 
 class Auth:
-    def __init__(self, conn: sqlite3.Connection):
+    def __init__(self, conn: sqlite3.Connection, vault: Vault | None = None):
+        """`vault` — baza shifrlangan bo'lsa, har bir parol o'zgarishi kalit fayliga ham yoziladi."""
         self._conn = conn
         self._settings = Settings(conn)
+        self._vault = vault if vault is not None and vault.unlocked else None
 
     # --- Foydalanuvchilar --------------------------------------------------
 
@@ -71,7 +75,10 @@ class Auth:
                 )
         except sqlite3.IntegrityError as error:
             raise WarehouseError(tr("«{0}» ismli foydalanuvchi allaqachon bor.").format(name)) from error
-        return User(cursor.lastrowid, name, role)
+        user = User(cursor.lastrowid, name, role)
+        if self._vault:
+            self._vault.set_user(user, password)
+        return user
 
     def delete_user(self, user_id: int) -> None:
         remaining_admins = [user for user in self.users() if user.is_admin and user.id != user_id]
@@ -79,6 +86,8 @@ class Auth:
             raise WarehouseError(tr("Oxirgi rahbarni o'chirib bo'lmaydi: dasturni boshqaradigan odam qolmaydi."))
         with self._conn:
             self._conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        if self._vault:
+            self._vault.remove_user(user_id)
 
     # --- Parollar ----------------------------------------------------------
 
@@ -101,6 +110,8 @@ class Auth:
         _check_new_password(new)
         with self._conn:
             self._conn.execute("UPDATE users SET password = ? WHERE id = ?", (_make_hash(new), user_id))
+        if self._vault:
+            self._vault.set_user(next(user for user in self.users() if user.id == user_id), new)
 
     # --- Tiklash kodi ------------------------------------------------------
 
@@ -115,6 +126,8 @@ class Auth:
         ]
         code = "-".join(groups)
         self._settings.set(RECOVERY_KEY, _make_hash(_normalize_code(code)))
+        if self._vault:
+            self._vault.set_recovery_code(code)
         return code
 
     def reset_with_recovery_code(self, user_id: int, code: str, new: str) -> None:
@@ -123,3 +136,36 @@ class Auth:
         if not stored or not _matches(_normalize_code(code), stored):
             raise WarehouseError(tr("Tiklash kodi noto'g'ri."))
         self.set_password(user_id, new)
+
+
+class LockedAuth:
+    """Shifrlangan bazaga kirish: foydalanuvchilar ro'yxati kalit faylidan olinadi, baza parol to'g'ri bo'lgachgina ochiladi.
+
+    Kirish oynasi uchun `Auth` bilan bir xil ko'rinishda. Kirilgach, ochilgan ulanish — `conn`.
+    """
+
+    def __init__(self, vault: Vault, open_database: Callable[[str], sqlite3.Connection]):
+        """`open_database` — kalit bo'yicha bazaga ulanadigan funksiya."""
+        self._vault = vault
+        self._open = open_database
+        self.conn: sqlite3.Connection | None = None
+
+    def users(self) -> list[User]:
+        return self._vault.users()
+
+    def login(self, user_id: int, password: str) -> User:
+        key = self._vault.unlock(user_id, password)
+        self.conn = self.conn or self._open(key)
+        return Auth(self.conn, self._vault).login(user_id, password)
+
+    def has_recovery_code(self) -> bool:
+        return self._vault.has_recovery_code()
+
+    def new_recovery_code(self) -> str:
+        return Auth(self.conn, self._vault).new_recovery_code()
+
+    def reset_with_recovery_code(self, user_id: int, code: str, new: str) -> None:
+        """Tiklash kodi baza kalitini ochadi; yangi parol bazaga ham, kalit fayliga ham yoziladi."""
+        _check_new_password(new)
+        self.conn = self.conn or self._open(self._vault.unlock_with_code(code))
+        Auth(self.conn, self._vault).set_password(user_id, new)

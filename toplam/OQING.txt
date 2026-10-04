@@ -1,9 +1,25 @@
 MME Ombor - o'rnatish
 =====================
 
-1. MME-Ombor.exe ni to'g'ridan-to'g'ri ochish mumkin - o'rnatish shart emas.
-2. Yoki Ornatish.bat ni ikki marta bosing: dastur kompyuterga ko'chiriladi va
-   ish stolida "MME Ombor" yorlig'i paydo bo'ladi. Internet kerak emas.
+O'RNATISH
+  Ornatish.bat ni ikki marta bosing. Dastur kompyuterga ko'chiriladi, ish stolida va
+  "Pusk" menyusida "MME Ombor" yorlig'i paydo bo'ladi. Internet va administrator
+  huquqi kerak emas. (MME-Ombor.exe ni o'rnatmasdan to'g'ridan-to'g'ri ochish ham mumkin.)
+
+O'CHIRISH
+  Windows: Sozlamalar > Ilovalar > O'rnatilgan ilovalar > MME Ombor > O'chirish.
+  Ma'lumotlar (baza va zaxira nusxalar) o'chirilmaydi.
+
+YANGILASH
+  Dastur ichida: Sozlamalar > Dasturni yangilash > "Fayldan yangilash" va yangi
+  MME-Ombor.exe ni ko'rsating. Yoki yangi to'plamdagi Ornatish.bat ni qayta ishga tushiring.
+  Ma'lumotlar saqlanib qoladi.
+
+BIR NECHTA KOMPYUTERDA ISHLASH
+  1. Asosiy kompyuterda: Sozlamalar > "Bazani umumiy papkaga ko'chirish" (tarmoqdagi papka).
+  2. Qolgan kompyuterlarda dasturni o'rnating va kirish oynasida
+     "Tarmoqdagi bazaga ulanish" ni bosib, o'sha papkani ko'rsating.
+  Hamma kompyuterda dastur versiyasi bir xil bo'lishi kerak.
 
 Talablar: Windows 10 yoki 11 (64-bit).
 

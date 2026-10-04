@@ -4,7 +4,7 @@ from .i18n import tr
 from .paths import BACKUP_DIR, DATA_DIR, DB_PATH  # noqa: F401 — boshqa modullar shu yerdan oladi
 
 APP_NAME = "MME Ombor"
-APP_VERSION = "1.1"
+APP_VERSION = "1.2"
 
 UNITS = (tr("dona"), tr("kg"), tr("tonna"), tr("metr"), tr("m²"), tr("list"), tr("litr"), tr("komplekt"), tr("quti"))
 CURRENCY = tr("so'm")

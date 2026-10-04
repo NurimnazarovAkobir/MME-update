@@ -23,17 +23,28 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import update
 from ..backup import AUTO_COPIES_KEPT
 from ..config import APP_NAME, APP_VERSION
+from ..driver import sqlite3
 from ..errors import WarehouseError
 from ..i18n import tr
 from ..models import User
 from ..services import Services
 from ..session import Session
+from ..update import UPDATE_FOLDER_KEY
 from . import theme
-from .auth_dialogs import ROLES_HINT, ChangePasswordDialog, ResetPasswordDialog, UserDialog, show_new_recovery_code
+from .auth_dialogs import (
+    ROLES_HINT,
+    ChangePasswordDialog,
+    PasswordDialog,
+    ResetPasswordDialog,
+    UserDialog,
+    show_new_recovery_code,
+    show_recovery_code,
+)
 from .extra_dialogs import GroupsDialog, NameDialog
-from .language import language_box
+from .language import language_box, restart_application
 from .widgets import Column, DataTable, button, card, confirm, label
 
 THEME_KEY = "theme"
@@ -81,6 +92,9 @@ class SettingsPage(QWidget):
         self._stores = DataTable((Column(tr("Ombor nomi")),))
         self._stores.setFixedHeight(USERS_TABLE_HEIGHT)
         self._groups = services.groups
+        self._prefs = services.prefs
+        self._vault = services.vault
+        self._conn = services.conn
         self._backup_status = _text("", "muted")
 
         content = QWidget()
@@ -96,6 +110,10 @@ class SettingsPage(QWidget):
             cards.addWidget(self._stores_card())
             cards.addWidget(self._users_card())
             cards.addWidget(self._backup_card())
+            cards.addWidget(self._network_card())
+            if self._vault is not None:
+                cards.addWidget(self._encryption_card())
+            cards.addWidget(self._update_card())
         cards.addWidget(self._about_card())
         cards.addStretch()
 
@@ -121,7 +139,7 @@ class SettingsPage(QWidget):
         themes = QComboBox()
         for name, palette in theme.PALETTES.items():
             themes.addItem(palette.title, name)
-        themes.setCurrentIndex(max(themes.findData(self._settings.get(THEME_KEY, theme.DEFAULT_THEME)), 0))
+        themes.setCurrentIndex(max(themes.findData(self._prefs.get(THEME_KEY, theme.DEFAULT_THEME)), 0))
         themes.currentIndexChanged.connect(lambda: self._change_theme(themes.currentData()))
         themes.setFixedWidth(220)
         return card(
@@ -129,11 +147,11 @@ class SettingsPage(QWidget):
             _text(tr("Dastur fonini tanlang.")),
             themes,
             _text(tr("Dastur tili. O'zgartirilganda dastur shu tilda qayta ochiladi.")),
-            language_box(self._settings),
+            language_box(self._prefs),
         )
 
     def _change_theme(self, name: str) -> None:
-        self._settings.set(THEME_KEY, name)
+        self._prefs.set(THEME_KEY, name)
         theme.apply(QApplication.instance(), name)
 
     def _account_card(self) -> QFrame:
@@ -264,6 +282,195 @@ class SettingsPage(QWidget):
                 _action(tr("Papkani ochish"), self._open_backup_folder),
             ),
         )
+
+    # --- Tarmoqda ishlash --------------------------------------------------
+
+    def _network_card(self) -> QFrame:
+        buttons = [
+            _action(tr("Bazani umumiy papkaga ko'chirish"), self._share_database, "primary"),
+            _action(tr("Umumiy papkadagi bazaga ulanish"), self._join_database),
+        ]
+        if self._prefs.uses_shared_folder:
+            buttons.append(_action(tr("Shu kompyuterdagi bazaga qaytish"), self._use_local_database))
+        return card(
+            label(tr("Tarmoqda bir nechta kompyuterda ishlash"), "sectionTitle"),
+            _text(
+                tr(
+                    "Baza tarmoqdagi umumiy papkaga qo'yilsa, bir nechta kompyuter bir vaqtda ishlay oladi: "
+                    "asosiy kompyuterda bazani umumiy papkaga ko'chiring, qolganlarida shu papkaga ulaning. "
+                    "Barcha kompyuterlarda dastur versiyasi bir xil bo'lishi kerak. Har bir kompyuter zaxira "
+                    "nusxani o'zida ham saqlaydi."
+                )
+            ),
+            _text(tr("Baza papkasi: {0}").format(self._db_path.parent), "muted"),
+            _button_row(*buttons),
+        )
+
+    def _choose_shared_folder(self) -> Path | None:
+        folder = QFileDialog.getExistingDirectory(self, tr("Umumiy papka"), str(self._db_path.parent))
+        return Path(folder) if folder else None
+
+    def _restart_with_folder(self, folder: Path | None, message: str) -> None:
+        self._prefs.use_folder(folder)
+        QMessageBox.information(self, tr("Tarmoqda ishlash"), message)
+        restart_application()
+
+    def _share_database(self) -> None:
+        folder = self._choose_shared_folder()
+        if folder is None:
+            return
+        if self._prefs.has_database(folder):
+            QMessageBox.warning(
+                self,
+                tr("Tarmoqda ishlash"),
+                tr("Bu papkada baza allaqachon bor. Unga ulanish uchun «Umumiy papkadagi bazaga ulanish»ni bosing."),
+            )
+            return
+        try:
+            self._backup.save_to(folder / self._db_path.name)
+        except (OSError, sqlite3.Error):
+            QMessageBox.warning(self, tr("Tarmoqda ishlash"), tr("Bu papkaga yozib bo'lmadi. Boshqa papkani tanlang."))
+            return
+        self._restart_with_folder(
+            folder,
+            tr("Baza ko'chirildi:\n{0}\n\nDastur qayta ochiladi. Boshqa kompyuterlarda shu papkaga ulaning.").format(
+                folder
+            ),
+        )
+
+    def _join_database(self) -> None:
+        folder = self._choose_shared_folder()
+        if folder is None:
+            return
+        if not self._prefs.has_database(folder):
+            QMessageBox.warning(self, tr("Tarmoqda ishlash"), tr("Bu papkada baza (ombor.db) topilmadi."))
+            return
+        question = tr(
+            "Dastur shu papkadagi bazadan ishlaydi. Hozirgi (shu kompyuterdagi) ma'lumotlar o'chirilmaydi, "
+            "lekin ko'rinmay qoladi.\n\nDavom etilsinmi?"
+        )
+        if confirm(self, tr("Tarmoqda ishlash"), question, tr("Ha, ulanish")):
+            self._restart_with_folder(folder, tr("Dastur qayta ochiladi va umumiy bazaga ulanadi."))
+
+    def _use_local_database(self) -> None:
+        question = tr("Dastur yana shu kompyuterdagi bazadan ishlaydi. Umumiy bazaga tegilmaydi.\n\nDavom etilsinmi?")
+        if confirm(self, tr("Tarmoqda ishlash"), question, tr("Ha, qaytish")):
+            self._restart_with_folder(None, tr("Dastur qayta ochiladi."))
+
+    # --- Shifrlash ---------------------------------------------------------
+
+    def _encryption_card(self) -> QFrame:
+        is_on = self._vault.enabled
+        status = (
+            tr("Hozir: baza shifrlangan. Kalit fayli: {0}").format(self._vault.path)
+            if is_on
+            else tr("Hozir: baza shifrlanmagan — faylni boshqa dastur bilan ochish mumkin.")
+        )
+        toggle = (
+            _action(tr("Shifrlashni o'chirish"), self._disable_encryption, "danger")
+            if is_on
+            else _action(tr("Bazani shifrlash"), self._enable_encryption, "primary")
+        )
+        return card(
+            label(tr("Bazani shifrlash"), "sectionTitle"),
+            _text(
+                tr(
+                    "Shifrlangan bazani parolsiz hech qanday dastur o'qiy olmaydi. Diqqat: parol ham, tiklash kodi "
+                    "ham yo'qolsa, ma'lumotlarni hech kim tiklay olmaydi. Zaxira nusxalar ham shifrlanadi va "
+                    "yonida kalit fayli (.kalit) bilan saqlanadi — ikkalasini birga saqlang."
+                )
+            ),
+            _text(status, "muted"),
+            _button_row(toggle),
+        )
+
+    def _enable_encryption(self) -> None:
+        question = tr(
+            "Baza shifrlanadi va dastur qayta ochiladi.\n\n"
+            "• Boshqa kompyuterlarda dastur yopiq bo'lishi kerak.\n"
+            "• Sizga yangi tiklash kodi beriladi — uni albatta yozib oling.\n"
+            "• Boshqa foydalanuvchilar kira olishi uchun ularning parolini «Parolini almashtirish» bilan "
+            "qayta o'rnatasiz.\n\nDavom etilsinmi?"
+        )
+        if not confirm(self, tr("Bazani shifrlash"), question, tr("Ha, shifrlash")):
+            return
+        dialog = PasswordDialog(self._auth, self._user, self)
+        if not dialog.exec():
+            return
+        code = self._auth.new_recovery_code()
+        try:
+            self._vault.encrypt(self._conn, self._user, dialog.password, code)
+        except (WarehouseError, OSError, sqlite3.Error) as error:
+            QMessageBox.warning(self, tr("Bazani shifrlash"), tr("Shifrlab bo'lmadi: {0}").format(error))
+            return
+        show_recovery_code(code, self)
+        restart_application()
+
+    def _disable_encryption(self) -> None:
+        question = tr(
+            "Baza oddiy (shifrlanmagan) holatga qaytariladi va dastur qayta ochiladi. Boshqa kompyuterlarda "
+            "dastur yopiq bo'lishi kerak.\n\nDavom etilsinmi?"
+        )
+        if not confirm(self, tr("Bazani shifrlash"), question, tr("Ha, o'chirish")):
+            return
+        try:
+            self._vault.decrypt(self._conn)
+        except (WarehouseError, OSError, sqlite3.Error) as error:
+            QMessageBox.warning(self, tr("Bazani shifrlash"), tr("Shifrlashni o'chirib bo'lmadi: {0}").format(error))
+            return
+        restart_application()
+
+    # --- Yangilash ---------------------------------------------------------
+
+    def _update_card(self) -> QFrame:
+        self._update_status = _text("", "muted")
+        self._show_update_folder()
+        return card(
+            label(tr("Dasturni yangilash"), "sectionTitle"),
+            _text(
+                tr(
+                    "Yangi versiya faylini (MME-Ombor.exe) ko'rsating — dastur o'zini almashtirib, qayta ochiladi; "
+                    "ma'lumotlar saqlanib qoladi. Yoki yangilanishlar papkasini belgilang: u yerga yangi "
+                    "MME-Ombor.exe va versiya.txt qo'yilsa, har bir kompyuter ochilganda yangilashni o'zi taklif qiladi."
+                )
+            ),
+            self._update_status,
+            _button_row(
+                _action(tr("Fayldan yangilash"), self._update_from_file, "primary"),
+                _action(tr("Yangilanishlar papkasini tanlash"), self._choose_update_folder),
+            ),
+        )
+
+    def _show_update_folder(self) -> None:
+        folder = self._settings.get(UPDATE_FOLDER_KEY)
+        self._update_status.setText(
+            tr("Joriy versiya: {0}  ·  yangilanishlar papkasi: {1}").format(APP_VERSION, folder or tr("tanlanmagan"))
+        )
+
+    def _choose_update_folder(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self, tr("Yangilanishlar papkasi"), self._settings.get(UPDATE_FOLDER_KEY)
+        )
+        if folder:
+            self._settings.set(UPDATE_FOLDER_KEY, folder)
+            self._show_update_folder()
+
+    def _update_from_file(self) -> None:
+        if not update.is_installed_program():
+            QMessageBox.information(
+                self, tr("Dasturni yangilash"), tr("Yangilash faqat o'rnatilgan dasturda (exe) ishlaydi.")
+            )
+            return
+        path, _ = QFileDialog.getOpenFileName(self, tr("Yangi versiya fayli"), "", tr("Dastur (*.exe)"))
+        if not path:
+            return
+        try:
+            update.install(path)
+        except WarehouseError as error:
+            QMessageBox.warning(self, tr("Dasturni yangilash"), str(error))
+            return
+        QMessageBox.information(self, tr("Dasturni yangilash"), tr("Yangi versiya o'rnatildi. Dastur qayta ochiladi."))
+        restart_application()
 
     def _describe_backups(self) -> str:
         lines = [tr("Ma'lumotlar fayli: {0}").format(self._db_path)]

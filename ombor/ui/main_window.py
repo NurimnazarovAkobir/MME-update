@@ -2,9 +2,10 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import APP_NAME, APP_VERSION
+from ..driver import sqlite3
 from ..i18n import tr
 from ..models import MovementKind
 from ..services import Services
@@ -38,6 +40,7 @@ LOGO_TEXT = "MME"
 MENU_ICON_SIZE = 20
 # Istalgan sahifadan yangi yozuv ochadigan tugmalar (bosh sahifadagi katta tugmalar yordam yozuvida ham bor).
 NEW_RECEIPT_KEY, NEW_ISSUE_KEY, NEW_PRODUCT_KEY = "F2", "F3", "F4"
+REFRESH_INTERVAL_MS = 10_000
 
 
 class MainWindow(QMainWindow):
@@ -124,6 +127,28 @@ class MainWindow(QMainWindow):
             QShortcut(QKeySequence(NEW_ISSUE_KEY), self, lambda: self._new_movement(MovementKind.OUT))
             QShortcut(QKeySequence(NEW_PRODUCT_KEY), self, self._new_product)
         self._menu.setCurrentRow(0)
+
+        # Tarmoqda boshqa kompyuter bazani o'zgartirsa, ochiq sahifa o'zi yangilanadi.
+        self._conn = services.conn
+        self._data_version = self._read_data_version()
+        self._watcher = QTimer(self)
+        self._watcher.timeout.connect(self._refresh_if_changed_elsewhere)
+        self._watcher.start(REFRESH_INTERVAL_MS)
+
+    def _read_data_version(self) -> int:
+        """Bazani boshqa ulanish (boshqa kompyuter) o'zgartirganda o'zgaradigan son."""
+        return self._conn.execute("PRAGMA data_version").fetchone()[0]
+
+    def _refresh_if_changed_elsewhere(self) -> None:
+        if QApplication.activeModalWidget() is not None:
+            return  # oyna ochiq turganda jadval ostidan o'zgarib ketmasin
+        try:
+            version = self._read_data_version()
+        except sqlite3.Error:
+            return  # tarmoq vaqtincha uzilgan yoki baza band — keyingi safar
+        if version != self._data_version:
+            self._data_version = version
+            self._refresh_current()
 
     @staticmethod
     def _brand(session: Session) -> QHBoxLayout:

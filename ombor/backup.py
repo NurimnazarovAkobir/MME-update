@@ -4,12 +4,14 @@ import shutil
 from datetime import date, datetime
 from pathlib import Path
 
-from .database import prepare
+from . import catalog
+from .database import open_raw, prepare, schema_version
 from .driver import sqlite3
 from .errors import WarehouseError
 from .i18n import tr
 from .migrations import SCHEMA_VERSION
 from .settings import Settings
+from .vault import KEY_SUFFIX, Vault
 
 REQUIRED_TABLES = {"products", "movements"}
 # Tiklashda joriy holicha qoladigan jadvallar: eski zaxira dasturni eski yoki
@@ -20,16 +22,17 @@ AUTO_FILE_PATTERN = "ombor-????-??-??.db"
 AUTO_COPIES_KEPT = 30
 
 
-def copy_before_upgrade(db_path: Path, folder: Path) -> Path | None:
+def copy_before_upgrade(db_path: Path, folder: Path, key: str | None = None) -> Path | None:
     """Baza eski versiyada bo'lsa, yangi versiyaga o'tkazishdan oldin faylning nusxasini saqlaydi.
 
-    Bazaga ulanishdan (ya'ni o'tkazishdan) oldin chaqiriladi. Nusxa olingan bo'lsa, uning yo'lini qaytaradi.
+    Bazaga ulanishdan (ya'ni o'tkazishdan) oldin chaqiriladi; `key` — shifrlangan baza kaliti.
+    Nusxa olingan bo'lsa, uning yo'lini qaytaradi.
     """
     if not db_path.exists():
         return None
-    conn = sqlite3.connect(db_path)
+    conn = open_raw(db_path, key)
     try:
-        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        version = schema_version(conn)
     finally:
         conn.close()
     if version >= SCHEMA_VERSION:
@@ -40,36 +43,56 @@ def copy_before_upgrade(db_path: Path, folder: Path) -> Path | None:
     return target
 
 
+def _check_tables(source: sqlite3.Connection) -> None:
+    tables = {row[0] for row in source.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if not REQUIRED_TABLES <= tables:
+        raise WarehouseError(tr("Bu fayl ombor dasturining zaxira nusxasi emas."))
+
+
 class Backup:
-    def __init__(self, conn: sqlite3.Connection, auto_folder: Path):
-        """`auto_folder` — avtomatik nusxalar har doim yoziladigan papka."""
+    def __init__(self, conn: sqlite3.Connection, auto_folder: Path, vault: Vault | None = None):
+        """`auto_folder` — avtomatik nusxalar har doim yoziladigan papka.
+
+        Baza shifrlangan bo'lsa (`vault`), nusxalar ham shu kalit bilan shifrlanadi va
+        har birining yoniga kalit fayli (`.kalit`) qo'yiladi.
+        """
         self._conn = conn
         self._settings = Settings(conn)
+        self._vault = vault if vault is not None and vault.unlocked else None
         self.auto_folder = auto_folder
+
+    @property
+    def _key(self) -> str | None:
+        return self._vault.key if self._vault else None
 
     # --- Qo'lda ------------------------------------------------------------
 
     def save_to(self, path: Path | str) -> None:
-        target = sqlite3.connect(path)
+        Path(path).unlink(missing_ok=True)  # eski nusxa boshqa kalit bilan yozilgan bo'lishi mumkin
+        target = open_raw(path, self._key)
         try:
             self._conn.backup(target)
         finally:
             target.close()
+        if self._vault:
+            self._vault.copy_key_file(Path(path).with_suffix(KEY_SUFFIX))
 
     def restore_from(self, path: Path | str) -> None:
         """Mahsulot va yozuvlarni zaxira fayldagilar bilan almashtiradi; foydalanuvchilar va sozlamalar qoladi."""
         preserved = {table: self._dump(table) for table in PRESERVED_TABLES}
-        source = sqlite3.connect(path)
+        converted = Path(str(path) + ".shifrlangan")  # ochiq nusxani shifrlangan bazaga tiklashda kerak bo'ladi
         try:
-            tables = {row[0] for row in source.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-            if not REQUIRED_TABLES <= tables:
-                raise WarehouseError(tr("Bu fayl ombor dasturining zaxira nusxasi emas."))
-            source.backup(self._conn)
+            source = self._open_source(Path(path), converted)
+            try:
+                source.backup(self._conn)
+            finally:
+                source.close()
         except sqlite3.DatabaseError as error:
             raise WarehouseError(tr("Faylni o'qib bo'lmadi: u zaxira nusxa emas yoki buzilgan.")) from error
         finally:
-            source.close()
+            converted.unlink(missing_ok=True)
         prepare(self._conn)
+        catalog.load(self._conn)
         with self._conn:
             for table, rows in preserved.items():
                 self._conn.execute(f"DELETE FROM {table}")
@@ -78,6 +101,32 @@ class Backup:
                     self._conn.execute(
                         f"INSERT INTO {table} ({', '.join(row.keys())}) VALUES ({placeholders})", tuple(row)
                     )
+
+    def _open_source(self, path: Path, converted: Path) -> sqlite3.Connection:
+        """Zaxira faylni joriy baza bilan bir xil kalitda ochadi.
+
+        Shifrlangan bazaga ochiq (shifrlash yoqilishidan oldingi) nusxa tiklanayotgan bo'lsa,
+        u avval `converted` fayliga shu kalit bilan ko'chiriladi.
+        """
+        source = open_raw(path, self._key)
+        try:
+            _check_tables(source)
+            return source
+        except sqlite3.DatabaseError:
+            source.close()
+            if self._key is None:
+                raise
+        plain = open_raw(path)
+        try:
+            _check_tables(plain)
+            converted.unlink(missing_ok=True)
+            plain.execute(f"ATTACH DATABASE ? AS copy KEY \"x'{self._key}'\"", (str(converted),))
+            plain.execute("SELECT sqlcipher_export('copy')")
+            plain.execute(f"PRAGMA copy.user_version = {schema_version(plain)}")
+            plain.execute("DETACH DATABASE copy")
+        finally:
+            plain.close()
+        return open_raw(converted, self._key)
 
     # --- Avtomatik ---------------------------------------------------------
 
@@ -105,6 +154,7 @@ class Backup:
                 self.save_to(folder / name)
                 for old in sorted(folder.glob(AUTO_FILE_PATTERN))[:-AUTO_COPIES_KEPT]:
                     old.unlink()
+                    old.with_suffix(KEY_SUFFIX).unlink(missing_ok=True)
             except (OSError, sqlite3.Error):
                 continue
             written.append(folder / name)

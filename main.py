@@ -3,10 +3,11 @@
 import sys
 
 from ombor import i18n
-from ombor.paths import DB_PATH
+from ombor.paths import DB_PATH, read_prefs
 
 # Til boshqa modullar yuklanishidan oldin o'rnatiladi: ulardagi matnlar yuklanish paytida tarjima qilinadi.
-i18n.set_language(i18n.stored_language(DB_PATH))
+# Til shu kompyuterning shaxsiy sozlamasida turadi; oldingi versiyalarda u bazada saqlangan.
+i18n.set_language(read_prefs().get(i18n.LANGUAGE_KEY) or i18n.stored_language(DB_PATH))
 
 from ombor.app import run  # noqa: E402
 

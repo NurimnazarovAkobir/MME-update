@@ -7,13 +7,13 @@ from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import QApplication, QComboBox
 
 from .. import i18n
-from ..settings import Settings
+from ..local import LocalPrefs
 
 LANGUAGE_LABEL = "Til / Язык"  # til hali tanlanmagan foydalanuvchi ham tushunishi uchun ikki tilda
 LANGUAGE_BOX_WIDTH = 220
 
 
-def language_box(settings: Settings) -> QComboBox:
+def language_box(settings: LocalPrefs) -> QComboBox:
     """Tillar ro'yxati; boshqa til tanlansa, dastur o'sha tilda qayta ochiladi."""
     box = QComboBox()
     for code, name in i18n.LANGUAGES.items():
@@ -24,7 +24,7 @@ def language_box(settings: Settings) -> QComboBox:
     return box
 
 
-def _switch(settings: Settings, code: str) -> None:
+def _switch(settings: LocalPrefs, code: str) -> None:
     if code == i18n.language():
         return
     settings.set(i18n.LANGUAGE_KEY, code)

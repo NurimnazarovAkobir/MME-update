@@ -1,16 +1,18 @@
 """Kirish, parol va foydalanuvchi oynalari."""
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QComboBox, QLineEdit, QMessageBox, QWidget
+from PySide6.QtWidgets import QComboBox, QFileDialog, QLineEdit, QMessageBox, QPushButton, QWidget
 
 from ..auth import Auth
 from ..config import APP_NAME
 from ..errors import WarehouseError
 from ..i18n import tr
+from ..local import LocalPrefs
 from ..models import Role, User
-from ..settings import Settings
 from .dialogs import FormDialog
-from .language import LANGUAGE_LABEL, language_box
+from .language import LANGUAGE_LABEL, language_box, restart_application
 from .widgets import button, label
 
 DEFAULT_ADMIN_NAME = tr("Rahbar")
@@ -21,7 +23,7 @@ ROLES_HINT = tr(
 )
 
 
-def sign_in(auth: Auth, settings: Settings) -> User | None:
+def sign_in(auth: Auth, settings: LocalPrefs) -> User | None:
     """Dastur ochilganda: birinchi marta — rahbar hisobini yaratadi, keyin — parol so'raydi.
 
     Rahbar kirganda tiklash kodi hali yaratilmagan bo'lsa, yaratib ko'rsatadi.
@@ -36,12 +38,16 @@ def sign_in(auth: Auth, settings: Settings) -> User | None:
 
 
 def show_new_recovery_code(auth: Auth, parent: QWidget | None = None) -> None:
+    show_recovery_code(auth.new_recovery_code(), parent)
+
+
+def show_recovery_code(code: str, parent: QWidget | None = None) -> None:
     box = QMessageBox(QMessageBox.Icon.Information, tr("Parolni tiklash kodi"), "", parent=parent)
     box.setText(
         tr(
             "Parolni tiklash kodi:\n\n{0}\n\nUni qog'ozga yozib, ishonchli joyda saqlang. Parol "
             "unutilsa, faqat shu kod bilan yangi parol o'rnatish mumkin. Kod boshqa ko'rsatilmaydi."
-        ).format(auth.new_recovery_code())
+        ).format(code)
     )
     box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     box.addButton(tr("Yozib oldim"), QMessageBox.ButtonRole.AcceptRole)
@@ -52,6 +58,42 @@ def _password_input() -> QLineEdit:
     widget = QLineEdit()
     widget.setEchoMode(QLineEdit.EchoMode.Password)
     return widget
+
+
+def _join_shared_database(prefs: LocalPrefs, parent: QWidget) -> None:
+    """Kirish oynasidan: boshqa kompyuter umumiy papkaga qo'ygan bazaga ulanish."""
+    folder = QFileDialog.getExistingDirectory(parent, tr("Umumiy papka"))
+    if not folder:
+        return
+    if not prefs.has_database(Path(folder)):
+        QMessageBox.warning(parent, APP_NAME, tr("Bu papkada baza (ombor.db) topilmadi."))
+        return
+    prefs.use_folder(Path(folder))
+    restart_application()
+
+
+def _network_button(prefs: LocalPrefs, parent: QWidget) -> QPushButton:
+    join = button(tr("Tarmoqdagi bazaga ulanish"))
+    join.setAutoDefault(False)
+    join.setToolTip(tr("Baza boshqa kompyuterda yoki umumiy papkada bo'lsa, shu papkani ko'rsating"))
+    join.clicked.connect(lambda: _join_shared_database(prefs, parent))
+    return join
+
+
+class PasswordDialog(FormDialog):
+    """Muhim amaldan oldin joriy foydalanuvchining parolini so'raydi; to'g'ri bo'lsa — `password` da."""
+
+    def __init__(self, auth: Auth, user: User, parent: QWidget | None = None):
+        super().__init__(tr("Parolingizni kiriting"), parent, save_text=tr("Davom etish"))
+        self._auth = auth
+        self._user = user
+        self.password = ""
+        self._input = _password_input()
+        self.form.addRow(tr("Parol"), self._input)
+
+    def save(self) -> None:
+        self._auth.login(self._user.id, self._input.text())
+        self.password = self._input.text()
 
 
 class _NewPasswordDialog(FormDialog):
@@ -75,7 +117,7 @@ class _NewPasswordDialog(FormDialog):
 class SetupDialog(_NewPasswordDialog):
     """Birinchi ishga tushirish: rahbar hisobini yaratadi."""
 
-    def __init__(self, auth: Auth, settings: Settings):
+    def __init__(self, auth: Auth, settings: LocalPrefs):
         super().__init__(APP_NAME, save_text=tr("Boshlash"))
         self._auth = auth
         self.user: User | None = None
@@ -86,13 +128,14 @@ class SetupDialog(_NewPasswordDialog):
         self.form.addRow(intro)
         self.form.addRow(tr("Ismingiz"), self._name)
         self.add_new_password_rows()
+        self.extra_buttons.addWidget(_network_button(settings, self))
 
     def save(self) -> None:
         self.user = self._auth.add_user(self._name.text(), self.new_password(), Role.ADMIN)
 
 
 class LoginDialog(FormDialog):
-    def __init__(self, auth: Auth, settings: Settings):
+    def __init__(self, auth: Auth, settings: LocalPrefs):
         super().__init__(APP_NAME, save_text=tr("Kirish"))
         self._auth = auth
         self.user: User | None = None
@@ -110,6 +153,7 @@ class LoginDialog(FormDialog):
         forgot.setAutoDefault(False)
         forgot.clicked.connect(self._recover)
         self.extra_buttons.addWidget(forgot)
+        self.extra_buttons.addWidget(_network_button(settings, self))
 
     def save(self) -> None:
         try:
