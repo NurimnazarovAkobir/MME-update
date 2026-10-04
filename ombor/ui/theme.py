@@ -446,6 +446,8 @@ QTableWidget::item {{ border-bottom: 1px solid {border}; }}
 QTableWidget::item:selected {{ background: {selection}; }}
 QHeaderView::section {{ background: transparent; color: {muted}; border-bottom: 1px solid {border}; }}
 #flatTable {{ background: transparent; border: none; }}
+QTableWidget {{ outline: none; }}  /* tanlangan katak atrofidagi oq ramka kerak emas */
+QTableWidget::item:focus {{ outline: none; border: none; border-bottom: 1px solid {border}; }}
 
 #sidebar::item {{ padding: 12px 12px; border-radius: 10px; border-left: 3px solid transparent; }}
 #sidebar::item:selected {{

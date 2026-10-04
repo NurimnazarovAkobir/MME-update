@@ -579,6 +579,11 @@ class DataTable(QTableWidget):
                 if is_flagged:
                     item.setBackground(QColor(theme.palette().warning_row))
                 self.setItem(row_index, column_index, item)
+        if self._offset:
+            # Sahifadagi hech bir qatorda tugma bo'lmasa (masalan, omborchi boshqalar yozuvini ko'rayotganda),
+            # bo'sh «Amallar» ustuni ko'rsatilmaydi.
+            has_buttons = any(item_id is not None and not is_locked for _, item_id, _, is_locked in shown)
+            self.setColumnHidden(0, not has_buttons)
         self._fit_columns()
         self.pages_changed.emit()
 
@@ -689,6 +694,8 @@ class DataTable(QTableWidget):
         else:
             flexible = [column for column in visible if self._is_text_column(column)]
             fixed = {column: content[column] for column in visible if column not in flexible}
+            if self._offset and 0 in fixed:
+                fixed[0] = widths[0]  # «Amallar» sarlavhasi kesilmasin
             room = available - sum(fixed.values())
             if flexible and room >= MIN_COLUMN_WIDTH * len(flexible):
                 # Matnli ustunlar mazmuniga qarab bo'linadi (sarlavhasi ikki qatorga sig'adi); ortgan joy teng ulashiladi.

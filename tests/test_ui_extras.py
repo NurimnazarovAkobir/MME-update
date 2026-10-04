@@ -206,6 +206,16 @@ class FitAndHistoryTests(UiTestCase):
         note = table.item(0, table.columnCount() - 2)
         self.assertEqual(note.toolTip(), "Bu yerda ancha uzun izoh yozilgan, u ustunga sig'maydi")
 
+    def test_actions_column_is_hidden_when_no_row_can_be_changed(self):
+        admin = self.page()
+        self.assertFalse(admin.table.isColumnHidden(0))
+        self.assertGreaterEqual(admin.table.columnWidth(0), admin.table.horizontalHeader().sectionSizeHint(0))
+        keeper = self.page(self.keeper)
+        self.assertFalse(keeper.table.isColumnHidden(0))  # o'zi bugun kiritgan yozuvi bor
+        keeper.search.setText("Truba")  # faqat rahbar kiritgan yozuv qoldi
+        self.assertEqual(keeper.table.total_rows(), 1)
+        self.assertTrue(keeper.table.isColumnHidden(0))
+
     def test_columns_nobody_filled_are_hidden(self):
         page = self.page()
         titles = {page.table.horizontalHeaderItem(c).text(): c for c in range(page.table.columnCount())}
