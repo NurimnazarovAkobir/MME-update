@@ -10,6 +10,7 @@ from PySide6.QtCore import QStandardPaths, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -23,13 +24,14 @@ from PySide6.QtWidgets import (
 )
 
 from ..backup import AUTO_COPIES_KEPT
+from ..config import APP_NAME, APP_VERSION
 from ..errors import WarehouseError
 from ..i18n import tr
 from ..models import User
 from ..services import Services
 from ..session import Session
 from . import theme
-from .auth_dialogs import ChangePasswordDialog, ResetPasswordDialog, UserDialog, show_new_recovery_code
+from .auth_dialogs import ROLES_HINT, ChangePasswordDialog, ResetPasswordDialog, UserDialog, show_new_recovery_code
 from .language import language_box
 from .widgets import Column, DataTable, button, card, confirm, label
 
@@ -67,6 +69,7 @@ class SettingsPage(QWidget):
         super().__init__()
         self.setObjectName("page")
         self._auth = services.auth
+        self._warehouse = services.warehouse
         self._backup = services.backup
         self._settings = services.settings
         self._session = session
@@ -85,8 +88,10 @@ class SettingsPage(QWidget):
         cards.addWidget(self._appearance_card())
         cards.addWidget(self._account_card())
         if session.is_admin:
+            cards.addWidget(self._rules_card())
             cards.addWidget(self._users_card())
             cards.addWidget(self._backup_card())
+        cards.addWidget(self._about_card())
         cards.addStretch()
 
         scroll = QScrollArea()
@@ -135,15 +140,42 @@ class SettingsPage(QWidget):
             _button_row(*buttons),
         )
 
+    def _rules_card(self) -> QFrame:
+        group_required = QCheckBox(tr("Kirim va chiqimda guruh tanlash majburiy"))
+        group_required.setChecked(self._warehouse.group_required)
+        group_required.toggled.connect(lambda checked: setattr(self._warehouse, "group_required", checked))
+        return card(
+            label(tr("Hisob qoidalari"), "sectionTitle"),
+            _text(tr("Yoqilsa, guruhsiz yozuv saqlanmaydi va hisobotda «(ko'rsatilmagan)» qatori chiqmaydi.")),
+            group_required,
+        )
+
+    def _about_card(self) -> QFrame:
+        lines = (
+            tr("F2 — yangi kirim, F3 — yangi chiqim, F4 — yangi mahsulot."),
+            tr("Jadvalda: ikki marta bosish — tahrirlash, Delete — o'chirish, ustun sarlavhasi — saralash."),
+            tr(
+                "O'chirilgan yozuvni rahbar «Tarix» bo'limida tiklaydi; u yerda kim nimani o'zgartirgani ham ko'rinadi."
+            ),
+            tr(
+                "Bir nakladnoydagi mahsulotlarni bir xil «Hujjat №» bilan «Saqlash va yana qo'shish» orqali "
+                "kiriting, keyin «Nakladnoy» tugmasi bilan chop eting."
+            ),
+            tr(
+                "Xizmat va xarajatlar (yuk tashish, ijara, kommunal) «Yangi mahsulot»da «Bu xizmat yoki xarajat» "
+                "belgisi bilan qo'shiladi va kirim qilib yoziladi — ular sof foydadan ayriladi."
+            ),
+        )
+        return card(
+            label(tr("Dastur haqida va qisqa yo'riqnoma"), "sectionTitle"),
+            _text(f"{APP_NAME} — {tr('Versiya {0}').format(APP_VERSION)}", "muted"),
+            *(_text(f"•  {line}") for line in lines),
+        )
+
     def _users_card(self) -> QFrame:
         return card(
             label(tr("Foydalanuvchilar"), "sectionTitle"),
-            _text(
-                tr(
-                    "Omborchi kirim, chiqim va mahsulot qo'shadi, hisobotlarni ko'radi. Tahrirlash, "
-                    "o'chirish, inventarizatsiya va sozlamalar faqat rahbarda."
-                )
-            ),
+            _text(ROLES_HINT),
             self._users,
             _button_row(
                 _action(tr("+ Yangi foydalanuvchi"), self._add_user, "primary"),
@@ -180,6 +212,12 @@ class SettingsPage(QWidget):
         for title, folder in folders:
             if folder is None:
                 lines.append(tr("{0}: tanlanmagan").format(title))
+                lines.append(
+                    tr(
+                        "⚠ Hozir barcha nusxalar shu kompyuterning o'zida. Disk buzilsa, ular ham yo'qoladi — "
+                        "fleshka yoki boshqa diskdagi papkani tanlang."
+                    )
+                )
                 continue
             last = self._backup.last_automatic(folder)
             status = (

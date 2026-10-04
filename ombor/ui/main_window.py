@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..config import APP_NAME
+from ..config import APP_NAME, APP_VERSION
 from ..i18n import tr
 from ..models import MovementKind
 from ..services import Services
@@ -22,6 +22,7 @@ from ..session import Session
 from . import theme
 from .dashboard_page import DashboardPage, Destination
 from .dialogs import MovementDialog, ProductDialog
+from .history_page import HistoryPage
 from .icons import Glyph, menu_icon
 from .labels import LABELS
 from .movements_page import MovementsPage
@@ -45,14 +46,17 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self.setMinimumSize(1100, 680)
         self._warehouse = services.warehouse
+        self._warehouse.actor = session.author  # o'zgarishlar tarixiga shu ism yoziladi
         self._session = session
 
-        dashboard = DashboardPage(self._warehouse, services.reports, services.analytics)
+        dashboard = DashboardPage(self._warehouse, services.reports, services.analytics, session.can_add)
         dashboard.movement_requested.connect(self._new_movement)
         dashboard.product_requested.connect(self._new_product)
         dashboard.page_requested.connect(self._open_destination)
+        self._products_page = ProductsPage(self._warehouse, session)
+        self._products_title = tr("Mahsulotlar")
         # (menyu nomi, belgi, sahifa, bosh sahifadan shu bo'limga o'tish kaliti)
-        pages = (
+        pages = [
             (tr("Bosh sahifa"), Glyph.HOME, dashboard, None),
             (
                 tr("Kirim"),
@@ -66,10 +70,12 @@ class MainWindow(QMainWindow):
                 MovementsPage(self._warehouse, LABELS[MovementKind.OUT], session),
                 Destination.ISSUES,
             ),
-            (tr("Mahsulotlar"), Glyph.PRODUCTS, ProductsPage(self._warehouse, session), Destination.PRODUCTS),
+            (self._products_title, Glyph.PRODUCTS, self._products_page, Destination.PRODUCTS),
             (tr("Hisobotlar"), Glyph.REPORTS, ReportsPage(services.reports, services.analytics), Destination.REPORTS),
-            (tr("Sozlamalar"), Glyph.SETTINGS, SettingsPage(services, session, db_path), None),
-        )
+        ]
+        if session.is_admin:
+            pages.append((tr("Tarix"), Glyph.CLOCK, HistoryPage(self._warehouse), None))
+        pages.append((tr("Sozlamalar"), Glyph.SETTINGS, SettingsPage(services, session, db_path), None))
 
         colors = theme.palette()
         self._pages = QStackedWidget()
@@ -85,6 +91,8 @@ class MainWindow(QMainWindow):
                 self._rows[destination] = row
         self._menu.currentRowChanged.connect(self._show_page)
 
+        version = label(tr("Versiya {0}").format(APP_VERSION), "firm")
+        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sidebar_panel = QWidget()
         sidebar_panel.setObjectName("sidebarPanel")
         sidebar_panel.setFixedWidth(SIDEBAR_WIDTH)
@@ -93,6 +101,7 @@ class MainWindow(QMainWindow):
         sidebar.setSpacing(18)
         sidebar.addLayout(self._brand(session))
         sidebar.addWidget(self._menu, stretch=1)
+        sidebar.addWidget(version)
 
         central = QWidget()
         layout = QHBoxLayout(central)
@@ -102,9 +111,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._pages)
         self.setCentralWidget(central)
 
-        QShortcut(QKeySequence(NEW_RECEIPT_KEY), self, lambda: self._new_movement(MovementKind.IN))
-        QShortcut(QKeySequence(NEW_ISSUE_KEY), self, lambda: self._new_movement(MovementKind.OUT))
-        QShortcut(QKeySequence(NEW_PRODUCT_KEY), self, self._new_product)
+        if session.can_add:
+            QShortcut(QKeySequence(NEW_RECEIPT_KEY), self, lambda: self._new_movement(MovementKind.IN))
+            QShortcut(QKeySequence(NEW_ISSUE_KEY), self, lambda: self._new_movement(MovementKind.OUT))
+            QShortcut(QKeySequence(NEW_PRODUCT_KEY), self, self._new_product)
         self._menu.setCurrentRow(0)
 
     @staticmethod
@@ -132,14 +142,26 @@ class MainWindow(QMainWindow):
         page = self._pages.widget(index)
         page.refresh()
         self._pages.setCurrentWidget(page)
+        self._update_attention_badge()
+
+    def _update_attention_badge(self) -> None:
+        """«Mahsulotlar» yonida kam qolgan yoki tugagan mahsulotlar soni — bosh sahifani band qilmaydigan eslatma."""
+        count = self._warehouse.attention_count()
+        item = self._menu.item(self._rows[Destination.PRODUCTS])
+        item.setText(f"  {self._products_title}  ⚠ {count}" if count else f"  {self._products_title}")
+        item.setToolTip(tr("{0} ta mahsulot kam qolgan yoki tugagan").format(count) if count else "")
 
     def _open_destination(self, destination: Destination) -> None:
         self._menu.setCurrentRow(self._rows[destination])
 
+    def _refresh_current(self) -> None:
+        self._pages.currentWidget().refresh()
+        self._update_attention_badge()
+
     def _new_movement(self, kind: MovementKind) -> None:
-        if MovementDialog(self._warehouse, LABELS[kind], self._session.author, parent=self).exec():
-            self._pages.currentWidget().refresh()
+        MovementDialog(self._warehouse, LABELS[kind], self._session.author, parent=self).exec()
+        self._refresh_current()  # oyna bekor qilinsa ham, «Saqlash va yana qo'shish» bilan yozilganlari bo'lishi mumkin
 
     def _new_product(self) -> None:
         if ProductDialog(self._warehouse, parent=self).exec():
-            self._pages.currentWidget().refresh()
+            self._refresh_current()

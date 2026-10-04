@@ -16,20 +16,31 @@ SEARCH_WIDTH = 220
 class ListPage(QWidget):
     """Jadval, qidiruv va «qo'shish / chop etish / Excel» tugmalari; tahrirlash va o'chirish — har bir qatorda.
 
-    Voris sinf `refresh`, `edit_dialog` va `delete_item` ni yozadi; qo'shimcha
-    tugma va filtrlarni sarlavha yonidagi `self.header_tools` qatoriga joylaydi.
-    Tahrirlash va o'chirish faqat `session` ruxsat bergan bo'lsa (rahbarga) ko'rinadi.
+    Voris sinf `refresh`, `edit_dialog` va `delete_item` ni yozadi; qo'shimcha filtrlarni sarlavha
+    yonidagi `self.header_tools` ga, qo'shimcha tugmalarni «qo'shish» yonidagi `self.toolbar_tools` ga joylaydi.
+    «Qo'shish» tugmasi kuzatuvchiga ko'rinmaydi. Qatordagi tugmalar `row_actions` yoqilgan bo'lsa chiqadi
+    (odatda — faqat rahbarga); aniq bir qatorni o'zgartirish mumkinligini `can_change` hal qiladi.
     Tahrirlash: qatordagi ✎ yoki ikki marta bosish. O'chirish: qatordagi ✕ yoki Delete tugmasi.
     """
 
     delete_question = tr("Bu yozuv o'chirilsinmi?")
+    locked_message = tr("Bu yozuvni faqat rahbar o'zgartira oladi.")
 
-    def __init__(self, title: str, new_action: str, columns: Sequence[Column], session: Session):
+    def __init__(
+        self,
+        title: str,
+        new_action: str,
+        columns: Sequence[Column],
+        session: Session,
+        row_actions: bool | None = None,
+    ):
         super().__init__()
         self.setObjectName("page")
         self._title = title
+        self.session = session
+        has_actions = session.can_modify if row_actions is None else row_actions
 
-        self.table = DataTable(columns, row_actions=session.can_modify)
+        self.table = DataTable(columns, row_actions=has_actions)
         self.search = QLineEdit()
         self.search.setPlaceholderText(tr("Qidirish…"))
         self.search.setClearButtonEnabled(True)
@@ -37,11 +48,14 @@ class ListPage(QWidget):
         self.search.textChanged.connect(self.refresh)
         self.footer = label("", "total")
 
+        self.toolbar_tools = QHBoxLayout()
         toolbar = QHBoxLayout()
-        add = button(new_action, "primary")
-        add.clicked.connect(lambda: self._open(None))
-        toolbar.addWidget(add)
-        if session.can_modify:
+        if session.can_add:
+            add = button(new_action, "primary")
+            add.clicked.connect(lambda: self._open(None))
+            toolbar.addWidget(add)
+        toolbar.addLayout(self.toolbar_tools)
+        if has_actions:
             self.table.edit_requested.connect(self._open)
             self.table.row_activated.connect(self._open)
             self.table.delete_requested.connect(self._delete)
@@ -78,6 +92,10 @@ class ListPage(QWidget):
     def delete_item(self, item_id: int) -> None:
         raise NotImplementedError
 
+    def can_change(self, item_id: int) -> bool:
+        """Joriy foydalanuvchi shu qatorni tahrirlashi yoki o'chirishi mumkinmi."""
+        return self.session.can_modify
+
     def export_title(self) -> str:
         """Chop etilgan varaq va Excel faylining sarlavhasi."""
         return self._title
@@ -89,11 +107,21 @@ class ListPage(QWidget):
             QMessageBox.information(self, self._title, tr("Avval jadvaldan kerakli qatorni tanlang."))
         return item_id
 
+    def _is_allowed(self, item_id: int) -> bool:
+        if self.can_change(item_id):
+            return True
+        QMessageBox.information(self, self._title, self.locked_message)
+        return False
+
     def _open(self, item_id: int | None) -> None:
-        if self.edit_dialog(item_id).exec():
-            self.refresh()
+        if item_id is not None and not self._is_allowed(item_id):
+            return
+        self.edit_dialog(item_id).exec()
+        self.refresh()  # oyna «Bekor qilish» bilan yopilsa ham, undan oldin saqlangan yozuvlar bo'lishi mumkin
 
     def _delete(self, item_id: int) -> None:
+        if not self._is_allowed(item_id):
+            return
         if not confirm(self, tr("O'chirish"), self.delete_question, tr("Ha, o'chirish")):
             return
         try:

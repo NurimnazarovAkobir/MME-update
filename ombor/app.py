@@ -3,7 +3,7 @@
 import sys
 import traceback
 
-from PySide6.QtCore import QLocale
+from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from . import i18n
@@ -35,11 +35,24 @@ def _show_unexpected_error(error_type, error, trace) -> None:
     box.exec()
 
 
+def _translate_standard_dialogs(app: QApplication) -> None:
+    """Qt ning o'z oynalari (chop etishni ko'rish, «Ha / Yo'q») ruschada rus tilida chiqadi.
+
+    Qt da o'zbekcha tarjima yo'q, shuning uchun o'zbek tilida ular inglizcha qoladi.
+    """
+    if i18n.language() != i18n.RUSSIAN:
+        return
+    translator = QTranslator(app)
+    if translator.load("qtbase_ru", QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)):
+        app.installTranslator(translator)
+
+
 def run() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setWindowIcon(app_icon())
     QLocale.setDefault(_LOCALES[i18n.language()])  # sana tanlagichdagi oy nomlari va son yozilishi
+    _translate_standard_dialogs(app)
     sys.excepthook = _show_unexpected_error
 
     copy_before_upgrade(DB_PATH, BACKUP_DIR)

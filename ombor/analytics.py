@@ -21,6 +21,12 @@ class ProfitSummary:
     below_cost_loss: float  # tannarxdan past sotilgan yozuvlardagi zarar
     shortage: float  # inventarizatsiya kamomadi
     internal_use: float  # sotuv narxisiz chiqimlar tannarxi
+    expenses: float  # xizmat va xarajatlar (xizmat turidagi mahsulotlarning kirimi)
+
+    @property
+    def net_profit(self) -> float:
+        """Sof foyda: sotuvdan foyda minus xizmat va xarajatlar."""
+        return self.profit - self.expenses
 
     @property
     def margin(self) -> float:
@@ -55,9 +61,11 @@ class Analytics:
                    COALESCE(SUM(profit), 0) AS profit,
                    COUNT(CASE WHEN sale_price > 0 THEN 1 END) AS sales_count,
                    COALESCE(SUM(CASE WHEN profit < 0 THEN -profit END), 0) AS below_cost_loss,
-                   COALESCE(SUM(CASE WHEN counterparty = ? THEN amount END), 0) AS shortage,
-                   COALESCE(SUM(CASE WHEN sale_price = 0 AND counterparty <> ? THEN amount END), 0) AS internal_use
-            FROM movement_details WHERE kind = 'OUT' AND {where}
+                   COALESCE(SUM(CASE WHEN kind = 'OUT' AND counterparty = ? THEN amount END), 0) AS shortage,
+                   COALESCE(SUM(CASE WHEN kind = 'OUT' AND sale_price = 0 AND counterparty <> ?
+                       THEN amount END), 0) AS internal_use,
+                   COALESCE(SUM(CASE WHEN kind = 'IN' AND is_service THEN amount END), 0) AS expenses
+            FROM movement_details WHERE {where}
             """,
             [INVENTORY_SHORTAGE, INVENTORY_SHORTAGE, *params],
         ).fetchone()

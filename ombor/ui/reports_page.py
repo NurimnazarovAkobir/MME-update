@@ -55,6 +55,7 @@ class ReportsPage(QWidget):
         self._amount_in = StatCard(tr("Kirim summasi"))
         self._amount_out = StatCard(tr("Chiqim (rasxod) summasi"))
         self._stock_value = StatCard(tr("Ombordagi mahsulot qiymati (hozir)"))
+        self._net_profit = StatCard(tr("Sof foyda"))
 
         self._report_tabs = self._build_report_tabs()
         self._tabs = QTabWidget()
@@ -74,7 +75,7 @@ class ReportsPage(QWidget):
 
         cards = QHBoxLayout()
         cards.setSpacing(14)
-        for stat in (self._amount_in, self._amount_out, self._stock_value):
+        for stat in (self._amount_in, self._amount_out, self._net_profit, self._stock_value):
             cards.addWidget(stat)
 
         layout = QVBoxLayout(self)
@@ -95,6 +96,13 @@ class ReportsPage(QWidget):
             fmt_money(totals.amount_out), tr("{0}  ·  {1} ta chiqim").format(CURRENCY, totals.count_out)
         )
         self._stock_value.set_value(fmt_money(self._reports.stock_value()), CURRENCY)
+        profit = self._analytics.summary(period)
+        self._net_profit.set_value(
+            fmt_money(profit.net_profit),
+            tr("sotuvdan foyda {0} − xizmat va xarajatlar {1}").format(
+                fmt_money(profit.profit), fmt_money(profit.expenses)
+            ),
+        )
         for index, tab in enumerate(self._report_tabs):
             self._tabs.widget(index).set_rows(tab.rows(period))
 

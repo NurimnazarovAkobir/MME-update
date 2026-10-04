@@ -13,11 +13,12 @@ kodini** ko'rsatadi — uni qog'ozga yozib qo'ying.
 | Bo'lim | Nima qiladi |
 |---|---|
 | **Bosh sahifa** | Uchta katta tugma (Kirim, Chiqim, Yangi mahsulot), asosiy raqamlar, diagramma, so'nggi amallar |
-| **Kirim** | Mahsulot kelishi: sana, miqdor, narx, guruh va kichik guruh, **kim olib keldi**, yetkazib beruvchi, izoh |
+| **Kirim** | Mahsulot kelishi: sana, hujjat raqami, miqdor, narx, guruh va kichik guruh, **kim olib keldi**, yetkazib beruvchi, izoh; nakladnoy chop etish |
 | **Chiqim** | Mahsulot chiqishi: sana, miqdor, **sotuv narxi** (bo'sh bo'lsa — ichki rasxod), guruh va kichik guruh, kim oldi, xaridor yoki obyekt |
-| **Mahsulotlar** | Mahsulot qo'shish (nomi, birligi, minimal qoldiq), joriy qoldiq, o'rtacha narx, qiymati, holati; inventarizatsiya; Exceldan yuklash |
+| **Mahsulotlar** | Mahsulot yoki xizmat qo'shish, joriy qoldiq, o'rtacha narx, qiymati, holati; «faqat kam qolganlar» filtri; inventarizatsiya varag'i; Exceldan yuklash. Menyuda kam qolgan mahsulotlar soni ko'rinadi |
 | **Hisobotlar** | Kunlik, haftalik, oylik, yillik yoki ixtiyoriy davr bo'yicha hisobotlar |
-| **Sozlamalar** | Fon, til, parol, foydalanuvchilar, zaxira nusxa |
+| **Tarix** | Faqat rahbarga: kim, qachon, nimani qo'shgan, o'zgartirgan, o'chirgan; o'chirilgan yozuvni tiklash |
+| **Sozlamalar** | Fon, til, parol, hisob qoidalari, foydalanuvchilar, zaxira nusxa, qisqa yo'riqnoma |
 
 Tahrirlash va o'chirish har bir qatorning boshida: **✎** — tahrirlash (yoki qatorni ikki marta bosish), **✕** — o'chirish (yoki Delete tugmasi; avval tasdiq so'raladi).
 
@@ -28,8 +29,9 @@ saralash. Har bir kirim/chiqim yonida uni **kim kiritgani** yoziladi.
 
 | Lavozim | Nima qila oladi |
 |---|---|
-| **Omborchi** | Kirim, chiqim va mahsulot qo'shadi; hisobotlarni ko'radi, chop etadi; o'z parolini o'zgartiradi |
-| **Rahbar** | Yuqoridagilar + tahrirlash, o'chirish, inventarizatsiya, foydalanuvchilar, zaxira nusxa |
+| **Kuzatuvchi** | Faqat ko'radi, chop etadi, Excelga chiqaradi (masalan, buxgalter) |
+| **Omborchi** | Kirim, chiqim va mahsulot qo'shadi; **o'zi bugun kiritgan** yozuvni tahrirlaydi yoki o'chiradi |
+| **Rahbar** | Hammasi: istalgan yozuvni tahrirlash va o'chirish, inventarizatsiya, tarix, foydalanuvchilar, zaxira nusxa |
 
 Omborchi parolini unutsa, rahbar «Sozlamalar»da yangisini o'rnatadi. Rahbar unutsa — kirish oynasidagi
 «Parolni unutdim» tugmasi va tiklash kodi orqali. Kod yo'qolgan bo'lsa, «Sozlamalar → Yangi tiklash kodi».
@@ -56,6 +58,18 @@ keyingi davrga o'tkazadi.
   O'tgan sanadagi yozuv tahrirlansa yoki o'chirilsa, undan keyingi chiqimlar qayta hisoblanadi.
 - **Inventarizatsiya**: sanalgan haqiqiy qoldiq kiritiladi; farqni dastur «Inventarizatsiya (ortiqcha)» kirimi
   yoki «Inventarizatsiya (kamomad)» chiqimi sifatida o'zi yozadi.
+
+- **Sana**: bugundan keyingi sana bilan yozuv kiritib bo'lmaydi.
+- **Guruh**: «Sozlamalar → Hisob qoidalari»da majburiy qilish mumkin.
+- **O'chirish**: yozuv bazadan yo'qolmaydi — hisobdan chiqadi va «Tarix → O'chirilgan yozuvlar»da turadi;
+  rahbar uni tiklashi mumkin (tiklash qoldiqni manfiy qilsa, rad etiladi).
+- **Tarix**: har bir qo'shish, tahrirlash, o'chirish va tiklash kim tomonidan va qachon qilingani bilan yoziladi.
+- **Xizmat va xarajatlar** (yuk tashish, ijara, kommunal): mahsulot oynasida «Bu xizmat yoki xarajat» belgisi.
+  Qoldig'i yuritilmaydi; kirimi xarajat bo'lib, «Hisobotlar»dagi **sof foyda**dan ayriladi
+  (sof foyda = sotuvdan foyda − xizmat va xarajatlar).
+- **Hujjat raqami**: bir nakladnoydagi mahsulotlar bir xil «Hujjat №» bilan «Saqlash va yana qo'shish» orqali
+  kiritiladi; «Nakladnoy» tugmasi sanasi va raqami bir xil yozuvlarni bitta varaqda chop etadi.
+- **Inventarizatsiya varag'i**: jadvaldagi barcha mahsulotlar bitta oynada; faqat o'zgartirilganlari tuzatiladi.
 
 ## Mahsulotlarni Exceldan yuklash
 
@@ -86,7 +100,7 @@ ombor/
   database.py        SQLite sxemasi
   migrations.py      eski bazani yangi versiyaga o'tkazish
   costing.py         chiqim tannarxi (sirpanuvchi o'rtacha narx)
-  warehouse.py       mahsulot, kirim, chiqim, inventarizatsiya
+  warehouse.py       mahsulot, kirim, chiqim, inventarizatsiya, o'zgarishlar tarixi
   reports.py         statistika so'rovlari
   auth.py            foydalanuvchilar, parollar, tiklash kodi
   analytics.py       foyda va zarar hisob-kitobi
@@ -98,7 +112,7 @@ ombor/
   excel_import.py    mahsulotlarni Exceldan o'qish
   formatting.py      son va sana formati
   ui/                oynalar va sahifalar (PySide6)
-tests/               mantiq testlari
+tests/               mantiq va interfeys (ekransiz) testlari
 toplam/              exe bilan birga beriladigan fayllar (Ornatish.bat, OQING.txt)
 arxiv/litsenziya/    vaqtincha olib tashlangan litsenziya kodi (dasturga ulanmagan)
 ```
@@ -136,5 +150,7 @@ tanlanganda dastur shu tilda qayta ochiladi. Tanlov bazada saqlanadi.
 Yangi matn qo'shishda: kodda o'zbekcha yozib `tr("...")` ga o'rang va ruschasini `translations_ru.py` ga
 qo'shing. `tests/test_i18n.py` tarjimasi yo'q yoki ortiqcha qolgan matnni topadi.
 
-Tarjima qilinmaydi: foydalanuvchi kiritgan ma'lumotlar (mahsulot nomlari, o'lchov birliklari, ismlar) va
-dastur o'zi yozadigan «Inventarizatsiya (ortiqcha/kamomad)» belgisi — ular bazada saqlanadi.
+Tarjima qilinmaydi: foydalanuvchi kiritgan ma'lumotlar (mahsulot nomlari, o'lchov birliklari, ismlar) — ular
+bazada saqlanadi. Dastur o'zi yozadigan «Inventarizatsiya (ortiqcha/kamomad)» va «Boshlang'ich qoldiq»
+belgilari bazada bitta ko'rinishda saqlanadi, ekranda esa tanlangan tilda chiqadi. Windows ning o'z oynalari
+(chop etishni ko'rish) ruschada rus tilida, o'zbekchada inglizcha chiqadi — Qt da o'zbekcha tarjima yo'q.

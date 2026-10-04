@@ -5,9 +5,12 @@ import sqlite3
 from .costing import recalculate_costs
 from .models import Role
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 LEGACY_PASSWORD_KEY = "password"
 LEGACY_ADMIN_NAME = "Rahbar"
+# 3-versiyagacha «boshlang'ich qoldiq» belgisi o'sha paytdagi tilda yozilgan; endi bitta ko'rinishda saqlanadi.
+LEGACY_OPENING_BALANCE = "Начальный остаток"
+OPENING_BALANCE = "Boshlang'ich qoldiq"
 
 
 def migrate(conn: sqlite3.Connection) -> None:
@@ -19,6 +22,10 @@ def migrate(conn: sqlite3.Connection) -> None:
             _fix_issue_costs(conn)
             _move_single_password_to_users(conn)
         _move_groups_to_movements(conn)
+        _allow_new_roles(conn)
+        conn.execute(
+            "UPDATE movements SET counterparty = ? WHERE counterparty = ?", (OPENING_BALANCE, LEGACY_OPENING_BALANCE)
+        )
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
@@ -54,3 +61,21 @@ def _move_groups_to_movements(conn: sqlite3.Connection) -> None:
             subcategory = (SELECT {subcategory} FROM products p WHERE p.id = movements.product_id)
         WHERE category = ''
         """)
+
+
+def _allow_new_roles(conn: sqlite3.Connection) -> None:
+    """3-versiyagacha `users` jadvali faqat ikki lavozimga ruxsat bergan; cheklovsiz qayta yaratiladi."""
+    definition = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").fetchone()[0]
+    if "CHECK" not in definition:
+        return
+    conn.execute("ALTER TABLE users RENAME TO users_old")
+    conn.execute("""
+        CREATE TABLE users (
+            id       INTEGER PRIMARY KEY,
+            name     TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password TEXT NOT NULL,
+            role     TEXT NOT NULL
+        )
+        """)
+    conn.execute("INSERT INTO users (id, name, password, role) SELECT id, name, password, role FROM users_old")
+    conn.execute("DROP TABLE users_old")

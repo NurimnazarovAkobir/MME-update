@@ -1,7 +1,7 @@
 """Ombor ma'lumotlarining tuzilmalari."""
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from enum import Enum
 
 from .i18n import tr
@@ -13,14 +13,19 @@ class MovementKind(str, Enum):
 
 
 class Role(Enum):
-    """Foydalanuvchi lavozimi. Omborchi faqat qo'shadi va ko'radi; rahbar hammasini qila oladi."""
+    """Foydalanuvchi lavozimi.
+
+    Rahbar hammasini qila oladi. Omborchi yozuv qo'shadi va o'zi bugun kiritganini tuzata oladi.
+    Kuzatuvchi (masalan, buxgalter) faqat ko'radi.
+    """
 
     ADMIN = "admin"
     KEEPER = "keeper"
+    VIEWER = "viewer"
 
     @property
     def title(self) -> str:
-        return {Role.ADMIN: tr("Rahbar"), Role.KEEPER: tr("Omborchi")}[self]
+        return {Role.ADMIN: tr("Rahbar"), Role.KEEPER: tr("Omborchi"), Role.VIEWER: tr("Kuzatuvchi")}[self]
 
 
 @dataclass(frozen=True)
@@ -33,11 +38,16 @@ class User:
     def is_admin(self) -> bool:
         return self.role is Role.ADMIN
 
+    @property
+    def can_add(self) -> bool:
+        return self.role is not Role.VIEWER
+
 
 class StockStatus(Enum):
     OK = tr("Yetarli")
     LOW = tr("Kam qoldi")
     EMPTY = tr("Tugagan")
+    SERVICE = tr("Xizmat")  # qoldig'i yuritilmaydi
 
 
 @dataclass(frozen=True)
@@ -104,11 +114,14 @@ class Granularity(Enum):
 
 @dataclass
 class Product:
+    """`is_service` — xizmat yoki xarajat (yuk tashish, kommunal to'lov…): omborda qoldig'i yuritilmaydi."""
+
     name: str
     unit: str
     min_stock: float = 0.0
     note: str = ""
     id: int | None = None
+    is_service: bool = False
 
 
 @dataclass
@@ -122,7 +135,7 @@ class ProductStock(Product):
 
     @property
     def stock(self) -> float:
-        return round(self.qty_in - self.qty_out, 6)
+        return 0.0 if self.is_service else round(self.qty_in - self.qty_out, 6)
 
     @property
     def value(self) -> float:
@@ -136,11 +149,18 @@ class ProductStock(Product):
 
     @property
     def status(self) -> StockStatus:
+        if self.is_service:
+            return StockStatus.SERVICE
         if self.stock <= 0:
             return StockStatus.EMPTY
         if self.stock <= self.min_stock:
             return StockStatus.LOW
         return StockStatus.OK
+
+    @property
+    def needs_attention(self) -> bool:
+        """Kam qolgan yoki tugagan (xizmatlarga taalluqli emas)."""
+        return self.status in (StockStatus.LOW, StockStatus.EMPTY)
 
 
 @dataclass
@@ -153,6 +173,7 @@ class Movement:
     `person` — kirimda kim olib kelgani, chiqimda kim olgani.
     `counterparty` — kirimda yetkazib beruvchi, chiqimda obyekt.
     `created_by` — yozuvni kiritgan foydalanuvchi; keyin o'zgarmaydi.
+    `doc_number` — hujjat (nakladnoy) raqami; bir hujjatdagi mahsulotlar bir xil raqam bilan yoziladi.
     """
 
     kind: MovementKind
@@ -167,6 +188,7 @@ class Movement:
     counterparty: str = ""
     note: str = ""
     created_by: str = ""
+    doc_number: str = ""
     id: int | None = None
 
 
@@ -180,9 +202,49 @@ class MovementDetails(Movement):
     revenue: float = 0.0  # sotuv summasi
     profit: float = 0.0  # sotuv summasi minus tannarx; sotuv bo'lmasa 0
 
+    is_service: bool = False
+    created_at: str = ""  # bazaga yozilgan vaqt: 'YYYY-MM-DD HH:MM:SS'
+    deleted_at: str | None = None
+    deleted_by: str = ""
+
     @property
     def is_sale(self) -> bool:
         return self.sale_price > 0
+
+    @property
+    def created_on(self) -> date | None:
+        """Yozuv bazaga kiritilgan kun (yozuvning o'z sanasi emas)."""
+        return datetime.fromisoformat(self.created_at).date() if self.created_at else None
+
+
+class HistoryAction(Enum):
+    ADD = "add"
+    EDIT = "edit"
+    DELETE = "delete"
+    RESTORE = "restore"
+
+    @property
+    def title(self) -> str:
+        return {
+            HistoryAction.ADD: tr("Qo'shildi"),
+            HistoryAction.EDIT: tr("O'zgartirildi"),
+            HistoryAction.DELETE: tr("O'chirildi"),
+            HistoryAction.RESTORE: tr("Tiklandi"),
+        }[self]
+
+
+@dataclass(frozen=True)
+class HistoryEntry:
+    """O'zgarishlar tarixidagi bitta qator. `entity` — 'IN', 'OUT' yoki 'product'."""
+
+    id: int
+    at: datetime
+    actor: str
+    action: HistoryAction
+    entity: str
+    entity_id: int | None
+    summary: str
+    previous: str
 
 
 @dataclass(frozen=True)

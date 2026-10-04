@@ -4,14 +4,13 @@ from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths
-from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QCheckBox, QDialog, QFileDialog, QMessageBox
 
 from ..config import CURRENCY
 from ..errors import WarehouseError
 from ..excel_import import COLUMNS, read_products, write_template
 from ..formatting import fmt_money
 from ..i18n import tr
-from ..models import StockStatus
 from ..session import Session
 from ..warehouse import Warehouse
 from .dialogs import InventoryDialog, ProductDialog
@@ -37,35 +36,27 @@ class ProductsPage(ListPage):
         )
         super().__init__(tr("Mahsulotlar"), tr("+ Yangi mahsulot"), columns, session)
         self._warehouse = warehouse
-        self._session = session
 
-        import_button = button(tr("Exceldan yuklash"))
-        import_button.setToolTip(tr("Mahsulotlar ro'yxatini Excel faylidan qo'shish"))
-        import_button.clicked.connect(self._import_from_excel)
-        self.header_tools.addWidget(import_button)
+        self._only_low = QCheckBox(tr("Faqat kam qolgan va tugaganlar"))
+        self._only_low.toggled.connect(self.refresh)
+        self.header_tools.addWidget(self._only_low)
+        if session.can_add:
+            import_button = button(tr("Exceldan yuklash"))
+            import_button.setToolTip(tr("Mahsulotlar ro'yxatini Excel faylidan qo'shish"))
+            import_button.clicked.connect(self._import_from_excel)
+            self.header_tools.addWidget(import_button)
         if session.can_modify:
             inventory = button(tr("Inventarizatsiya"))
-            inventory.setToolTip(tr("Tanlangan mahsulotning haqiqiy qoldig'ini kiritish"))
+            inventory.setToolTip(tr("Jadvaldagi mahsulotlarning sanab chiqilgan haqiqiy qoldig'ini kiritish"))
             inventory.clicked.connect(self._take_inventory)
             self.header_tools.addWidget(inventory)
 
     def refresh(self) -> None:
-        products = self._warehouse.products(self.search.text())
+        products = self._shown_products()
         self.table.set_rows(
-            [
-                (
-                    p.name,
-                    p.stock,
-                    p.unit,
-                    p.min_stock,
-                    p.average_price,
-                    p.value,
-                    p.status.value,
-                )
-                for p in products
-            ],
+            [(p.name, p.stock, p.unit, p.min_stock, p.average_price, p.value, p.status.value) for p in products],
             ids=[p.id for p in products],
-            flagged=[index for index, p in enumerate(products) if p.status is not StockStatus.OK],
+            flagged=[index for index, p in enumerate(products) if p.needs_attention],
         )
         total = sum(p.value for p in products)
         self.footer.setText(
@@ -79,12 +70,18 @@ class ProductsPage(ListPage):
     def delete_item(self, item_id: int) -> None:
         self._warehouse.delete_product(item_id)
 
+    def _shown_products(self) -> list:
+        products = self._warehouse.products(self.search.text())
+        return [p for p in products if p.needs_attention] if self._only_low.isChecked() else products
+
     def _take_inventory(self) -> None:
-        product_id = self.selected_id()
-        if product_id is None:
-            return
-        if InventoryDialog(self._warehouse, self._warehouse.product(product_id), self._session.author, self).exec():
+        """Jadvalda ko'rinib turgan (qidiruv va filtrga mos) mahsulotlar uchun inventarizatsiya varag'i."""
+        dialog = InventoryDialog(self._warehouse, self._shown_products(), self.session.author, self)
+        if dialog.exec():
             self.refresh()
+            QMessageBox.information(
+                self, tr("Inventarizatsiya"), tr("{0} ta mahsulotning qoldig'i tuzatildi.").format(dialog.adjusted)
+            )
 
     def _import_from_excel(self) -> None:
         box = QMessageBox(QMessageBox.Icon.Information, tr("Exceldan yuklash"), "", parent=self)
@@ -128,7 +125,7 @@ class ProductsPage(ListPage):
         if not path:
             return
         try:
-            result = self._warehouse.import_products(read_products(path), date.today(), self._session.author)
+            result = self._warehouse.import_products(read_products(path), date.today(), self.session.author)
         except WarehouseError as error:
             QMessageBox.warning(self, tr("Yuklab bo'lmadi"), str(error))
             return

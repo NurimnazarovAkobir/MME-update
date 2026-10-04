@@ -219,7 +219,9 @@ def apply(app: QApplication, name: str) -> None:
     colors = {key: value for key, value in asdict(_active).items() if isinstance(value, str)}
     for tone in ("accent", "good", "warning", "danger", "tile_out"):
         colors[f"{tone}_soft"] = soft(colors[tone]).name()
-    app.setStyleSheet(_STYLESHEET.format(arrow=_save_dropdown_arrow(name), **colors))
+    arrow = _save_stroke(f"arrow-{name}", _ARROW_POINTS, _active.muted)
+    check = _save_stroke("check", _CHECK_POINTS, "#ffffff")
+    app.setStyleSheet(_STYLESHEET.format(arrow=arrow, check=check, **colors))
 
 
 def soft(color: str | QColor) -> QColor:
@@ -228,16 +230,20 @@ def soft(color: str | QColor) -> QColor:
     return QColor(*(round(t * SOFT_RATIO + b * (1 - SOFT_RATIO)) for t, b in zip(tint, base)))
 
 
-def _save_dropdown_arrow(name: str) -> str:
-    """Ro'yxat strelkasini fon rangiga mos chizib, vaqtinchalik faylga saqlaydi (uslublar faqat fayldan o'qiydi)."""
+_ARROW_POINTS = ((3, 7), (10, 14), (17, 7))  # ro'yxat strelkasi
+_CHECK_POINTS = ((4, 10), (8, 14), (16, 6))  # belgilash katagidagi «✓»
+
+
+def _save_stroke(name: str, points: tuple[tuple[int, int], ...], color: str) -> str:
+    """Chiziqli belgini (strelka, «✓») chizib, vaqtinchalik faylga saqlaydi (uslublar faqat fayldan o'qiydi)."""
     pixmap = QPixmap(ARROW_SIZE, ARROW_SIZE)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(QPen(QColor(_active.muted), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-    painter.drawPolyline([QPointF(3, 7), QPointF(10, 14), QPointF(17, 7)])
+    painter.setPen(QPen(QColor(color), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    painter.drawPolyline([QPointF(x, y) for x, y in points])
     painter.end()
-    path = Path(tempfile.gettempdir()) / f"mme-ombor-arrow-{name}.png"
+    path = Path(tempfile.gettempdir()) / f"mme-ombor-{name}.png"
     pixmap.save(str(path), "PNG")
     return str(path).replace("\\", "/")
 
@@ -322,6 +328,13 @@ QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QDoubleSpinBox:focus, QPlainT
 }}
 QComboBox::drop-down, QDateEdit::drop-down {{ border: none; width: 26px; }}
 QComboBox::down-arrow, QDateEdit::down-arrow {{ image: url("{arrow}"); width: 10px; height: 10px; }}
+QCheckBox {{ spacing: 10px; }}
+QCheckBox::indicator {{
+    width: 18px; height: 18px; background: {surface}; border: 1px solid {muted}; border-radius: 4px;
+}}
+QCheckBox::indicator:hover {{ border-color: {accent}; }}
+QCheckBox::indicator:checked {{ background: {accent}; border-color: {accent}; image: url("{check}"); }}
+QCheckBox::indicator:disabled {{ border-color: {disabled}; }}
 QLineEdit:disabled, QDateEdit:disabled {{ background: {disabled_bg}; color: {disabled}; }}
 QComboBox QAbstractItemView, QCalendarWidget QAbstractItemView {{
     background: {surface}; border: 1px solid {control_border};

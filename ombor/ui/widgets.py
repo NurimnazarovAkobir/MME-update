@@ -67,11 +67,15 @@ def button(text: str, role: str = "") -> QPushButton:
     return widget
 
 
-def date_input(day: date | None = None) -> QDateEdit:
-    widget = QDateEdit(QDate(day or date.today()))
+def date_input(day: date | None = None, allow_future: bool = True) -> QDateEdit:
+    """`allow_future=False` — bugundan keyingi sanani tanlab bo'lmaydi (yozuv sanalari uchun)."""
+    today = date.today()
+    widget = QDateEdit(QDate(day or today))
     widget.setCalendarPopup(True)
     widget.setDisplayFormat(DATE_DISPLAY_FORMAT)
     widget.setMinimumWidth(DATE_INPUT_WIDTH)
+    if not allow_future:
+        widget.setMaximumDate(QDate(max(day or today, today)))  # eski yozuvning sanasi o'z holicha ochiladi
     return widget
 
 
@@ -190,6 +194,7 @@ class ColumnKind(Enum):
     QUANTITY = "quantity"
     MONEY = "money"
     DATE = "date"
+    DATETIME = "datetime"
 
 
 _FORMATTERS = {
@@ -197,6 +202,7 @@ _FORMATTERS = {
     ColumnKind.QUANTITY: fmt_qty,
     ColumnKind.MONEY: fmt_money,
     ColumnKind.DATE: fmt_date,
+    ColumnKind.DATETIME: lambda moment: f"{moment:%d.%m.%Y %H:%M}",
 }
 _NUMERIC_KINDS = (ColumnKind.QUANTITY, ColumnKind.MONEY)
 
@@ -291,16 +297,23 @@ class DataTable(QTableWidget):
 
         self.itemDoubleClicked.connect(self._emit_activated)
 
-    def set_rows(self, rows: Sequence[Sequence], ids: Sequence[int] = (), flagged: Iterable[int] = ()) -> None:
-        """`ids` — qatorlarning id lari; `flagged` — e'tibor talab qiladigan qatorlar indekslari."""
+    def set_rows(
+        self,
+        rows: Sequence[Sequence],
+        ids: Sequence[int] = (),
+        flagged: Iterable[int] = (),
+        locked: Iterable[int] = (),
+    ) -> None:
+        """`ids` — qatorlarning id lari; `flagged` — e'tibor talab qiladigan qatorlar indekslari;
+        `locked` — tahrirlash va o'chirish tugmalari qo'yilmaydigan qatorlar indekslari."""
         self._rows = list(rows)
-        flagged = set(flagged)
+        flagged, locked = set(flagged), set(locked)
         # To'ldirish paytida saralash o'chiriladi, aks holda qatorlar yozilayotganda joyidan siljiydi.
         self.setSortingEnabled(False)
         self.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
             if self._offset and ids:
-                self._add_actions(row_index, ids[row_index])
+                self._add_actions(row_index, ids[row_index], is_locked=row_index in locked)
             for column_index, (column, value) in enumerate(zip(self._columns, row), start=self._offset):
                 item = _SortableItem(_FORMATTERS[column.kind](value), value)
                 item.setTextAlignment(self._alignment(column))
@@ -339,11 +352,14 @@ class DataTable(QTableWidget):
         else:
             super().keyPressEvent(event)
 
-    def _add_actions(self, row: int, item_id: int) -> None:
-        """Qator boshiga tahrirlash va o'chirish tugmalarini qo'yadi."""
+    def _add_actions(self, row: int, item_id: int, is_locked: bool = False) -> None:
+        """Qator boshiga tahrirlash va o'chirish tugmalarini qo'yadi; `is_locked` qatorda katak bo'sh qoladi."""
         holder = _SortableItem("", 0)  # tugmalar ostidagi katak: qator tanlanishi va saralash uchun
         holder.setData(Qt.ItemDataRole.UserRole, item_id)
         self.setItem(row, 0, holder)
+        if is_locked:
+            self.removeCellWidget(row, 0)  # jadval qayta to'ldirilganda oldingi qatorning tugmalari qolmasin
+            return
 
         edit = button("✎", "rowEdit")
         edit.setToolTip(tr("Tahrirlash"))

@@ -23,9 +23,12 @@ def recalculate_costs(conn: sqlite3.Connection, product_id: int, strict: bool = 
     versiyadan qolgan ma'lumotlar uchun: bunday chiqim o'z joyida qoladi va
     mavjud qoldiq narxida (qoldiq bo'lmasa — nolda) baholanadi.
     """
-    # Bir kundagi kirimlar chiqimlardan oldin hisoblanadi ('IN' < 'OUT').
+    if conn.execute("SELECT is_service FROM products WHERE id = ?", (product_id,)).fetchone()[0]:
+        return  # xizmatning qoldig'i ham, tannarxi ham yo'q
+    # Bir kundagi kirimlar chiqimlardan oldin hisoblanadi ('IN' < 'OUT'). O'chirilgan yozuvlar hisobga kirmaydi.
     rows = conn.execute(
-        "SELECT id, kind, date, quantity, price FROM movements WHERE product_id = ? ORDER BY date, kind, id",
+        "SELECT id, kind, date, quantity, price FROM movements"
+        " WHERE product_id = ? AND deleted_at IS NULL ORDER BY date, kind, id",
         (product_id,),
     ).fetchall()
 

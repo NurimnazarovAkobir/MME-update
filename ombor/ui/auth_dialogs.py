@@ -14,6 +14,11 @@ from .language import LANGUAGE_LABEL, language_box
 from .widgets import button, label
 
 DEFAULT_ADMIN_NAME = tr("Rahbar")
+ROLES_HINT = tr(
+    "Omborchi kirim, chiqim va mahsulot qo'shadi, o'zi bugun kiritgan yozuvni tuzata oladi. "
+    "Kuzatuvchi (masalan, buxgalter) faqat ko'radi. Qolgan hammasi — tahrirlash, o'chirish, "
+    "inventarizatsiya, tarix va sozlamalar — faqat rahbarda."
+)
 
 
 def sign_in(auth: Auth, settings: Settings) -> User | None:
@@ -129,7 +134,7 @@ class RecoveryDialog(_NewPasswordDialog):
         self._code.setPlaceholderText("XXXX-XXXX-XXXX")
         hint = label(
             tr(
-                "Tiklash kodi rahbarga birinchi kirishda berilgan. Omborchi parolini rahbar "
+                "Tiklash kodi rahbarga birinchi kirishda berilgan. Boshqa foydalanuvchilar parolini rahbar "
                 "«Sozlamalar»da almashtiradi."
             ),
             "muted",
@@ -179,15 +184,9 @@ class UserDialog(_NewPasswordDialog):
         self._auth = auth
         self._name = QLineEdit()
         self._role = QComboBox()
-        for role in (Role.KEEPER, Role.ADMIN):
+        for role in (Role.KEEPER, Role.VIEWER, Role.ADMIN):
             self._role.addItem(role.title, role)
-        hint = label(
-            tr(
-                "Omborchi kirim, chiqim va mahsulot qo'shadi, hisobotlarni ko'radi. Tahrirlash, "
-                "o'chirish, inventarizatsiya va sozlamalar faqat rahbarda."
-            ),
-            "muted",
-        )
+        hint = label(ROLES_HINT, "muted")
         hint.setWordWrap(True)
         self.form.addRow(tr("Ismi"), self._name)
         self.form.addRow(tr("Lavozimi"), self._role)

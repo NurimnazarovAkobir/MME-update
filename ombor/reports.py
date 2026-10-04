@@ -8,6 +8,7 @@ from enum import Enum
 from .database import period_filter
 from .i18n import tr
 from .models import Granularity, MovementKind, Period
+from .warehouse import display_counterparty
 
 UNNAMED = tr("(ko'rsatilmagan)")
 
@@ -105,14 +106,15 @@ class Reports:
     def stock_value(self) -> float:
         """Hozir omborda turgan barcha mahsulotning qiymati."""
         row = self._conn.execute(
-            "SELECT COALESCE(SUM(amount_in - amount_out), 0) FROM product_stock WHERE qty_in - qty_out > 1e-9"
+            "SELECT COALESCE(SUM(amount_in - amount_out), 0) FROM product_stock"
+            " WHERE NOT is_service AND qty_in - qty_out > 1e-9"
         ).fetchone()
         return row[0]
 
     def turnover(self, period: Period = Period()) -> list[ProductTurnover]:
         """Aylanma qaydnoma: boshlang'ich qoldiq, kirim, chiqim (oxirgi qoldiq shulardan chiqadi).
 
-        Davrda harakati ham, boshlang'ich qoldig'i ham bo'lmagan mahsulotlar kiritilmaydi.
+        Davrda harakati ham, boshlang'ich qoldig'i ham bo'lmagan mahsulotlar va xizmatlar kiritilmaydi.
         """
         rows = self._conn.execute(
             """
@@ -123,7 +125,7 @@ class Reports:
                    COALESCE(SUM(CASE WHEN date >= :start AND kind = 'IN' THEN amount END), 0) AS amount_in,
                    COALESCE(SUM(CASE WHEN date >= :start AND kind = 'OUT' THEN quantity END), 0) AS qty_out,
                    COALESCE(SUM(CASE WHEN date >= :start AND kind = 'OUT' THEN amount END), 0) AS amount_out
-            FROM movement_details WHERE date <= :end
+            FROM movement_details WHERE date <= :end AND NOT is_service
             GROUP BY product_id
             HAVING opening <> 0 OR qty_in <> 0 OR qty_out <> 0
             ORDER BY product_name
@@ -147,7 +149,9 @@ class Reports:
             """,
             [kind.value, *params],
         )
-        return [GroupTotal(row["name"] or UNNAMED, row["operations"], row["amount"]) for row in rows]
+        return [
+            GroupTotal(display_counterparty(row["name"]) or UNNAMED, row["operations"], row["amount"]) for row in rows
+        ]
 
     def by_category(self, period: Period = Period()) -> list[CategoryTotal]:
         """Kirim va chiqim summalari tovar guruhlari va kichik guruhlari kesimida."""

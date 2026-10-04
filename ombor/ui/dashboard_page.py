@@ -44,7 +44,8 @@ class DashboardPage(QWidget):
     product_requested = Signal()
     page_requested = Signal(Destination)
 
-    def __init__(self, warehouse: Warehouse, reports: Reports, analytics: Analytics):
+    def __init__(self, warehouse: Warehouse, reports: Reports, analytics: Analytics, can_add: bool = True):
+        """`can_add` — yangi yozuv tugmalari ko'rinadimi (kuzatuvchiga ko'rinmaydi)."""
         super().__init__()
         self.setObjectName("page")
         self._warehouse = warehouse
@@ -84,7 +85,8 @@ class DashboardPage(QWidget):
         layout.setContentsMargins(24, 18, 24, 16)
         layout.setSpacing(14)
         layout.addLayout(self._header())
-        layout.addLayout(self._tiles())
+        if can_add:
+            layout.addLayout(self._tiles())
         layout.addLayout(cards)
         layout.addWidget(card(section_header(Glyph.CHART, chart_title), self._chart), stretch=2)
         layout.addWidget(card(section_header(Glyph.CLOCK, tr("So'nggi amallar")), self._recent), stretch=3)
