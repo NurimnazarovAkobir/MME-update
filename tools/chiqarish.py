@@ -16,6 +16,7 @@ Qayerga chiqarilishi `chiqarish.json` da (birinchi ishga tushirishda namunasi ya
 """
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -168,6 +169,16 @@ def free_dist_exe(dist: Path = DIST) -> None:
         exe.replace(dist / f"MME-Ombor-ochiq-{datetime.now():%H%M%S}.exe")
 
 
+def source_fingerprint() -> str:
+    """Dastur kodining holati: yig'ish davomida kod o'zgarib qolmaganini tekshirish uchun."""
+    digest = hashlib.sha256()
+    for path in sorted([ROOT / "main.py", *(ROOT / "ombor").rglob("*.py")]):
+        if path.name == "config.py":
+            continue  # versiya raqami shu faylda — uni chiqarishning o'zi o'zgartiradi
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
 def build_runnable(attempts: int = BUILD_ATTEMPTS) -> None:
     """Exe ni yig'adi va Windows uni ishga tushirishga ruxsat berishini tekshiradi.
 
@@ -191,6 +202,7 @@ def release(version: str | None, skip_tests: bool) -> str:
     github = settings["github"]
 
     print(f"== {old} -> {new}")
+    before = source_fingerprint()
     write_config(new, github_update_url(github["repo"]) if github else None)
     try:
         if not skip_tests:
@@ -199,6 +211,8 @@ def release(version: str | None, skip_tests: bool) -> str:
         print("== Yig'ish")
         free_dist_exe()
         build_runnable()
+        if source_fingerprint() != before:
+            raise ReleaseError("Kod yig'ish paytida o'zgardi. Tahrirlash tugagach, qaytadan chiqaring.")
         if (DIST / VERSION_FILE).read_text(encoding="utf-8").strip() != new:
             raise ReleaseError("Yig'ilgan versiya kutilganidan boshqa chiqdi.")
     except BaseException:

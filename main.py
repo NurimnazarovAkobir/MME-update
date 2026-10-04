@@ -3,8 +3,11 @@
 import sys
 
 # Sinov ishga tushirishi: yangi versiya shu kompyuterda ochila olishini tekshirish uchun (update.can_run).
-# Hech narsa yuklanmasdan va hech qanday oyna ochilmasdan darhol tugaydi.
+# Dasturning barcha qismlari yuklanadi (buzuq yig'ilgan nusxa shu yerda xato beradi), lekin hech qanday
+# oyna ochilmaydi va bazaga tegilmaydi.
 if "--sinov" in sys.argv:
+    import ombor.app  # noqa: F401
+
     sys.exit(0)
 
 from ombor import i18n  # noqa: E402
