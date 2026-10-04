@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer
+from PySide6.QtCore import QEvent, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -180,6 +180,12 @@ class MainWindow(QMainWindow):
         self._watcher = QTimer(self)
         self._watcher.timeout.connect(self._refresh_if_changed_elsewhere)
         self._watcher.start(REFRESH_INTERVAL_MS)
+
+    def changeEvent(self, event) -> None:
+        """Foydalanuvchi dastur oynasiga qaytganda yangi versiya chiqqan-chiqmagani tekshiriladi."""
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
+            self._update_page.check_if_stale()
 
     def _read_data_version(self) -> int:
         """Bazani boshqa ulanish (boshqa kompyuter) o'zgartirganda o'zgaradigan son."""

@@ -5,6 +5,7 @@ Yangi versiya haqidagi xabar oyna bo'lib chiqmaydi: menyuda belgi paydo bo'ladi 
 soatda fonda bajariladi; internet bo'lmasa, hech narsa bo'lmaydi.
 """
 
+import time
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -26,7 +27,9 @@ from .widgets import button, card, label
 
 LAST_CHECK_KEY = "update_checked"  # shu kompyuterda oxirgi tekshiruv vaqti
 FIRST_CHECK_DELAY_MS = 2_000  # dastur ochilgach, oyna chizilib bo'lgandan keyin
-RECHECK_INTERVAL_MS = 30 * 60 * 1000  # dastur ochiq turganda har yarim soatda o'zi tekshiradi
+RECHECK_INTERVAL_MS = 5 * 60 * 1000  # dastur ochiq turganda har 5 daqiqada o'zi tekshiradi
+# Oynaga qaytilganda yoki bo'lim ochilganda ham tekshiriladi, lekin bundan tez-tez emas.
+MIN_SECONDS_BETWEEN_CHECKS = 60
 STATUS_ICON_SIZE = 64
 
 
@@ -42,6 +45,7 @@ class UpdatePage(QWidget):
         self._prefs = services.prefs
         self._offer: Offer | None = None
         self._announce_result = False  # qo'lda tekshirilganda «yangilanish yo'q» ham aytiladi
+        self._last_check = time.monotonic()  # birinchi tekshiruv ochilishdan biroz keyin, taymer bilan
 
         self._checker = UpdateChecker(self)
         self._checker.checked.connect(self._on_checked)
@@ -93,11 +97,19 @@ class UpdatePage(QWidget):
         return self._offer.version if self._offer else ""
 
     def refresh(self) -> None:
+        """Bo'lim ochilganda holat ko'rsatiladi va yangi versiya bor-yo'qligi qayta tekshiriladi."""
         self._show_state()
+        self.check_if_stale()
+
+    def check_if_stale(self) -> None:
+        """Oxirgi tekshiruvdan beri yetarli vaqt o'tgan bo'lsa, fonda qayta tekshiradi (oynaga qaytilganda)."""
+        if time.monotonic() - self._last_check >= MIN_SECONDS_BETWEEN_CHECKS:
+            self.check()
 
     def check(self, announce: bool = False) -> None:
         """Fonda tekshiradi. `announce` — natija topilmasa ham xabar beriladi (tugma bosilganda)."""
-        self._announce_result = announce
+        self._last_check = time.monotonic()
+        self._announce_result = self._announce_result or announce
         self._check_button.setEnabled(False)
         self._status_detail.setText(tr("Tekshirilmoqda…"))
         self._checker.check(self._settings.get(UPDATE_FOLDER_KEY), self._update_url())

@@ -208,6 +208,31 @@ class UpdatePageTests(OnlineTestCase):
         self.assertEqual(page._status_title.text(), "Dastur yangilangan")
         self.assertEqual(self.states, [])
 
+    def test_opening_the_page_or_returning_to_the_window_rechecks_but_not_too_often(self):
+        self.publish(update.APP_VERSION)
+        page = self.page()
+        with mock.patch.object(page, "check") as check:
+            page.refresh()  # sahifa hozirgina yaratilgan — hali erta
+            check.assert_not_called()
+            page._last_check -= update_page_module.MIN_SECONDS_BETWEEN_CHECKS + 1
+            page.refresh()
+            check.assert_called_once()
+            page._last_check -= update_page_module.MIN_SECONDS_BETWEEN_CHECKS + 1
+            page.check_if_stale()
+            self.assertEqual(check.call_count, 2)
+
+    def test_new_release_is_noticed_without_pressing_the_button(self):
+        self.publish(update.APP_VERSION)
+        page = self.page()
+        page.check()
+        self.assertTrue(self._wait(lambda: page._check_button.isEnabled()))
+        self.assertEqual(self.states, [])
+        self.publish("99.0")  # dastur ochiq turganda yangi versiya chiqdi
+        page._last_check -= update_page_module.MIN_SECONDS_BETWEEN_CHECKS + 1
+        page.check_if_stale()  # oynaga qaytish yoki taymer
+        self.assertTrue(self._wait(lambda: self.states == [True]))
+        self.assertLessEqual(update_page_module.RECHECK_INTERVAL_MS, 5 * 60 * 1000)
+
     def test_update_folder_is_checked_before_the_internet(self):
         folder = self.folder / "papka"
         folder.mkdir()

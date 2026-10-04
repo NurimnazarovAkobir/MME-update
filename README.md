@@ -102,7 +102,7 @@ keyingi davrga o'tkazadi.
 - **Internet orqali yangilash** (1.3): shu ikki fayl internetdagi https manzilga qo'yiladi (masalan, GitHub Releases:
   `https://github.com/<foydalanuvchi>/<repo>/releases/latest/download/`). Manzil `config.py` dagi
   `DEFAULT_UPDATE_URL` ga yoziladi (hamma nusxalar uchun) yoki «Yangilash» bo'limida kiritiladi. Dastur ochilganda
-  va keyin har yarim soatda fonda tekshiradi; internet bo'lmasa, tekshiruv jimgina o'tkazib yuboriladi.
+  va keyin har 5 daqiqada, shuningdek oynaga qaytilganda fonda tekshiradi; internet bo'lmasa, tekshiruv jimgina o'tkazib yuboriladi.
 - **«Yangilash» bo'limi** (Windows Update kabi): holat, oxirgi tekshiruv vaqti, «Yangilanishlarni tekshirish» tugmasi.
   Yangi versiya topilsa, oyna chiqmaydi — menyuda «Yangilash» yonida qizil doirada «1» belgisi va sahifada «Yuklab olish va o'rnatish»
   havolasi paydo bo'ladi. Manbalarni (manzil, papka, fayl) faqat rahbar o'zgartiradi. Yangi versiya chiqarish: `APP_VERSION` ni
