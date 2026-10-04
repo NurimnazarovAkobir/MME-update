@@ -1,0 +1,145 @@
+"""Asosiy oyna: chapda menyu, o'ngda tanlangan sahifa."""
+
+from pathlib import Path
+
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..config import APP_NAME
+from ..i18n import tr
+from ..models import MovementKind
+from ..services import Services
+from ..session import Session
+from . import theme
+from .dashboard_page import DashboardPage, Destination
+from .dialogs import MovementDialog, ProductDialog
+from .icons import Glyph, menu_icon
+from .labels import LABELS
+from .movements_page import MovementsPage
+from .products_page import ProductsPage
+from .reports_page import ReportsPage
+from .settings_page import SettingsPage
+from .widgets import label
+
+SIDEBAR_WIDTH = 250
+LOGO_SIZE = 48
+LOGO_TEXT = "MME"
+MENU_ICON_SIZE = 20
+# Istalgan sahifadan yangi yozuv ochadigan tugmalar (bosh sahifadagi katta tugmalar yordam yozuvida ham bor).
+NEW_RECEIPT_KEY, NEW_ISSUE_KEY, NEW_PRODUCT_KEY = "F2", "F3", "F4"
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, services: Services, session: Session, db_path: Path):
+        super().__init__()
+        self.setWindowTitle(f"{APP_NAME} — {session.user.name} ({session.user.role.title})")
+        self.resize(1280, 800)
+        self.setMinimumSize(1100, 680)
+        self._warehouse = services.warehouse
+        self._session = session
+
+        dashboard = DashboardPage(self._warehouse, services.reports, services.analytics)
+        dashboard.movement_requested.connect(self._new_movement)
+        dashboard.product_requested.connect(self._new_product)
+        dashboard.page_requested.connect(self._open_destination)
+        # (menyu nomi, belgi, sahifa, bosh sahifadan shu bo'limga o'tish kaliti)
+        pages = (
+            (tr("Bosh sahifa"), Glyph.HOME, dashboard, None),
+            (
+                tr("Kirim"),
+                Glyph.RECEIPT,
+                MovementsPage(self._warehouse, LABELS[MovementKind.IN], session),
+                Destination.RECEIPTS,
+            ),
+            (
+                tr("Chiqim"),
+                Glyph.ISSUE,
+                MovementsPage(self._warehouse, LABELS[MovementKind.OUT], session),
+                Destination.ISSUES,
+            ),
+            (tr("Mahsulotlar"), Glyph.PRODUCTS, ProductsPage(self._warehouse, session), Destination.PRODUCTS),
+            (tr("Hisobotlar"), Glyph.REPORTS, ReportsPage(services.reports, services.analytics), Destination.REPORTS),
+            (tr("Sozlamalar"), Glyph.SETTINGS, SettingsPage(services, session, db_path), None),
+        )
+
+        colors = theme.palette()
+        self._pages = QStackedWidget()
+        self._menu = QListWidget()
+        self._menu.setObjectName("sidebar")
+        self._menu.setIconSize(QSize(MENU_ICON_SIZE, MENU_ICON_SIZE))
+        self._menu.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._rows: dict[Destination, int] = {}
+        for row, (title, glyph, page, destination) in enumerate(pages):
+            self._menu.addItem(QListWidgetItem(menu_icon(glyph, colors.sidebar_text, "#ffffff"), f"  {title}"))
+            self._pages.addWidget(page)
+            if destination is not None:
+                self._rows[destination] = row
+        self._menu.currentRowChanged.connect(self._show_page)
+
+        sidebar_panel = QWidget()
+        sidebar_panel.setObjectName("sidebarPanel")
+        sidebar_panel.setFixedWidth(SIDEBAR_WIDTH)
+        sidebar = QVBoxLayout(sidebar_panel)
+        sidebar.setContentsMargins(16, 20, 16, 16)
+        sidebar.setSpacing(18)
+        sidebar.addLayout(self._brand(session))
+        sidebar.addWidget(self._menu, stretch=1)
+
+        central = QWidget()
+        layout = QHBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(sidebar_panel)
+        layout.addWidget(self._pages)
+        self.setCentralWidget(central)
+
+        QShortcut(QKeySequence(NEW_RECEIPT_KEY), self, lambda: self._new_movement(MovementKind.IN))
+        QShortcut(QKeySequence(NEW_ISSUE_KEY), self, lambda: self._new_movement(MovementKind.OUT))
+        QShortcut(QKeySequence(NEW_PRODUCT_KEY), self, self._new_product)
+        self._menu.setCurrentRow(0)
+
+    @staticmethod
+    def _brand(session: Session) -> QHBoxLayout:
+        """Yuqoridagi belgi, dastur nomi va uning ostida foydalanuvchi lavozimi."""
+        logo = label(LOGO_TEXT, "logo")
+        logo.setFixedSize(LOGO_SIZE, LOGO_SIZE)
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        owner = label(tr("{0} paneli").format(session.user.role.title), "firm")
+        owner.setWordWrap(True)
+        names = QVBoxLayout()
+        names.setSpacing(2)
+        names.addStretch()
+        names.addWidget(label(APP_NAME, "brand"))
+        names.addWidget(owner)
+        names.addStretch()
+        brand = QHBoxLayout()
+        brand.setSpacing(12)
+        brand.addWidget(logo)
+        brand.addLayout(names, stretch=1)
+        return brand
+
+    def _show_page(self, index: int) -> None:
+        """Sahifa har ochilganda ma'lumotlari yangilanadi."""
+        page = self._pages.widget(index)
+        page.refresh()
+        self._pages.setCurrentWidget(page)
+
+    def _open_destination(self, destination: Destination) -> None:
+        self._menu.setCurrentRow(self._rows[destination])
+
+    def _new_movement(self, kind: MovementKind) -> None:
+        if MovementDialog(self._warehouse, LABELS[kind], self._session.author, parent=self).exec():
+            self._pages.currentWidget().refresh()
+
+    def _new_product(self) -> None:
+        if ProductDialog(self._warehouse, parent=self).exec():
+            self._pages.currentWidget().refresh()

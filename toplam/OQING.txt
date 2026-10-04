@@ -1,0 +1,11 @@
+MME Ombor - o'rnatish
+=====================
+
+1. MME-Ombor.exe ni to'g'ridan-to'g'ri ochish mumkin - o'rnatish shart emas.
+2. Yoki Ornatish.bat ni ikki marta bosing: dastur kompyuterga ko'chiriladi va
+   ish stolida "MME Ombor" yorlig'i paydo bo'ladi. Internet kerak emas.
+
+Talablar: Windows 10 yoki 11 (64-bit).
+
+Birinchi ochilganda dastur rahbar ismi va parolini so'raydi.
+Til (o'zbekcha / ruscha) kirish oynasida tanlanadi.

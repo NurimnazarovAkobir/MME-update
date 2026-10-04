@@ -1,0 +1,10 @@
+# Virtual muhit va yig'ish natijalari
+.venv/
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+
+# MAXFIY: litsenziya imzolash kaliti hech qachon tarixga tushmasligi kerak
+arxiv/litsenziya/maxfiy_kalit.pem
