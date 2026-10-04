@@ -17,6 +17,7 @@ kodini** ko'rsatadi — uni qog'ozga yozib qo'ying.
 | **Chiqim** | Mahsulot chiqishi: sana, miqdor, **sotuv narxi** (bo'sh bo'lsa — ichki rasxod), guruh va kichik guruh, kim oldi, xaridor yoki obyekt |
 | **Mahsulotlar** | Mahsulot yoki xizmat qo'shish, joriy qoldiq, o'rtacha narx, qiymati, holati; «faqat kam qolganlar» filtri; inventarizatsiya varag'i; Exceldan yuklash. Menyuda kam qolgan mahsulotlar soni ko'rinadi |
 | **Hisobotlar** | Kunlik, haftalik, oylik, yillik yoki ixtiyoriy davr bo'yicha hisobotlar |
+| **Qarzlar** | Yetkazib beruvchilarga qarzimiz, xaridorlarning qarzi, to'lovlar («Qarzga» belgili yozuvlardan) |
 | **Tarix** | Faqat rahbarga: kim, qachon, nimani qo'shgan, o'zgartirgan, o'chirgan; o'chirilgan yozuvni tiklash |
 | **Sozlamalar** | Fon, til, parol, hisob qoidalari, foydalanuvchilar, zaxira nusxa, qisqa yo'riqnoma |
 
@@ -70,6 +71,36 @@ keyingi davrga o'tkazadi.
 - **Hujjat raqami**: bir nakladnoydagi mahsulotlar bir xil «Hujjat №» bilan «Saqlash va yana qo'shish» orqali
   kiritiladi; «Nakladnoy» tugmasi sanasi va raqami bir xil yozuvlarni bitta varaqda chop etadi.
 - **Inventarizatsiya varag'i**: jadvaldagi barcha mahsulotlar bitta oynada; faqat o'zgartirilganlari tuzatiladi.
+
+## Omborlar, qaytarish, qarzlar, birliklar (1.2)
+
+- **Bir nechta ombor**: «Sozlamalar → Omborlar»da qo'shiladi. Kirim va chiqimda ombor tanlanadi; «Mahsulotlar»da
+  ombor bo'yicha qoldiq ko'rinadi va «Ko'chirish» bilan mahsulot ombordan omborga o'tkaziladi. O'rtacha tannarx
+  barcha omborlar uchun bitta; qoldiq har bir omborda alohida tekshiriladi. Inventarizatsiya — har bir omborda alohida.
+- **Qaytarish**: kirimda «xaridordan qaytgan mahsulot» (tushum va foydani kamaytiradi), chiqimda «yetkazib
+  beruvchiga qaytarilmoqda» (sotuv hisoblanmaydi).
+- **Qarzlar**: yozuvda «Qarzga» belgilansa, summasi kontragent hisobiga tushadi; to'lovlar «Qarzlar» bo'limida yoziladi.
+- **Qo'shimcha birlik**: mahsulotga ikkinchi birlik va nisbat beriladi (masalan, 1 tonna = 1000 kg); kirim-chiqimda
+  miqdor va narxni ikkalasida kiritish mumkin, bazada asosiy birlikda saqlanadi.
+- **Shtrix-kod**: mahsulotga yoziladi; kirim-chiqim oynasida mahsulot maydoniga skaner bilan o'qitilsa, mahsulot tanlanadi.
+- **Guruhlar**: «Sozlamalar → Guruhlarni tahrirlash» — qo'shish, nomini o'zgartirish, o'chirish (`groups` jadvali;
+  `catalog.py` dagi ro'yxat faqat yangi baza uchun boshlang'ich).
+
+## Tarmoq, shifrlash, yangilash, o'rnatish (1.2)
+
+- **Bir nechta kompyuter**: baza tarmoqdagi umumiy papkaga ko'chiriladi («Sozlamalar → Tarmoqda ishlash»), boshqa
+  kompyuterlar kirish oynasidagi «Tarmoqdagi bazaga ulanish» bilan shu papkani ko'rsatadi. Baza joyi, til va fon
+  har bir kompyuterning o'zida (`%APPDATA%\MetallMontajExpert\sozlama.json`) saqlanadi. Ochiq sahifa boshqa
+  kompyuterdagi o'zgarishlarni 10 soniyada o'zi ko'rsatadi. Bu — umumiy fayl (SQLite) bilan ishlash, alohida
+  server emas: 2–5 kompyuter uchun mo'ljallangan, ishonchli (simli) tarmoq va kunlik zaxira nusxa shart.
+- **Shifrlash** (ixtiyoriy, «Sozlamalar → Bazani shifrlash»): SQLCipher (AES-256). Baza kaliti har bir
+  foydalanuvchining paroli va tiklash kodi bilan o'ralib, baza yonidagi `ombor.kalit` faylida turadi (`vault.py`).
+  Zaxira nusxalar ham shifrlanadi, yoniga `.kalit` fayli qo'yiladi. Parol ham, tiklash kodi ham yo'qolsa —
+  ma'lumotni tiklab bo'lmaydi.
+- **Yangilash**: «Sozlamalar → Dasturni yangilash» — yangi `MME-Ombor.exe` ko'rsatiladi yoki yangilanishlar papkasi
+  belgilanadi (`MME-Ombor.exe` + `versiya.txt`). Internet orqali yangilash yo'q. Eski dastur yangi bazani ochmaydi.
+- **O'rnatish**: `Ornatish.bat` dasturni ko'chiradi, ish stoli va «Pusk»ga yorliq qo'yadi va Windows ning
+  «O'rnatilgan ilovalar» ro'yxatiga yozadi; u yerdan (yoki `Ochirish.bat` bilan) o'chiriladi, ma'lumotlar qoladi.
 
 ## Mahsulotlarni Exceldan yuklash
 

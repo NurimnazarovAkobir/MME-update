@@ -143,7 +143,7 @@ def _offer_update(services: Services) -> bool:
 
 
 def run() -> int:
-    app = QApplication(sys.argv)
+    app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setWindowIcon(app_icon())
     QLocale.setDefault(_LOCALES[i18n.language()])  # sana tanlagichdagi oy nomlari va son yozilishi

@@ -349,6 +349,11 @@ QTableWidget {{
 }}
 QTableWidget {{ font-size: 10pt; }}
 QTableWidget::item {{ padding: 4px 10px; }}
+QTreeWidget {{
+    background: {surface}; border: 1px solid {border}; border-radius: 8px; font-size: 10pt;
+    selection-background-color: {selection}; selection-color: {text};
+}}
+QTreeWidget::item {{ padding: 5px 4px; }}
 QHeaderView::section {{
     background: {header}; border: none; border-bottom: 1px solid {border};
     padding: 8px 10px; font-weight: 600;

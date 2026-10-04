@@ -9,7 +9,7 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QDate  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QDate, QEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication, QCheckBox, QMessageBox, QPushButton  # noqa: E402
 
 from ombor.database import connect  # noqa: E402
@@ -30,6 +30,14 @@ TODAY = date.today()
 RECEIPTS_ROW, PRODUCTS_ROW = 1, 3
 
 
+def discard_widgets() -> None:
+    """Test ochgan oynalarni yo'q qiladi: qolib ketsa, keyingi testlarda uslublar qayta qo'llanib, hammasi sekinlashadi."""
+    for widget in QApplication.topLevelWidgets():
+        widget.close()
+        widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
 class UiTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -37,6 +45,7 @@ class UiTestCase(unittest.TestCase):
         theme.apply(cls.app, theme.DEFAULT_THEME)
 
     def setUp(self):
+        self.addCleanup(discard_widgets)
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.folder = Path(folder.name)
