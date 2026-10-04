@@ -279,7 +279,7 @@ class MainWindow(QMainWindow):
         self._notice.setObjectName("notice")
         self._notice_text = label("", "noticeText")
         open_page = button(tr("Yangilash"), "primary")
-        open_page.clicked.connect(self._open_update_page)
+        open_page.clicked.connect(self._update_now)
         later = button(tr("Keyinroq"), "link")
         later.clicked.connect(self._notice.hide)
         row = QHBoxLayout(self._notice)
@@ -291,6 +291,12 @@ class MainWindow(QMainWindow):
         row.addWidget(later)
         self._notice.hide()
         return self._notice
+
+    def _update_now(self) -> None:
+        """Tepadagi «Yangilash» tugmasi: bo'limni ochadi va yuklab olib o'rnatishni darhol boshlaydi."""
+        self._open_update_page()
+        self._notice.hide()
+        self._update_page.start_install()
 
     def _open_update_page(self) -> None:
         if self.isMinimized():

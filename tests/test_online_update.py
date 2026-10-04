@@ -270,6 +270,20 @@ class UpdatePageTests(OnlineTestCase):
         self.assertEqual(window._announced_version, "99.0")
         window._open_update_page()
         self.assertEqual(window._menu.currentRow(), row)
+        # Tepadagi «Yangilash» tugmasi bo'limni ochibgina qolmay, o'rnatishni o'zi boshlaydi.
+        window._menu.setCurrentRow(0)
+        with (
+            mock.patch.object(update_page_module.update, "is_installed_program", return_value=True),
+            mock.patch.object(updater_module.update, "install") as install,
+            mock.patch.object(update_page_module, "restart_application") as restart,
+            mock.patch.object(QMessageBox, "information"),
+            mock.patch.object(updater_module.tempfile, "gettempdir", return_value=str(self.folder)),
+        ):
+            window._update_now()
+            self.assertEqual(window._menu.currentRow(), row)
+            self.assertTrue(window._notice.isHidden())
+            self.assertTrue(self._wait(lambda: restart.called))
+        install.assert_called_once()
 
 
 if __name__ == "__main__":

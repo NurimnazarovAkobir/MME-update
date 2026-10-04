@@ -118,8 +118,8 @@ class UpdatePage(QWidget):
 
     def _build_offer_card(self) -> QFrame:
         self._offer_text = label("", "sectionTitle")
-        self._install_link = button(tr("Yuklab olish va o'rnatish"), "link")
-        self._install_link.clicked.connect(self._install)
+        self._install_link = button(tr("Yuklab olish va o'rnatish"), "primary", Glyph.IMPORT)
+        self._install_link.clicked.connect(self.start_install)
         self._dismiss = button("✕", "link")
         self._dismiss.setToolTip(tr("Hozircha yashirish"))
         self._dismiss.clicked.connect(lambda: self._offer_card.hide())
@@ -140,8 +140,9 @@ class UpdatePage(QWidget):
         self._offer_card.hide()
         return self._offer_card
 
-    def _install(self) -> None:
-        if self._offer is None:
+    def start_install(self) -> None:
+        """Topilgan yangi versiyani yuklab olib o'rnatishni boshlaydi (tepadagi «Yangilash» tugmasi ham shuni chaqiradi)."""
+        if self._offer is None or self._progress.isVisible():
             return
         if not update.is_installed_program():
             QMessageBox.information(self, tr("Yangilash"), tr("Yangilash faqat o'rnatilgan dasturda (exe) ishlaydi."))
