@@ -1,5 +1,6 @@
 """Tarix: kim nimani o'zgartirgani va o'chirilgan yozuvlarni tiklash (faqat rahbarga)."""
 
+from PySide6.QtCore import QSize
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QMessageBox, QTabWidget, QVBoxLayout, QWidget
 
 from ..debts import PAYMENT_ENTITY
@@ -8,12 +9,26 @@ from ..i18n import tr
 from ..models import HistoryEntry, MovementKind
 from ..session import Session
 from ..warehouse import PRODUCT_ENTITY, TRANSFER_ENTITY, Warehouse
+from . import theme
+from .icons import Glyph, glyph_icon
 from .labels import LABELS
 from .printing import print_table
-from .widgets import Column, ColumnKind, DataTable, PeriodFilter, button, export_to_excel, label
+from .widgets import (
+    Column,
+    ColumnKind,
+    DataTable,
+    Pager,
+    PeriodFilter,
+    button,
+    card,
+    export_to_excel,
+    label,
+    page_header,
+)
 
 MAX_ROWS_SHOWN = 2000
 SEARCH_WIDTH = 220
+TAB_ICON_SIZE = 18
 _ENTITY_TITLES = {
     MovementKind.IN.value: LABELS[MovementKind.IN].title,
     MovementKind.OUT.value: LABELS[MovementKind.OUT].title,
@@ -22,6 +37,18 @@ _ENTITY_TITLES = {
     f"{PAYMENT_ENTITY}:IN": tr("Biz to'ladik"),
     f"{PAYMENT_ENTITY}:OUT": tr("Bizga to'landi"),
 }
+
+
+def _paged(table: DataTable) -> QWidget:
+    """Yorliq ichidagi jadval va uning sahifalash paneli."""
+    table.setObjectName("flatTable")
+    table.enable_paging()
+    holder = QWidget()
+    layout = QVBoxLayout(holder)
+    layout.setContentsMargins(0, 6, 0, 0)
+    layout.addWidget(table, stretch=1)
+    layout.addWidget(Pager(table))
+    return holder
 
 
 def _change_row(entry: HistoryEntry) -> tuple:
@@ -69,9 +96,13 @@ class HistoryPage(QWidget):
             )
         )
         self._tabs = QTabWidget()
-        self._tabs.addTab(self._changes, tr("O'zgarishlar"))
+        self._tabs.setIconSize(QSize(TAB_ICON_SIZE, TAB_ICON_SIZE))
+        muted = theme.palette().muted
+        self._tables = [self._changes]
+        self._tabs.addTab(_paged(self._changes), glyph_icon(Glyph.HISTORY, muted), tr("O'zgarishlar"))
         if self._can_restore:
-            self._tabs.addTab(self._deleted, tr("O'chirilgan yozuvlar"))
+            self._tables.append(self._deleted)
+            self._tabs.addTab(_paged(self._deleted), glyph_icon(Glyph.DELETE, muted), tr("O'chirilgan yozuvlar"))
 
         self._period = PeriodFilter()
         self._period.changed.connect(self.refresh)
@@ -82,18 +113,16 @@ class HistoryPage(QWidget):
         self._search.textChanged.connect(self.refresh)
         self._footer = label("", "total")
 
-        restore = button(tr("Tanlangan yozuvni tiklash"), "primary")
+        restore = button(tr("Tanlangan yozuvni tiklash"), "primary", Glyph.UNDO)
         restore.setToolTip(tr("«O'chirilgan yozuvlar»da tanlangan yozuvni hisobga qaytaradi"))
         restore.clicked.connect(self._restore)
-        print_button = button(tr("Chop etish"))
+        print_button = button(tr("Chop etish"), glyph=Glyph.PRINT)
         print_button.clicked.connect(lambda: print_table(self, *self._current()))
-        excel = button(tr("Excelga chiqarish"))
+        excel = button(tr("Excelga chiqarish"), glyph=Glyph.EXPORT)
         excel.clicked.connect(lambda: export_to_excel(self, *self._current()))
 
-        header = QHBoxLayout()
-        header.addWidget(label(tr("Tarix"), "pageTitle"))
-        header.addStretch()
-        header.addWidget(self._period)
+        header, tools = page_header(Glyph.CLOCK, tr("Tarix"), tr("Kim, qachon, nimani qo'shgani va o'zgartirgani"))
+        tools.addWidget(self._period)
         toolbar = QHBoxLayout()
         if self._can_restore:
             toolbar.addWidget(restore)
@@ -106,7 +135,7 @@ class HistoryPage(QWidget):
         layout.setSpacing(14)
         layout.addLayout(header)
         layout.addLayout(toolbar)
-        layout.addWidget(self._tabs, stretch=1)
+        layout.addWidget(card(self._tabs), stretch=1)
         layout.addWidget(self._footer)
 
     def refresh(self) -> None:
@@ -135,7 +164,7 @@ class HistoryPage(QWidget):
         )
 
     def _restore(self) -> None:
-        self._tabs.setCurrentWidget(self._deleted)
+        self._tabs.setCurrentIndex(self._tables.index(self._deleted))
         movement_id = self._deleted.selected_id()
         if movement_id is None:
             QMessageBox.information(self, tr("Tarix"), tr("Avval «O'chirilgan yozuvlar» jadvalidan yozuvni tanlang."))
@@ -148,4 +177,4 @@ class HistoryPage(QWidget):
 
     def _current(self) -> tuple[DataTable, str]:
         index = self._tabs.currentIndex()
-        return self._tabs.widget(index), f"{tr('Tarix')} — {self._tabs.tabText(index)}"
+        return self._tables[index], f"{tr('Tarix')} — {self._tabs.tabText(index)}"

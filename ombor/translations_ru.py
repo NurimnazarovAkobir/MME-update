@@ -371,7 +371,6 @@ TRANSLATIONS = {
     "Xizmatning qoldig'i yuritilmaydi.": "Остаток по услуге не ведётся.",
     "Yoqilsa, guruhsiz yozuv saqlanmaydi va hisobotda «(ko'rsatilmagan)» qatori chiqmaydi.": "Если включено, запись без группы не сохраняется и в отчёте не будет строки «(не указано)».",
     "Yozuv": "Запись",
-    "sotuvdan foyda {0} − xizmat va xarajatlar {1}": "прибыль от продаж {0} − услуги и расходы {1}",
     "{0} ta mahsulot kam qolgan yoki tugagan": "Товаров заканчивается или закончилось: {0}",
     "{0} ta mahsulotning qoldig'i tuzatildi.": "Исправлен остаток товаров: {0}.",
     "«O'chirilgan yozuvlar»da tanlangan yozuvni hisobga qaytaradi": "Возвращает в учёт запись, выбранную в «Удалённых записях»",
@@ -545,4 +544,13 @@ TRANSLATIONS = {
     "Dasturning yangi versiyasi bor": "Доступна новая версия программы",
     "Dasturning yangi versiyasi chiqdi: {0}. Dasturni yangilang.": "Вышла новая версия программы: {0}. Обновите программу.",
     "Keyinroq": "Позже",
+    # --- yangi ko'rinish ---
+    "Boshqaruv tizimi": "Система управления",
+    "Kim, qachon, nimani qo'shgani va o'zgartirgani": "Кто, когда и что добавил или изменил",
+    "Ko'rsatish:": "Показывать:",
+    "Mahsulotlar ro'yxati va ombordagi qoldiq": "Список товаров и остатки на складе",
+    "Ombor faoliyati bo'yicha barcha hisobotlar": "Все отчёты по работе склада",
+    "Ombordan chiqqan mahsulotlar va sotuvlar": "Отпущенные со склада товары и продажи",
+    "Omborga kelgan mahsulotlar va xarajatlar": "Поступившие на склад товары и расходы",
+    "foyda {0} − xarajatlar {1}": "прибыль {0} − расходы {1}",
 }

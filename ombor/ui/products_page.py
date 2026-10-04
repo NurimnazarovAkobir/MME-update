@@ -15,6 +15,7 @@ from ..session import Session
 from ..warehouse import Warehouse
 from .dialogs import InventoryDialog, ProductDialog
 from .extra_dialogs import TransferDialog
+from .icons import Glyph
 from .list_page import ListPage
 from .widgets import Column, ColumnKind, button
 
@@ -35,7 +36,14 @@ class ProductsPage(ListPage):
             Column(tr("Qiymati"), ColumnKind.MONEY),
             Column(tr("Holati")),
         )
-        super().__init__(tr("Mahsulotlar"), tr("+ Yangi mahsulot"), columns, session)
+        super().__init__(
+            tr("Mahsulotlar"),
+            tr("+ Yangi mahsulot"),
+            columns,
+            session,
+            glyph=Glyph.PRODUCTS,
+            subtitle=tr("Mahsulotlar ro'yxati va ombordagi qoldiq"),
+        )
         self._warehouse = warehouse
 
         # Ombor tanlagich va «Ko'chirish» faqat bir nechta ombor bo'lganda ko'rinadi.
@@ -45,18 +53,18 @@ class ProductsPage(ListPage):
         self._only_low = QCheckBox(tr("Faqat kam qolgan va tugaganlar"))
         self._only_low.toggled.connect(self.refresh)
         self.header_tools.addWidget(self._only_low)
-        self._transfer = button(tr("Ko'chirish"))
+        self._transfer = button(tr("Ko'chirish"), glyph=Glyph.SWITCH)
         self._transfer.setToolTip(tr("Mahsulotni bir ombordan boshqasiga ko'chirish"))
         self._transfer.clicked.connect(self._move_between_stores)
         if session.can_add:
             self.toolbar_tools.addWidget(self._transfer)
         if session.can_add:
-            import_button = button(tr("Exceldan yuklash"))
+            import_button = button(tr("Exceldan yuklash"), glyph=Glyph.IMPORT)
             import_button.setToolTip(tr("Mahsulotlar ro'yxatini Excel faylidan qo'shish"))
             import_button.clicked.connect(self._import_from_excel)
             self.header_tools.addWidget(import_button)
         if session.can_modify:
-            inventory = button(tr("Inventarizatsiya"))
+            inventory = button(tr("Inventarizatsiya"), glyph=Glyph.CLIPBOARD)
             inventory.setToolTip(tr("Jadvaldagi mahsulotlarning sanab chiqilgan haqiqiy qoldig'ini kiritish"))
             inventory.clicked.connect(self._take_inventory)
             self.header_tools.addWidget(inventory)

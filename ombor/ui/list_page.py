@@ -7,8 +7,9 @@ from PySide6.QtWidgets import QDialog, QHBoxLayout, QLineEdit, QMessageBox, QVBo
 from ..errors import WarehouseError
 from ..i18n import tr
 from ..session import Session
+from .icons import Glyph
 from .printing import print_table
-from .widgets import Column, DataTable, button, confirm, export_to_excel, label
+from .widgets import Column, DataTable, button, confirm, export_to_excel, label, page_header, table_card
 
 SEARCH_WIDTH = 220
 
@@ -33,6 +34,8 @@ class ListPage(QWidget):
         columns: Sequence[Column],
         session: Session,
         row_actions: bool | None = None,
+        glyph: str = Glyph.DOCUMENT,
+        subtitle: str = "",
     ):
         super().__init__()
         self.setObjectName("page")
@@ -51,7 +54,7 @@ class ListPage(QWidget):
         self.toolbar_tools = QHBoxLayout()
         toolbar = QHBoxLayout()
         if session.can_add:
-            add = button(new_action, "primary")
+            add = button(new_action.lstrip("+ "), "primary", Glyph.ADD)
             add.clicked.connect(lambda: self._open(None))
             toolbar.addWidget(add)
         toolbar.addLayout(self.toolbar_tools)
@@ -60,26 +63,22 @@ class ListPage(QWidget):
             self.table.row_activated.connect(self._open)
             self.table.delete_requested.connect(self._delete)
 
-        print_button = button(tr("Chop etish"))
+        print_button = button(tr("Chop etish"), glyph=Glyph.PRINT)
         print_button.clicked.connect(lambda: print_table(self, self.table, self.export_title()))
-        excel = button(tr("Excelga chiqarish"))
+        excel = button(tr("Excelga chiqarish"), glyph=Glyph.EXPORT)
         excel.clicked.connect(lambda: export_to_excel(self, self.table, self.export_title()))
         toolbar.addStretch()
         for widget in (self.search, print_button, excel):
             toolbar.addWidget(widget)
 
-        self.header_tools = QHBoxLayout()
-        header = QHBoxLayout()
-        header.addWidget(label(title, "pageTitle"))
-        header.addStretch()
-        header.addLayout(self.header_tools)
+        header, self.header_tools = page_header(glyph, title, subtitle)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 16)
         layout.setSpacing(14)
         layout.addLayout(header)
         layout.addLayout(toolbar)
-        layout.addWidget(self.table)
+        layout.addWidget(table_card(self.table), stretch=1)
         layout.addWidget(self.footer)
 
     def refresh(self) -> None:

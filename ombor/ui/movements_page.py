@@ -10,6 +10,7 @@ from ..models import MovementDetails, MovementKind
 from ..session import Session
 from ..warehouse import Warehouse, display_counterparty, store_name
 from .dialogs import MovementDialog
+from .icons import Glyph
 from .labels import KindLabels
 from .list_page import ListPage
 from .printing import print_waybill
@@ -70,7 +71,20 @@ class MovementsPage(ListPage):
 
     def __init__(self, warehouse: Warehouse, labels: KindLabels, session: Session):
         # Omborchida ham qator tugmalari bor, lekin faqat o'zi bugun kiritgan yozuvlarda.
-        super().__init__(labels.title, labels.new_action, _columns(labels), session, row_actions=session.can_add)
+        is_receipt = labels.kind is MovementKind.IN
+        super().__init__(
+            labels.title,
+            labels.new_action,
+            _columns(labels),
+            session,
+            row_actions=session.can_add,
+            glyph=Glyph.RECEIPT if is_receipt else Glyph.ISSUE,
+            subtitle=(
+                tr("Omborga kelgan mahsulotlar va xarajatlar")
+                if is_receipt
+                else tr("Ombordan chiqqan mahsulotlar va sotuvlar")
+            ),
+        )
         self._warehouse = warehouse
         self._labels = labels
         # Hech bir yozuvda to'ldirilmagan bo'lsa, yashiriladigan ustunlar: jadval oynaga sig'ishi uchun.
@@ -82,7 +96,7 @@ class MovementsPage(ListPage):
         self._period.changed.connect(self.refresh)
         self.header_tools.addWidget(self._period)
 
-        waybill = button(tr("Nakladnoy"))
+        waybill = button(tr("Nakladnoy"), glyph=Glyph.DOCUMENT)
         waybill.setToolTip(tr("Tanlangan yozuvning hujjatini chop etish (bir xil raqamli yozuvlar birga chiqadi)"))
         waybill.clicked.connect(self._print_waybill)
         self.toolbar_tools.addWidget(waybill)

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
+from PySide6.QtCore import QSize
 from PySide6.QtWidgets import QHBoxLayout, QTabWidget, QVBoxLayout, QWidget
 
 from ..analytics import Analytics
@@ -13,9 +14,21 @@ from ..i18n import tr
 from ..models import Granularity, MovementKind, Period
 from ..reports import UNNAMED, GroupBy, Reports
 from ..warehouse import Warehouse
+from . import theme
+from .icons import Glyph, glyph_icon
 from .labels import LABELS
 from .printing import print_table
-from .widgets import Column, ColumnKind, DataTable, PeriodNavigator, StatCard, button, export_to_excel, label
+from .widgets import (
+    Column,
+    ColumnKind,
+    DataTable,
+    PeriodNavigator,
+    StatCard,
+    button,
+    card,
+    export_to_excel,
+    page_header,
+)
 
 # «Davrlar bo'yicha» hisobotida tanlangan davr qanday bo'laklarga bo'linishi.
 _BREAKDOWN = {
@@ -25,6 +38,19 @@ _BREAKDOWN = {
     Granularity.YEAR: Granularity.MONTH,
 }
 CUSTOM_PERIOD_BREAKDOWN = Granularity.MONTH
+TAB_ICON_SIZE = 18
+# Hisobot yorliqlarining belgilari — `_build_report_tabs` dagi tartibda.
+_TAB_GLYPHS = (
+    Glyph.DOCUMENT,
+    Glyph.CALENDAR,
+    Glyph.TAG,
+    Glyph.MONEY,
+    Glyph.PERSON,
+    Glyph.SHOP,
+    Glyph.PEOPLE,
+    Glyph.SWITCH,
+    Glyph.PIN,
+)
 
 
 @dataclass(frozen=True)
@@ -44,6 +70,13 @@ def _group_columns(name: str, operations: str) -> tuple[Column, ...]:
     )
 
 
+def _change(current: float, previous: float | None) -> float | None:
+    """Oldingi davrga nisbatan o'zgarish ulushi; solishtiradigan narsa bo'lmasa — None."""
+    if not previous or previous <= 0:
+        return None
+    return (current - previous) / previous
+
+
 class ReportsPage(QWidget):
     def __init__(self, reports: Reports, analytics: Analytics, warehouse: Warehouse):
         super().__init__()
@@ -54,26 +87,28 @@ class ReportsPage(QWidget):
 
         self._period = PeriodNavigator()
         self._period.changed.connect(self.refresh)
-        self._amount_in = StatCard(tr("Kirim summasi"))
-        self._amount_out = StatCard(tr("Chiqim (rasxod) summasi"))
-        self._stock_value = StatCard(tr("Ombordagi mahsulot qiymati (hozir)"))
-        self._net_profit = StatCard(tr("Sof foyda"))
+        self._amount_in = StatCard(tr("Kirim summasi"), Glyph.RECEIPT, "Good")
+        self._amount_out = StatCard(tr("Chiqim (rasxod) summasi"), Glyph.ISSUE, "Out")
+        self._net_profit = StatCard(tr("Sof foyda"), Glyph.WALLET, "Accent")
+        self._stock_value = StatCard(tr("Ombordagi mahsulot qiymati (hozir)"), Glyph.BOX, "Violet")
 
         self._report_tabs = self._build_report_tabs()
         self._tabs = QTabWidget()
-        for tab in self._report_tabs:
-            self._tabs.addTab(DataTable(tab.columns), tab.title)
+        self._tabs.setIconSize(QSize(TAB_ICON_SIZE, TAB_ICON_SIZE))
+        muted = theme.palette().muted
+        for tab, glyph in zip(self._report_tabs, _TAB_GLYPHS):
+            table = DataTable(tab.columns)
+            table.setObjectName("flatTable")
+            self._tabs.addTab(table, glyph_icon(glyph, muted), tab.title)
 
-        print_button = button(tr("Chop etish"))
+        print_button = button(tr("Chop etish"), glyph=Glyph.PRINT)
         print_button.clicked.connect(lambda: print_table(self, *self._current_report()))
-        excel = button(tr("Excelga chiqarish"))
+        excel = button(tr("Excelga chiqarish"), "primary", Glyph.EXPORT)
         excel.clicked.connect(lambda: export_to_excel(self, *self._current_report()))
 
-        header = QHBoxLayout()
-        header.addWidget(label(tr("Hisobotlar"), "pageTitle"))
-        header.addStretch()
-        header.addWidget(print_button)
-        header.addWidget(excel)
+        header, tools = page_header(Glyph.CHART, tr("Hisobotlar"), tr("Ombor faoliyati bo'yicha barcha hisobotlar"))
+        tools.addWidget(print_button)
+        tools.addWidget(excel)
 
         cards = QHBoxLayout()
         cards.setSpacing(14)
@@ -86,25 +121,37 @@ class ReportsPage(QWidget):
         layout.addLayout(header)
         layout.addWidget(self._period)
         layout.addLayout(cards)
-        layout.addWidget(self._tabs, stretch=1)
+        layout.addWidget(card(self._tabs), stretch=1)
 
     def refresh(self) -> None:
         period = self._period.period()
         totals = self._reports.totals(period)
+        profit = self._analytics.summary(period)
+        # Oldingi davr bilan solishtirish va davr ichidagi o'zgarish chizig'i — faqat haqiqiy ma'lumotdan.
+        previous = self._period.previous_period()
+        before = self._reports.totals(previous) if previous else None
+        profit_before = self._analytics.summary(previous).net_profit if previous else None
+        step = _BREAKDOWN.get(self._period.granularity(), CUSTOM_PERIOD_BREAKDOWN)
+        trend = self._reports.dynamics(period, step)
         self._amount_in.set_value(
-            fmt_money(totals.amount_in), tr("{0}  ·  {1} ta kirim").format(CURRENCY, totals.count_in)
+            fmt_money(totals.amount_in),
+            tr("{0}  ·  {1} ta kirim").format(CURRENCY, totals.count_in),
+            _change(totals.amount_in, before.amount_in if before else None),
+            [point.amount_in for point in trend],
         )
         self._amount_out.set_value(
-            fmt_money(totals.amount_out), tr("{0}  ·  {1} ta chiqim").format(CURRENCY, totals.count_out)
+            fmt_money(totals.amount_out),
+            tr("{0}  ·  {1} ta chiqim").format(CURRENCY, totals.count_out),
+            _change(totals.amount_out, before.amount_out if before else None),
+            [point.amount_out for point in trend],
         )
-        self._stock_value.set_value(fmt_money(self._reports.stock_value()), CURRENCY)
-        profit = self._analytics.summary(period)
         self._net_profit.set_value(
             fmt_money(profit.net_profit),
-            tr("sotuvdan foyda {0} − xizmat va xarajatlar {1}").format(
-                fmt_money(profit.profit), fmt_money(profit.expenses)
-            ),
+            tr("foyda {0} − xarajatlar {1}").format(fmt_money(profit.profit), fmt_money(profit.expenses)),
+            _change(profit.net_profit, profit_before),
+            [point.profit for point in trend],
         )
+        self._stock_value.set_value(fmt_money(self._reports.stock_value()), CURRENCY)
         for index, tab in enumerate(self._report_tabs):
             self._tabs.widget(index).set_rows(tab.rows(period))
 

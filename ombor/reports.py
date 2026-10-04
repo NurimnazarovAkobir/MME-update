@@ -83,6 +83,7 @@ class PeriodTotal:
     amount_out: float = 0.0
     count_in: int = 0
     count_out: int = 0
+    profit: float = 0.0  # sotuvdan foyda
 
 
 class Reports:
@@ -180,7 +181,8 @@ class Reports:
                    COALESCE(SUM(CASE WHEN kind = 'IN' THEN amount END), 0) AS amount_in,
                    COALESCE(SUM(CASE WHEN kind = 'OUT' THEN amount END), 0) AS amount_out,
                    COUNT(CASE WHEN kind = 'IN' THEN 1 END) AS count_in,
-                   COUNT(CASE WHEN kind = 'OUT' THEN 1 END) AS count_out
+                   COUNT(CASE WHEN kind = 'OUT' THEN 1 END) AS count_out,
+                   COALESCE(SUM(profit), 0) AS profit
             FROM movement_details WHERE {where}
             GROUP BY start ORDER BY start
             """,

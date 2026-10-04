@@ -144,8 +144,7 @@ class MainWindow(QMainWindow):
                 self._rows[destination] = row
         self._menu.currentRowChanged.connect(self._show_page)
 
-        version = label(tr("Versiya {0}").format(APP_VERSION), "firm")
-        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version = self._about_card()
         sidebar_panel = QWidget()
         sidebar_panel.setObjectName("sidebarPanel")
         sidebar_panel.setFixedWidth(SIDEBAR_WIDTH)
@@ -196,6 +195,28 @@ class MainWindow(QMainWindow):
         if version != self._data_version:
             self._data_version = version
             self._refresh_current()
+
+    @staticmethod
+    def _about_card() -> QFrame:
+        """Yon menyu ostidagi kartochka: dastur nomi va versiyasi."""
+        frame = QFrame()
+        frame.setObjectName("sidebarCard")
+        badge = icon_label(Glyph.CROWN, "badgeAccent")
+        badge.setFixedSize(36, 36)
+        names = QVBoxLayout()
+        names.setSpacing(0)
+        names.addWidget(label(APP_NAME, "sidebarCardTitle"))
+        names.addWidget(label(tr("Boshqaruv tizimi"), "firm"))
+        top = QHBoxLayout()
+        top.setSpacing(10)
+        top.addWidget(badge)
+        top.addLayout(names, stretch=1)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(12, 12, 12, 10)
+        layout.setSpacing(8)
+        layout.addLayout(top)
+        layout.addWidget(label(tr("Versiya {0}").format(APP_VERSION), "firm"))
+        return frame
 
     @staticmethod
     def _brand(session: Session) -> QHBoxLayout:

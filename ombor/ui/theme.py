@@ -45,6 +45,7 @@ class Palette:
     series: tuple[str, str]
     grid: str
     axis: str
+    violet: str = "#8b5cf6"  # to'rtinchi ko'rsatkich rangi
 
 
 _LIGHT = Palette(
@@ -217,7 +218,8 @@ def apply(app: QApplication, name: str) -> None:
     global _active
     _active = PALETTES.get(name, PALETTES[DEFAULT_THEME])
     colors = {key: value for key, value in asdict(_active).items() if isinstance(value, str)}
-    for tone in ("accent", "good", "warning", "danger", "tile_out"):
+    colors["accent_light"] = QColor(colors["accent"]).lighter(128).name()
+    for tone in ("accent", "good", "warning", "danger", "tile_out", "violet"):
         colors[f"{tone}_soft"] = soft(colors[tone]).name()
     arrow = _save_stroke(f"arrow-{name}", _ARROW_POINTS, _active.muted)
     check = _save_stroke("check", _CHECK_POINTS, "#ffffff")
@@ -382,4 +384,74 @@ QTabBar::tab {{
 QTabBar::tab:selected {{ color: {accent}; border-bottom: 2px solid {accent}; font-weight: 600; }}
 
 QToolTip {{ background: {tooltip}; color: white; border: none; padding: 6px 8px; font-size: 10pt; }}
+
+/* ---- 2-ko'rinish: yumaloq kartochkalar, rangli ko'rsatkichlar, belgili tugma va yorliqlar ---- */
+#pageIcon {{
+    font-family: "Segoe MDL2 Assets"; font-size: 20pt; color: {accent};
+    background: {accent_soft}; border-radius: 14px;
+}}
+#pageTitle {{ font-size: 19pt; font-weight: 700; }}
+#card {{ border-radius: 14px; }}
+#cardTitle {{ font-size: 10pt; color: {text}; }}
+#cardValue {{ font-size: 21pt; font-weight: 700; }}
+#statAccent, #statGood, #statOut, #statWarning, #statViolet {{ border-radius: 14px; border: 1px solid {border}; }}
+#statAccent {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {accent_soft}, stop:1 {surface}); }}
+#statGood {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {good_soft}, stop:1 {surface}); }}
+#statOut {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {tile_out_soft}, stop:1 {surface}); }}
+#statWarning {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {warning_soft}, stop:1 {surface}); }}
+#statViolet {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {violet_soft}, stop:1 {surface}); }}
+#statAccent[clickable="true"]:hover, #statGood[clickable="true"]:hover, #statOut[clickable="true"]:hover,
+#statWarning[clickable="true"]:hover, #statViolet[clickable="true"]:hover {{ border-color: {accent}; }}
+#badgeAccent, #badgeGood, #badgeOut, #badgeWarning, #badgeViolet {{ color: white; border-radius: 10px; }}
+#badgeAccent {{ background: {accent}; }}
+#badgeGood {{ background: {good}; }}
+#badgeOut {{ background: {tile_out}; }}
+#badgeWarning {{ background: {warning}; }}
+#badgeViolet {{ font-family: "Segoe MDL2 Assets"; font-size: 15pt; background: {violet}; }}
+#deltaUp {{ color: {good}; font-size: 9pt; font-weight: 600; }}
+#deltaDown {{ color: {danger}; font-size: 9pt; font-weight: 600; }}
+
+QPushButton {{ border-radius: 10px; padding: 9px 16px; }}
+QPushButton[role="primary"] {{
+    border: none;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {accent}, stop:1 {accent_light});
+}}
+QPushButton[role="primary"]:hover {{ background: {accent}; }}
+QPushButton[role="primary"]:disabled {{ background: {disabled_bg}; color: {disabled}; }}
+#segmentBar {{ background: {surface}; border: 1px solid {border}; border-radius: 12px; }}
+QPushButton[role="segment"] {{
+    background: transparent; border: none; border-radius: 9px; margin: 0; padding: 7px 18px; color: {muted};
+}}
+QPushButton[role="segment"]:hover {{ background: {hover}; color: {text}; }}
+QPushButton[role="segment"]:checked {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {accent}, stop:1 {accent_light});
+    color: white; font-weight: 600;
+}}
+QPushButton[role="page"] {{ padding: 6px; min-width: 22px; border-radius: 9px; }}
+QPushButton[role="page"]:disabled {{ border-color: {border}; }}
+#pagePosition {{
+    background: {accent}; color: white; font-weight: 600; border-radius: 9px; padding: 6px 12px; min-width: 40px;
+}}
+QPushButton[role="rowEdit"], QPushButton[role="rowDelete"] {{ border-radius: 8px; padding: 0; }}
+QPushButton[role="rowEdit"]:hover {{ background: {accent_soft}; border-color: {accent}; }}
+QPushButton[role="rowDelete"]:hover {{ background: {danger_soft}; border-color: {danger}; }}
+
+QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox, QPlainTextEdit {{ border-radius: 10px; padding: 7px 10px; }}
+
+QTabBar::tab {{ padding: 10px 14px; margin-right: 2px; border-bottom: 3px solid transparent; }}
+QTabBar::tab:selected {{ border-bottom: 3px solid {accent}; }}
+QTabBar::tab:hover {{ color: {text}; }}
+QTableWidget {{ border-radius: 12px; alternate-background-color: {surface}; }}
+QTableWidget::item {{ border-bottom: 1px solid {border}; }}
+QTableWidget::item:selected {{ background: {selection}; }}
+QHeaderView::section {{ background: transparent; color: {muted}; border-bottom: 1px solid {border}; }}
+#flatTable {{ background: transparent; border: none; }}
+
+#sidebar::item {{ padding: 12px 12px; border-radius: 10px; border-left: 3px solid transparent; }}
+#sidebar::item:selected {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {accent}, stop:1 {accent_dark});
+    border-left: 3px solid {accent_light};
+}}
+#sidebarCard {{ background: {sidebar_hover}; border: 1px solid {border}; border-radius: 12px; }}
+#sidebarCardTitle {{ color: white; font-weight: 600; font-size: 10pt; }}
 """

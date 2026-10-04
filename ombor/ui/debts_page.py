@@ -10,8 +10,9 @@ from ..i18n import tr
 from ..models import MovementKind
 from ..session import Session
 from .extra_dialogs import PaymentDialog
+from .icons import Glyph
 from .printing import print_table
-from .widgets import Column, ColumnKind, DataTable, button, confirm, export_to_excel, label
+from .widgets import Column, ColumnKind, DataTable, button, card, confirm, export_to_excel, label, page_header
 
 # Ikkala tomon: jadval sarlavhasi va «qarzga olingan/berilgan» ustuni nomi.
 _SIDES = (
@@ -40,6 +41,7 @@ class DebtsPage(QWidget):
                     Column(tr("Qolgan qarz"), ColumnKind.MONEY),
                 )
             )
+            table.setObjectName("flatTable")
             self._balances[kind] = table
             self._tabs.addTab(table, title)
         self._payments = DataTable(
@@ -52,40 +54,41 @@ class DebtsPage(QWidget):
                 Column(tr("Kiritdi")),
             )
         )
+        self._payments.setObjectName("flatTable")
         self._tabs.addTab(self._payments, tr("To'lovlar"))
         self._footer = label("", "total")
 
         toolbar = QHBoxLayout()
         if session.can_add:
-            pay = button(tr("+ To'lov yozish"), "primary")
+            pay = button(tr("+ To'lov yozish").lstrip("+ "), "primary", Glyph.ADD)
             pay.setToolTip(tr("Tanlangan kontragent bo'yicha to'lovni yozish"))
             pay.clicked.connect(self._add_payment)
             toolbar.addWidget(pay)
         if session.can_modify:
-            remove = button(tr("To'lovni o'chirish"), "danger")
+            remove = button(tr("To'lovni o'chirish"), "danger", Glyph.DELETE)
             remove.clicked.connect(self._delete_payment)
             toolbar.addWidget(remove)
         toolbar.addStretch()
-        print_button = button(tr("Chop etish"))
+        print_button = button(tr("Chop etish"), glyph=Glyph.PRINT)
         print_button.clicked.connect(lambda: print_table(self, *self._current()))
-        excel = button(tr("Excelga chiqarish"))
+        excel = button(tr("Excelga chiqarish"), glyph=Glyph.EXPORT)
         excel.clicked.connect(lambda: export_to_excel(self, *self._current()))
         toolbar.addWidget(print_button)
         toolbar.addWidget(excel)
 
-        hint = label(
+        header, _tools = page_header(
+            Glyph.WALLET,
+            tr("Qarzlar"),
             tr(
                 "Qarz kirim yoki chiqimda «Qarzga» belgisi qo'yilgan yozuvlardan hosil bo'ladi; to'lov uni kamaytiradi."
             ),
-            "muted",
         )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 16)
         layout.setSpacing(14)
-        layout.addWidget(label(tr("Qarzlar"), "pageTitle"))
-        layout.addWidget(hint)
+        layout.addLayout(header)
         layout.addLayout(toolbar)
-        layout.addWidget(self._tabs, stretch=1)
+        layout.addWidget(card(self._tabs), stretch=1)
         layout.addWidget(self._footer)
 
     def refresh(self) -> None:

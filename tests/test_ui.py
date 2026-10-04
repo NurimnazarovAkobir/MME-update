@@ -96,7 +96,8 @@ class MainWindowTests(UiTestCase):
         window = self.window(self.viewer)
         texts = self.button_texts(window)
         for labels in LABELS.values():
-            self.assertNotIn(labels.new_action, texts)
+            self.assertNotIn(labels.new_action.lstrip("+ "), texts)
+        self.assertIn(LABELS[MovementKind.IN].new_action.lstrip("+ "), self.button_texts(self.window(self.keeper)))
         self.assertIsNone(window._pages.widget(RECEIPTS_ROW).table.cellWidget(0, 0))
 
 
@@ -239,7 +240,19 @@ class OtherPagesTests(UiTestCase):
             )
         page = MovementsPage(self.warehouse, LABELS[MovementKind.IN], Session(self.admin))
         page.refresh()
-        self.assertEqual(page.table.rowCount(), 302)
+        table = page.table
+        # Jadval sahifalarga bo'linadi: ekranda bir sahifa, jami va chop etish — hamma qatorlar bo'yicha.
+        self.assertEqual((table.rowCount(), table.total_rows(), table.page_count()), (25, 302, 13))
+        self.assertEqual(len(table.displayed_data()[1]), 302)
+        table.set_page(12)
+        self.assertEqual((table.page(), table.rowCount()), (12, 2))
+        table.set_page_size(100)
+        self.assertEqual((table.page(), table.rowCount(), table.page_count()), (0, 100, 4))
+        # Saralash butun ro'yxat bo'yicha: eng katta miqdor birinchi sahifaning boshiga chiqadi.
+        quantity = [table.horizontalHeaderItem(c).text() for c in range(table.columnCount())].index("Miqdor")
+        table._sort_by(quantity)
+        table._sort_by(quantity)
+        self.assertEqual(table.item(0, quantity).text(), "100")
 
 
 if __name__ == "__main__":
