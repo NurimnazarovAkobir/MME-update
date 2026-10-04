@@ -111,6 +111,9 @@ class SettingsPage(QWidget):
             cards.addWidget(self._network_card())
             if self._vault is not None:
                 cards.addWidget(self._encryption_card())
+        elif session.can_add:
+            # Omborchi ham bazaning nusxasini saqlab qo'ya oladi; papka tanlash va tiklash — rahbarda.
+            cards.addWidget(self._backup_card())
         cards.addWidget(self._about_card())
         cards.addStretch()
 
@@ -123,12 +126,13 @@ class SettingsPage(QWidget):
         layout.addWidget(scroll)
 
     def refresh(self) -> None:
+        if self._session.can_add:
+            self._backup_status.setText(self._describe_backups())
         if not self._user.is_admin:
             return
         users = self._auth.users()
         self._users.set_rows([(user.name, user.role.title) for user in users], ids=[user.id for user in users])
         self._fill_stores()
-        self._backup_status.setText(self._describe_backups())
 
     # --- Kartochkalar ------------------------------------------------------
 
@@ -262,6 +266,14 @@ class SettingsPage(QWidget):
         )
 
     def _backup_card(self) -> QFrame:
+        """Rahbarga — to'liq; omborchiga — faqat «hozir nusxa olish» va papkani ochish."""
+        is_admin = self._user.is_admin
+        buttons = [
+            *([_action(tr("Qo'shimcha papkani tanlash"), self._choose_extra_folder, "primary")] if is_admin else []),
+            _action(tr("Hozir nusxa olish"), self._save_backup, "" if is_admin else "primary"),
+            *([_action(tr("Zaxiradan tiklash"), self._restore_backup)] if self._session.can_modify else []),
+            _action(tr("Papkani ochish"), self._open_backup_folder),
+        ]
         return card(
             label(tr("Zaxira nusxa"), "sectionTitle"),
             _text(
@@ -272,12 +284,7 @@ class SettingsPage(QWidget):
                 ).format(AUTO_COPIES_KEPT)
             ),
             self._backup_status,
-            _button_row(
-                _action(tr("Qo'shimcha papkani tanlash"), self._choose_extra_folder, "primary"),
-                _action(tr("Hozir nusxa olish"), self._save_backup),
-                *([_action(tr("Zaxiradan tiklash"), self._restore_backup)] if self._session.can_modify else []),
-                _action(tr("Papkani ochish"), self._open_backup_folder),
-            ),
+            _button_row(*buttons),
         )
 
     # --- Tarmoqda ishlash --------------------------------------------------

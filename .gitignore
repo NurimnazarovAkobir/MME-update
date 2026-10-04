@@ -2,6 +2,7 @@
 .venv/
 build/
 dist/
+sinov/
 *.spec
 __pycache__/
 *.pyc

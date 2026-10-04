@@ -238,6 +238,28 @@ class SettingsCardsTests(UiTestCase):
             self.assertIn(text, admin)
             self.assertNotIn(text, keeper)
 
+    def test_keeper_can_save_a_backup_but_not_restore_or_choose_folders(self):
+        page = SettingsPage(self.services, Session(self.keeper), self.folder / "ombor.db")
+        page.refresh()
+        texts = self.button_texts(page)
+        self.assertIn("Hozir nusxa olish", texts)
+        self.assertIn("Papkani ochish", texts)
+        self.assertNotIn("Zaxiradan tiklash", texts)
+        self.assertNotIn("Qo'shimcha papkani tanlash", texts)
+        self.assertIn("ombor.db", page._backup_status.text())
+        target = self.folder / "omborchi-nusxa.db"
+        with (
+            mock.patch("ombor.ui.settings_page.QFileDialog.getSaveFileName", return_value=(str(target), "")),
+            mock.patch.object(QMessageBox, "information"),
+        ):
+            page._save_backup()
+        self.assertTrue(target.is_file())
+
+    def test_viewer_has_no_backup_card(self):
+        page = SettingsPage(self.services, Session(self.viewer), self.folder / "ombor.db")
+        page.refresh()
+        self.assertNotIn("Hozir nusxa olish", self.button_texts(page))
+
     def test_theme_is_saved_in_local_prefs_not_in_the_shared_database(self):
         page = SettingsPage(self.services, Session(self.admin), self.folder / "ombor.db")
         page._change_theme("light")
