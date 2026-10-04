@@ -73,6 +73,11 @@ class MovementsPage(ListPage):
         super().__init__(labels.title, labels.new_action, _columns(labels), session, row_actions=session.can_add)
         self._warehouse = warehouse
         self._labels = labels
+        # Hech bir yozuvda to'ldirilmagan bo'lsa, yashiriladigan ustunlar: jadval oynaga sig'ishi uchun.
+        titles = [column.title for column in _columns(labels)]
+        self._optional_columns = [
+            titles.index(title) for title in (tr("Hujjat №"), tr("Guruh"), tr("Kichik guruh"), tr("Belgi"), tr("Izoh"))
+        ]
         self._period = PeriodFilter()
         self._period.changed.connect(self.refresh)
         self.header_tools.addWidget(self._period)
@@ -90,6 +95,7 @@ class MovementsPage(ListPage):
             ids=[m.id for m in shown],
             locked=[index for index, m in enumerate(shown) if not self.session.can_change(m)],
         )
+        self.table.hide_empty_columns(self._optional_columns)
         self.table.hide_column(STORE_COLUMN, len(self._warehouse.stores()) < 2)
         self.footer.setText(self._totals(movements))
 

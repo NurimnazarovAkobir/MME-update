@@ -6,6 +6,7 @@ from ..debts import PAYMENT_ENTITY
 from ..errors import WarehouseError
 from ..i18n import tr
 from ..models import HistoryEntry, MovementKind
+from ..session import Session
 from ..warehouse import PRODUCT_ENTITY, TRANSFER_ENTITY, Warehouse
 from .labels import LABELS
 from .printing import print_table
@@ -27,6 +28,7 @@ def _change_row(entry: HistoryEntry) -> tuple:
     return (
         entry.at,
         entry.actor,
+        entry.role_title,
         entry.action.title,
         _ENTITY_TITLES.get(entry.entity, entry.entity),
         entry.summary,
@@ -35,15 +37,18 @@ def _change_row(entry: HistoryEntry) -> tuple:
 
 
 class HistoryPage(QWidget):
-    def __init__(self, warehouse: Warehouse):
+    def __init__(self, warehouse: Warehouse, session: Session):
+        """Tarixni hamma ko'radi; o'chirilgan yozuvlar va ularni tiklash — faqat rahbarga."""
         super().__init__()
         self.setObjectName("page")
         self._warehouse = warehouse
+        self._can_restore = session.can_modify
 
         self._changes = DataTable(
             (
                 Column(tr("Vaqti"), ColumnKind.DATETIME),
                 Column(tr("Kim")),
+                Column(tr("Lavozimi")),
                 Column(tr("Amal")),
                 Column(tr("Turi")),
                 Column(tr("Yozuv")),
@@ -65,7 +70,8 @@ class HistoryPage(QWidget):
         )
         self._tabs = QTabWidget()
         self._tabs.addTab(self._changes, tr("O'zgarishlar"))
-        self._tabs.addTab(self._deleted, tr("O'chirilgan yozuvlar"))
+        if self._can_restore:
+            self._tabs.addTab(self._deleted, tr("O'chirilgan yozuvlar"))
 
         self._period = PeriodFilter()
         self._period.changed.connect(self.refresh)
@@ -89,7 +95,8 @@ class HistoryPage(QWidget):
         header.addStretch()
         header.addWidget(self._period)
         toolbar = QHBoxLayout()
-        toolbar.addWidget(restore)
+        if self._can_restore:
+            toolbar.addWidget(restore)
         toolbar.addStretch()
         for widget in (self._search, print_button, excel):
             toolbar.addWidget(widget)

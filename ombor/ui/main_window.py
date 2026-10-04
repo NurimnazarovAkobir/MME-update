@@ -57,6 +57,7 @@ class MainWindow(QMainWindow):
         self._warehouse = services.warehouse
         self._warehouse.actor = session.author  # o'zgarishlar tarixiga shu ism yoziladi
         services.debts.actor = session.author
+        self._warehouse.actor_role = services.debts.actor_role = session.user.role.value
         self._session = session
 
         dashboard = DashboardPage(self._warehouse, services.reports, services.analytics, session.can_add)
@@ -89,8 +90,7 @@ class MainWindow(QMainWindow):
             ),
             (tr("Qarzlar"), Glyph.MONEY, DebtsPage(services.debts, session), None),
         ]
-        if session.is_admin:
-            pages.append((tr("Tarix"), Glyph.CLOCK, HistoryPage(self._warehouse), None))
+        pages.append((tr("Tarix"), Glyph.CLOCK, HistoryPage(self._warehouse, session), None))
         self._update_title = tr("Yangilash")
         self._update_page = UpdatePage(services, session)
         update_page = self._update_page

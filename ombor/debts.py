@@ -38,6 +38,7 @@ class Debts:
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
         self.actor = ""  # o'zgarishlar tarixiga yoziladigan foydalanuvchi
+        self.actor_role = ""
 
     def balances(self, kind: MovementKind, include_settled: bool = False) -> list[Balance]:
         """Kontragentlar bilan hisob-kitob, eng katta qarzdan boshlab.
@@ -123,6 +124,6 @@ class Debts:
             (fmt_date(payment.date), payment.counterparty.strip(), f"{fmt_money(payment.amount)} {CURRENCY}")
         )
         self._conn.execute(
-            "INSERT INTO history (actor, action, entity, entity_id, summary) VALUES (?, ?, ?, ?, ?)",
-            (self.actor, action.value, f"{PAYMENT_ENTITY}:{payment.kind.value}", payment_id, summary),
+            "INSERT INTO history (actor, actor_role, action, entity, entity_id, summary) VALUES (?, ?, ?, ?, ?, ?)",
+            (self.actor, self.actor_role, action.value, f"{PAYMENT_ENTITY}:{payment.kind.value}", payment_id, summary),
         )

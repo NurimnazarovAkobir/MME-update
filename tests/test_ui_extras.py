@@ -12,6 +12,7 @@ from ombor.session import Session
 from ombor.ui.debts_page import DebtsPage
 from ombor.ui.dialogs import InventoryDialog, MovementDialog, ProductDialog
 from ombor.ui.extra_dialogs import GroupsDialog, NameDialog, PaymentDialog, TransferDialog
+from ombor.ui.history_page import HistoryPage
 from ombor.ui.labels import LABELS
 from ombor.ui.movements_page import STORE_COLUMN, MovementsPage
 from ombor.ui.products_page import ProductsPage
@@ -164,6 +165,80 @@ class StoreUiTests(UiTestCase):
             page._edit_store(None)
         self.assertEqual([store.name for store in self.warehouse.stores()][-1], "Zaxira ombor")
         self.assertEqual(page._stores.rowCount(), 3)
+
+
+class FitAndHistoryTests(UiTestCase):
+    def page(self, user=None) -> MovementsPage:
+        page = MovementsPage(self.warehouse, LABELS[MovementKind.IN], Session(user or self.admin))
+        page.resize(1100, 600)
+        page.show()
+        page.refresh()
+        self.app.processEvents()
+        return page
+
+    def test_table_fits_its_width_without_horizontal_scrolling(self):
+        self.warehouse.save_movement(
+            Movement(
+                MovementKind.IN,
+                TODAY,
+                self.pipe,
+                40_000,
+                6000,
+                category="Стройматериал",
+                subcategory="Метал",
+                person="Juda uzun ismli olib kelgan odam",
+                counterparty="Juda uzun nomli yetkazib beruvchi firma",
+                note="Bu yerda ancha uzun izoh yozilgan, u ustunga sig'maydi",
+                doc_number="84758834528",
+            )
+        )
+        page = self.page()
+        table = page.table
+        visible = [c for c in range(table.columnCount()) if not table.isColumnHidden(c)]
+        total = sum(table.columnWidth(c) for c in visible)
+        self.assertLessEqual(total, table.viewport().width())
+        self.assertEqual(table.horizontalScrollBar().maximum(), 0)
+        # Sonlar kesilmaydi: summa ustuni o'z mazmunidan tor emas.
+        amount = [table.horizontalHeaderItem(c).text() for c in range(table.columnCount())].index("Summa")
+        self.assertGreaterEqual(table.columnWidth(amount), table.sizeHintForColumn(amount))
+        note = table.item(0, table.columnCount() - 2)
+        self.assertEqual(note.toolTip(), "Bu yerda ancha uzun izoh yozilgan, u ustunga sig'maydi")
+
+    def test_columns_nobody_filled_are_hidden(self):
+        page = self.page()
+        titles = {page.table.horizontalHeaderItem(c).text(): c for c in range(page.table.columnCount())}
+        for title in ("Hujjat №", "Guruh", "Kichik guruh", "Belgi", "Izoh"):
+            self.assertTrue(page.table.isColumnHidden(titles[title]), title)
+        self.assertFalse(page.table.isColumnHidden(titles["Mahsulot"]))
+        self.warehouse.save_movement(Movement(MovementKind.IN, TODAY, self.pipe, 1, 10, doc_number="7"))
+        page.refresh()
+        self.assertFalse(page.table.isColumnHidden(titles["Hujjat №"]))
+
+    def test_history_shows_who_added_what_with_role_and_date(self):
+        window = self.window(self.keeper)
+        self.warehouse.save_movement(Movement(MovementKind.IN, TODAY, self.pipe, 3, 100, created_by="Vali"))
+        (entry,) = self.warehouse.history(limit=1)
+        self.assertEqual((entry.actor, entry.actor_role, entry.role_title), ("Vali", "keeper", "Omborchi"))
+        self.assertEqual(entry.at.date(), TODAY)
+        row = [window._menu.item(i).text().strip() for i in range(window._menu.count())].index("Tarix")
+        window._menu.setCurrentRow(row)
+        table = window._pages.widget(row)._changes
+        headers = [table.horizontalHeaderItem(c).text() for c in range(table.columnCount())]
+        self.assertEqual(headers[:4], ["Vaqti", "Kim", "Lavozimi", "Amal"])
+        self.assertEqual([table.item(0, c).text() for c in (1, 2, 3)], ["Vali", "Omborchi", "Qo'shildi"])
+
+    def test_only_admin_can_see_deleted_records_and_restore(self):
+        keeper = HistoryPage(self.warehouse, Session(self.keeper))
+        admin = HistoryPage(self.warehouse, Session(self.admin))
+        self.assertEqual((keeper._tabs.count(), admin._tabs.count()), (1, 2))
+        self.assertNotIn("Tanlangan yozuvni tiklash", self.button_texts(keeper))
+        self.assertIn("Tanlangan yozuvni tiklash", self.button_texts(admin))
+
+    def test_old_history_rows_take_the_role_from_the_user(self):
+        self.conn.execute("INSERT INTO history (actor, action, entity, summary) VALUES ('Rahbar', 'add', 'IN', 'eski')")
+        entry = self.warehouse.history(search="eski")[0]
+        self.assertEqual(entry.role_title, "Rahbar")
+        self.assertEqual(len(self.warehouse.history(search="omborchi")), 0)
 
 
 class DebtUiTests(UiTestCase):

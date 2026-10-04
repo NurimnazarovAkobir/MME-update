@@ -41,6 +41,8 @@ DATE_DISPLAY_FORMAT = "dd.MM.yyyy"
 DATE_INPUT_WIDTH = 130
 MAX_NUMBER = 1e12
 ROW_HEIGHT = 38
+MIN_COLUMN_WIDTH = 44
+HEADER_HEIGHT = 52  # ikki qatorli sarlavha sig'adi
 CARD_BADGE_SIZE = 44
 BADGE_HEIGHT, BADGE_PADDING, BADGE_RADIUS = 24, 12, 6
 NO_SORTING = -1  # jadval ochilganda qatorlar berilgan tartibda turadi
@@ -259,6 +261,21 @@ class BadgeDelegate(QStyledItemDelegate):
         return size
 
 
+def _shrink(widths: dict[int, int], room: int) -> dict[int, int]:
+    """Kengliklarni jami `room` ga sig'adigan qilib qisqartiradi: faqat eng keng ustunlar torayadi.
+
+    Shunday chegara topiladiki, undan keng ustunlar shu chegaragacha qisqaradi, torroqlari esa
+    o'z kengligida qoladi — qisqa ustunlar («Birlik», «Turi») uzun izoh tufayli kesilib ketmaydi.
+    """
+    remaining, left = room, len(widths)
+    result: dict[int, int] = {}
+    for column, width in sorted(widths.items(), key=lambda item: item[1]):
+        result[column] = max(min(width, remaining // left), 1)  # navbatdagi eng tor ustun teng ulushdan oshmaydi
+        remaining -= result[column]
+        left -= 1
+    return result
+
+
 class DataTable(QTableWidget):
     """Faqat o'qish uchun jadval. Qiymatlar ustun turiga qarab formatlanadi.
 
@@ -290,10 +307,18 @@ class DataTable(QTableWidget):
         header = self.horizontalHeader()
         header.setHighlightSections(False)
         # Har bir ustun o'z mazmunicha keng; hammasi sig'masa — gorizontal aylantirish chiqadi.
-        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        # Ustun kengliklarini `_fit_columns` o'zi belgilaydi: jadval har doim oynaga sig'adi, gorizontal
+        # aylantirish yo'q. Joy yetmasa, matnli ustunlar torayadi (to'liq matn — sichqoncha ustida).
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        header.setMinimumSectionSize(1)
+        header.setFixedHeight(HEADER_HEIGHT)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         header.setSortIndicator(NO_SORTING, Qt.SortOrder.AscendingOrder)
         for index, column in enumerate(columns):
-            self.horizontalHeaderItem(index + self._offset).setTextAlignment(self._alignment(column))
+            # Tor ustunda sarlavha kesilmasdan ikki qatorga bo'linadi.
+            self.horizontalHeaderItem(index + self._offset).setTextAlignment(
+                self._alignment(column) | Qt.TextFlag.TextWordWrap
+            )
 
         self.itemDoubleClicked.connect(self._emit_activated)
 
@@ -317,13 +342,15 @@ class DataTable(QTableWidget):
             for column_index, (column, value) in enumerate(zip(self._columns, row), start=self._offset):
                 item = _SortableItem(_FORMATTERS[column.kind](value), value)
                 item.setTextAlignment(self._alignment(column))
+                if column.kind is ColumnKind.TEXT and item.text():
+                    item.setToolTip(item.text())  # ustun toraytirilganda matn qisqarib ko'rinadi
                 if ids:
                     item.setData(Qt.ItemDataRole.UserRole, ids[row_index])
                 if row_index in flagged:
                     item.setBackground(QColor(theme.palette().warning_row))
                 self.setItem(row_index, column_index, item)
         self.setSortingEnabled(True)
-        self._fit_last_column()
+        self._fit_columns()
 
     def set_badges(self, column: int, tones: dict[str, str]) -> None:
         """`column` ustunidagi matnlarni rangli yorliq qilib ko'rsatadi (`tones`: matn -> palitra rangi)."""
@@ -332,6 +359,14 @@ class DataTable(QTableWidget):
     def hide_column(self, column: int, hidden: bool) -> None:
         """Ma'lumot ustunini (tartib raqami bo'yicha) yashiradi yoki ko'rsatadi."""
         self.setColumnHidden(column + self._offset, hidden)
+        self._fit_columns()
+
+    def hide_empty_columns(self, columns: Iterable[int]) -> None:
+        """`columns` dagi ustunlardan hech bir qatorda qiymati yo'qlarini yashiradi (joyni tejash uchun)."""
+        for column in columns:
+            is_empty = not any(str(row[column]).strip() for row in self._rows)
+            self.setColumnHidden(column + self._offset, is_empty)
+        self._fit_columns()
 
     def selected_id(self) -> int | None:
         item = self.currentItem()
@@ -383,15 +418,42 @@ class DataTable(QTableWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._fit_last_column()
+        self._fit_columns()
 
-    def _fit_last_column(self) -> None:
-        """Ustunlar jadvaldan tor bo'lsa, ortgan joyni oxirgi ustun egallaydi; sig'masa — aylantirish chiqadi."""
+    def _fit_columns(self) -> None:
+        """Ustun kengliklarini jadval eniga moslaydi — gorizontal aylantirish bo'lmaydi.
+
+        Hammasi sig'sa — har biri o'z mazmunicha, ortgan joy oxirgi ustunga. Sig'masa — son, sana va
+        tugmalar ustunlari mazmuni to'liq ko'rinadigan kenglikda qoladi (sarlavhasi ikki qatorga bo'linadi),
+        matnli ustunlarning eng uzunlari qisqaradi (to'liq matn — sichqoncha ustida).
+        """
         header = self.horizontalHeader()
-        natural_width = sum(
-            max(self.sizeHintForColumn(column), header.sectionSizeHint(column)) for column in range(self.columnCount())
-        )
-        header.setStretchLastSection(natural_width < self.viewport().width())
+        visible = [column for column in range(self.columnCount()) if not self.isColumnHidden(column)]
+        if not visible:
+            return
+        content = {column: max(self.sizeHintForColumn(column), MIN_COLUMN_WIDTH) for column in visible}
+        widths = {column: max(content[column], header.sectionSizeHint(column)) for column in visible}
+        available = self.viewport().width()
+        extra = available - sum(widths.values())
+        if extra >= 0:
+            widths[visible[-1]] += extra
+        else:
+            flexible = [column for column in visible if self._is_text_column(column)]
+            fixed = {column: content[column] for column in visible if column not in flexible}
+            room = available - sum(fixed.values())
+            if flexible and room >= MIN_COLUMN_WIDTH * len(flexible):
+                # Matnli ustunlar mazmuniga qarab bo'linadi (sarlavhasi ikki qatorga sig'adi); ortgan joy teng ulashiladi.
+                shrunk = _shrink({column: content[column] for column in flexible}, room)
+                spare = (room - sum(shrunk.values())) // len(flexible)
+                widths = {**fixed, **{column: width + spare for column, width in shrunk.items()}}
+            else:
+                widths = _shrink(content, available)  # juda tor oyna: eng keng ustunlar torayadi
+        for column, width in widths.items():
+            header.resizeSection(column, width)
+
+    def _is_text_column(self, column: int) -> bool:
+        index = column - self._offset
+        return index >= 0 and self._columns[index].kind is ColumnKind.TEXT
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)

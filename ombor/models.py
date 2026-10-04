@@ -276,6 +276,14 @@ class HistoryEntry:
     entity_id: int | None
     summary: str
     previous: str
+    actor_role: str = ""  # lavozimi (Role qiymati); eski yozuvlarda bo'sh bo'lishi mumkin
+
+    @property
+    def role_title(self) -> str:
+        try:
+            return Role(self.actor_role).title
+        except ValueError:
+            return self.actor_role
 
 
 @dataclass(frozen=True)

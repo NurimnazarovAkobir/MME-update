@@ -78,7 +78,7 @@ class UiTestCase(unittest.TestCase):
 
 class MainWindowTests(UiTestCase):
     def test_every_page_opens_for_each_role(self):
-        for user, pages in ((self.admin, 9), (self.keeper, 8), (self.viewer, 8)):
+        for user, pages in ((self.admin, 9), (self.keeper, 9), (self.viewer, 9)):
             window = self.window(user)
             self.assertEqual(window._menu.count(), pages, user.role)
             for row in range(window._menu.count()):
@@ -208,7 +208,7 @@ class OtherPagesTests(UiTestCase):
     def test_history_page_restores_a_deleted_record(self):
         self.warehouse.actor = "Rahbar"
         self.warehouse.delete_movement(self.by_keeper)
-        page = HistoryPage(self.warehouse)
+        page = HistoryPage(self.warehouse, Session(self.admin))
         page.refresh()
         self.assertEqual(page._deleted.rowCount(), 1)
         self.assertGreaterEqual(page._changes.rowCount(), 5)

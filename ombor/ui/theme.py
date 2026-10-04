@@ -361,7 +361,7 @@ QTableWidget {{
     selection-background-color: {selection}; selection-color: {text};
 }}
 QTableWidget {{ font-size: 10pt; }}
-QTableWidget::item {{ padding: 4px 10px; }}
+QTableWidget::item {{ padding: 4px 6px; }}
 QTreeWidget {{
     background: {surface}; border: 1px solid {border}; border-radius: 8px; font-size: 10pt;
     selection-background-color: {selection}; selection-color: {text};
@@ -369,7 +369,7 @@ QTreeWidget {{
 QTreeWidget::item {{ padding: 5px 4px; }}
 QHeaderView::section {{
     background: {header}; border: none; border-bottom: 1px solid {border};
-    padding: 8px 10px; font-weight: 600;
+    padding: 8px 6px; font-weight: 600;
 }}
 QTableCornerButton::section {{ background: {header}; border: none; }}
 #flatTable {{ border: none; border-radius: 0; background: transparent; }}

@@ -109,6 +109,7 @@ class Warehouse:
         self._today = today
         self._settings = Settings(conn)
         self.actor = ""  # o'zgarishlar tarixiga yoziladigan foydalanuvchi; dasturga kirilgach o'rnatiladi
+        self.actor_role = ""  # uning lavozimi (Role qiymati)
 
     # --- Mahsulotlar -------------------------------------------------------
 
@@ -532,7 +533,16 @@ class Warehouse:
     def history(self, period: Period = Period(), search: str = "", limit: int | None = None) -> list[HistoryEntry]:
         """Kim, qachon, nimani o'zgartirgani — eng yangisidan boshlab."""
         where, params = period_filter(period, "substr(at, 1, 10)")
-        rows = self._conn.execute(f"SELECT * FROM history WHERE {where} ORDER BY id DESC", params)
+        # Lavozim yozilmagan eski qatorlarda u foydalanuvchining hozirgi lavozimidan olinadi.
+        rows = self._conn.execute(
+            f"""
+            SELECT id, at, actor, action, entity, entity_id, summary, previous,
+                   COALESCE(NULLIF(actor_role, ''),
+                            (SELECT role FROM users WHERE users.name = history.actor), '') AS actor_role
+            FROM history WHERE {where} ORDER BY id DESC
+            """,
+            params,
+        )
         found = [
             entry
             for entry in (
@@ -541,7 +551,7 @@ class Warehouse:
                 )
                 for row in rows
             )
-            if _matches(search, entry.actor, entry.summary, entry.previous)
+            if _matches(search, entry.actor, entry.role_title, entry.summary, entry.previous)
         ]
         return found[:limit] if limit else found
 
@@ -615,8 +625,9 @@ class Warehouse:
     def _log(self, action: HistoryAction, entity: str, entity_id: int | None, summary: str, previous: str = "") -> None:
         """Tranzaksiya ichida chaqiriladi: amal bekor bo'lsa, tarixdagi qator ham yozilmaydi."""
         self._conn.execute(
-            "INSERT INTO history (actor, action, entity, entity_id, summary, previous) VALUES (?, ?, ?, ?, ?, ?)",
-            (self.actor, action.value, entity, entity_id, summary, previous),
+            "INSERT INTO history (actor, actor_role, action, entity, entity_id, summary, previous)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (self.actor, self.actor_role, action.value, entity, entity_id, summary, previous),
         )
 
     def _recalculate(self, product_ids: set[int]) -> None:

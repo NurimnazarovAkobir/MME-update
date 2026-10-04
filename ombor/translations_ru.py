@@ -349,7 +349,7 @@ TRANSLATIONS = {
     "O'zgarishlar: {0} ta  ·  o'chirilgan yozuvlar: {1} ta": "Изменений: {0}  ·  удалённых записей: {1}",
     "O'zgartirildi": "Изменено",
     "Omborchi faqat o'zi bugun kiritgan yozuvni o'zgartira oladi. Boshqasini rahbar tuzatadi.": "Кладовщик может изменить только запись, которую сам внёс сегодня. Остальные исправляет руководитель.",
-    "Omborchi kirim, chiqim va mahsulot qo'shadi, o'zi bugun kiritgan yozuvni tuzata oladi. Kuzatuvchi (masalan, buxgalter) faqat ko'radi. Qolgan hammasi — tahrirlash, o'chirish, inventarizatsiya, tarix va sozlamalar — faqat rahbarda.": "Кладовщик добавляет приход, расход и товары, может исправить запись, внесённую им сегодня. Наблюдатель (например, бухгалтер) только просматривает. Всё остальное — редактирование, удаление, инвентаризация, история и настройки — только у руководителя.",
+    "Omborchi kirim, chiqim va mahsulot qo'shadi, o'zi bugun kiritgan yozuvni tuzata oladi. Kuzatuvchi (masalan, buxgalter) faqat ko'radi. Qolgan hammasi — tahrirlash, o'chirish, inventarizatsiya, o'chirilganni tiklash va sozlamalar — faqat rahbarda.": "Кладовщик добавляет приход, расход и товары, может исправить запись, внесённую им сегодня. Наблюдатель (например, бухгалтер) только просматривает. Всё остальное — редактирование, удаление, инвентаризация, восстановление удалённого и настройки — только у руководителя.",
     "Qabul qildi": "Принял",
     "Qo'shildi": "Добавлено",
     "Sana bugundan keyin bo'lishi mumkin emas.": "Дата не может быть позже сегодняшней.",

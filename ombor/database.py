@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS history (
     id        INTEGER PRIMARY KEY,
     at        TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     actor     TEXT NOT NULL DEFAULT '',
+    actor_role TEXT NOT NULL DEFAULT '',  -- amal bajarilgan paytdagi lavozimi (models.Role)
     action    TEXT NOT NULL,  -- models.HistoryAction
     entity    TEXT NOT NULL,  -- 'IN', 'OUT' yoki 'product'
     entity_id INTEGER,
@@ -127,6 +128,7 @@ ADDED_COLUMNS = {
         "on_credit": "INTEGER NOT NULL DEFAULT 0",
         "warehouse_id": "INTEGER NOT NULL DEFAULT 1",
     },
+    "history": {"actor_role": "TEXT NOT NULL DEFAULT ''"},
     "products": {
         "is_service": "INTEGER NOT NULL DEFAULT 0",
         "barcode": "TEXT NOT NULL DEFAULT ''",
