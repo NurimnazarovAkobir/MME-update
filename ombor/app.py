@@ -26,6 +26,7 @@ from .ui.icon import app_icon
 from .ui.language import restart_application
 from .ui.main_window import MainWindow
 from .ui.settings_page import THEME_KEY
+from .ui.updater import OnlineUpdater
 from .ui.widgets import confirm
 from .vault import Vault
 
@@ -142,6 +143,13 @@ def _offer_update(services: Services) -> bool:
     return True
 
 
+def _check_online_update(services: Services, window: MainWindow) -> None:
+    """Internetdagi manzilni fonda tekshiradi; internet bo'lmasa, hech narsa bo'lmaydi va dastur ishlayveradi."""
+    url = update.update_url(services.settings.get(update.UPDATE_URL_KEY))
+    if url and update.is_installed_program():
+        OnlineUpdater(url, window).check()
+
+
 def run() -> int:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
@@ -179,6 +187,7 @@ def run() -> int:
         services.backup.run_automatic()
         window = MainWindow(services, Session(user), DB_PATH)
         window.showMaximized()
+        _check_online_update(services, window)
         exit_code = app.exec()
         try:
             services.backup.run_automatic()

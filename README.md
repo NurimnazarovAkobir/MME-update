@@ -98,7 +98,12 @@ keyingi davrga o'tkazadi.
   Zaxira nusxalar ham shifrlanadi, yoniga `.kalit` fayli qo'yiladi. Parol ham, tiklash kodi ham yo'qolsa —
   ma'lumotni tiklab bo'lmaydi.
 - **Yangilash**: «Sozlamalar → Dasturni yangilash» — yangi `MME-Ombor.exe` ko'rsatiladi yoki yangilanishlar papkasi
-  belgilanadi (`MME-Ombor.exe` + `versiya.txt`). Internet orqali yangilash yo'q. Eski dastur yangi bazani ochmaydi.
+  belgilanadi (`MME-Ombor.exe` + `versiya.txt`). Eski dastur yangi bazani ochmaydi.
+- **Internet orqali yangilash** (1.3): shu ikki fayl internetdagi https manzilga qo'yiladi (masalan, GitHub Releases:
+  `https://github.com/<foydalanuvchi>/<repo>/releases/latest/download/`). Manzil `config.py` dagi
+  `DEFAULT_UPDATE_URL` ga yoziladi (hamma nusxalar uchun) yoki «Sozlamalar»da kiritiladi. Dastur ochilganda fonda
+  tekshiradi; internet bo'lmasa, tekshiruv jimgina o'tkazib yuboriladi. Yangi versiya chiqarish: `APP_VERSION` ni
+  oshirish → `build.bat` → `dist\MME-Ombor.exe` va `dist\versiya.txt` ni o'sha manzilga yuklash.
 - **O'rnatish**: `Ornatish.bat` dasturni ko'chiradi, ish stoli va «Pusk»ga yorliq qo'yadi va Windows ning
   «O'rnatilgan ilovalar» ro'yxatiga yozadi; u yerdan (yoki `Ochirish.bat` bilan) o'chiriladi, ma'lumotlar qoladi.
 

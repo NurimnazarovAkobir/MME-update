@@ -1,17 +1,22 @@
 """Dasturni yangilash: yangi exe faylini joriysining o'rniga qo'yadi.
 
-Dastur internetga chiqmaydi. Yangi versiya ikki yo'l bilan o'rnatiladi:
+Yangi versiya uch yo'l bilan o'rnatiladi:
 - qo'lda: «Sozlamalar»da yangi `MME-Ombor.exe` fayli ko'rsatiladi;
-- o'zi: rahbar «yangilanishlar papkasi»ni (masalan, tarmoqdagi umumiy papka) belgilaydi; u yerga
-  yangi `MME-Ombor.exe` va `versiya.txt` qo'yilsa, har bir kompyuter ochilganda yangilashni taklif qiladi.
+- papkadan: rahbar «yangilanishlar papkasi»ni (masalan, tarmoqdagi umumiy papka) belgilaydi; u yerga
+  yangi `MME-Ombor.exe` va `versiya.txt` qo'yilsa, har bir kompyuter ochilganda yangilashni taklif qiladi;
+- internetdan: xuddi shu ikki fayl internetdagi manzilga (https) qo'yiladi; dastur ochilganda fonda
+  tekshiradi. Internet bo'lmasa, tekshiruv jimgina o'tkazib yuboriladi — dastur ishlayveradi.
 """
 
+import http.client
 import os
 import shutil
 import sys
+import urllib.request
 from pathlib import Path
+from typing import Callable
 
-from .config import APP_VERSION
+from .config import APP_VERSION, DEFAULT_UPDATE_URL
 from .errors import WarehouseError
 from .i18n import tr
 
@@ -19,6 +24,11 @@ UPDATE_FOLDER_KEY = "update_folder"
 EXE_NAME = "MME-Ombor.exe"
 VERSION_FILE = "versiya.txt"
 OLD_SUFFIX = "-eski.exe"
+UPDATE_URL_KEY = "update_url"
+CHECK_TIMEOUT_SECONDS = 6  # internet sekin yoki yo'q bo'lsa, tekshiruv shundan uzoq kutmaydi
+DOWNLOAD_TIMEOUT_SECONDS = 30
+DOWNLOAD_CHUNK = 256 * 1024
+MIN_EXE_BYTES = 1024 * 1024  # bundan kichik fayl dastur emas (masalan, xato sahifasi)
 
 
 def parse_version(text: str) -> tuple[int, ...]:
@@ -79,3 +89,69 @@ def remove_old_version(current_exe: Path | str | None = None) -> None:
         current.with_name(current.stem + OLD_SUFFIX).unlink(missing_ok=True)
     except OSError:
         pass
+
+
+# --- Internet orqali -----------------------------------------------------------
+
+
+def update_url(stored: str) -> str:
+    """Yangilanishlar manzili: sozlamada kiritilgani, bo'lmasa — dasturga yozib qo'yilgani."""
+    return (stored or DEFAULT_UPDATE_URL).strip()
+
+
+def check_url(url: str) -> str:
+    """Manzilni tekshirib, tartibga keltiradi; faqat himoyalangan (https) manzil qabul qilinadi."""
+    url = url.strip()
+    if url and not url.lower().startswith("https://"):
+        raise WarehouseError(tr("Manzil https:// bilan boshlanishi kerak."))
+    return url
+
+
+def _file_url(base_url: str, name: str) -> str:
+    return base_url.rstrip("/") + "/" + name
+
+
+def online_version(base_url: str, timeout: float = CHECK_TIMEOUT_SECONDS) -> str | None:
+    """Internetdagi versiya raqami; internet yo'q, manzil xato yoki fayl topilmasa — None (xato ko'tarilmaydi)."""
+    try:
+        with urllib.request.urlopen(_file_url(base_url, VERSION_FILE), timeout=timeout) as response:
+            text = response.read(64).decode("utf-8", errors="replace").strip()
+    except (OSError, ValueError, http.client.HTTPException):
+        return None
+    return text if parse_version(text) else None
+
+
+def available_online(base_url: str, current: str = APP_VERSION) -> str | None:
+    """Internetda joriysidan yangiroq versiya bo'lsa — uning raqami; aks holda yoki internet bo'lmasa — None."""
+    if not base_url:
+        return None
+    version = online_version(base_url)
+    return version if version and parse_version(version) > parse_version(current) else None
+
+
+def download(base_url: str, target: Path | str, progress: Callable[[int, int], None] | None = None) -> Path:
+    """Yangi exe ni `target` ga yuklab oladi; `progress(yuklangan, jami)` har bo'lakda chaqiriladi.
+
+    Yuklash uzilib qolsa yoki fayl dasturga o'xshamasa, yarim fayl o'chiriladi va WarehouseError ko'tariladi.
+    """
+    target = Path(target)
+    partial = target.with_suffix(".qism")
+    try:
+        with urllib.request.urlopen(_file_url(base_url, EXE_NAME), timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+            total = int(response.headers.get("Content-Length") or 0)
+            done = 0
+            with open(partial, "wb") as file:
+                while chunk := response.read(DOWNLOAD_CHUNK):
+                    file.write(chunk)
+                    done += len(chunk)
+                    if progress:
+                        progress(done, total)
+        if done < MIN_EXE_BYTES or (total and done != total):
+            raise OSError("incomplete download")
+        os.replace(partial, target)
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        partial.unlink(missing_ok=True)
+        raise WarehouseError(
+            tr("Yangi versiyani yuklab bo'lmadi. Internetni tekshirib, keyinroq qayta urinib ko'ring.")
+        ) from error
+    return target

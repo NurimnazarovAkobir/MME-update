@@ -521,4 +521,18 @@ TRANSLATIONS = {
     "«{0}» nomli guruh allaqachon bor.": "Группа с названием «{0}» уже есть.",
     "«{0}» nomli ombor allaqachon bor.": "Склад с названием «{0}» уже есть.",
     "«{0}» ro'yxatdan o'chirilsinmi?": "Удалить «{0}» из списка?",
+    # --- 1.3: internet orqali yangilash ---
+    "Manzil https:// bilan boshlanishi kerak.": "Адрес должен начинаться с https://.",
+    "Yangi versiyani yuklab bo'lmadi. Internetni tekshirib, keyinroq qayta urinib ko'ring.": "Не удалось загрузить новую версию. Проверьте интернет и повторите попытку позже.",
+    "Dasturning yangi versiyasi bor: {0}. Hozir yuklab olib o'rnatilsinmi? Ma'lumotlar saqlanib qoladi, dastur qayta ochiladi.": "Доступна новая версия программы: {0}. Загрузить и установить сейчас? Данные сохранятся, программа откроется заново.",
+    "Yangi versiya yuklab olinmoqda…": "Загружается новая версия…",
+    "Internet orqali: shu ikki fayl internetdagi manzilga (https) qo'yilsa, dastur har ochilganda o'zi tekshiradi. Internet bo'lmasa, tekshiruv o'tkazib yuboriladi va dastur odatdagidek ishlaydi.": "Через интернет: если разместить эти два файла по адресу в интернете (https), программа будет проверять обновление при каждом запуске. Без интернета проверка пропускается, и программа работает как обычно.",
+    "Internet manzilini kiritish": "Указать адрес в интернете",
+    "Internetdan tekshirish": "Проверить в интернете",
+    "Internetdagi manzil: {0}": "Адрес в интернете: {0}",
+    "kiritilmagan": "не указан",
+    "Internetdagi yangilanishlar manzili": "Адрес обновлений в интернете",
+    "Manzil (https://…)": "Адрес (https://…)",
+    "Avval internetdagi manzilni kiriting.": "Сначала укажите адрес в интернете.",
+    "Yangi versiya topilmadi: sizda eng oxirgisi o'rnatilgan yoki hozir internetga chiqib bo'lmadi.": "Новая версия не найдена: у вас установлена последняя, либо сейчас нет доступа к интернету.",
 }

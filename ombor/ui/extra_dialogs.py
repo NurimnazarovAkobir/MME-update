@@ -33,6 +33,7 @@ class NameDialog(FormDialog):
     def __init__(self, title: str, fields: dict[str, str], parent: QWidget | None = None):
         """`fields` — maydon yorlig'i -> boshlang'ich qiymat."""
         super().__init__(title, parent)
+        self.allow_empty = False  # bo'sh qiymat ham qabul qilinadimi (masalan, manzilni olib tashlash uchun)
         self._inputs = [QLineEdit(value) for value in fields.values()]
         for title_text, field in zip(fields, self._inputs):
             self.form.addRow(title_text, field)
@@ -41,7 +42,7 @@ class NameDialog(FormDialog):
         return [field.text().strip() for field in self._inputs]
 
     def save(self) -> None:
-        if not any(self.names()):
+        if not self.allow_empty and not any(self.names()):
             raise WarehouseError(tr("Nomini kiriting."))
 
 

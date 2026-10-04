@@ -32,7 +32,7 @@ from ..i18n import tr
 from ..models import User
 from ..services import Services
 from ..session import Session
-from ..update import UPDATE_FOLDER_KEY
+from ..update import UPDATE_FOLDER_KEY, UPDATE_URL_KEY
 from . import theme
 from .auth_dialogs import (
     ROLES_HINT,
@@ -45,6 +45,7 @@ from .auth_dialogs import (
 )
 from .extra_dialogs import GroupsDialog, NameDialog
 from .language import language_box, restart_application
+from .updater import OnlineUpdater
 from .widgets import Column, DataTable, button, card, confirm, label
 
 THEME_KEY = "theme"
@@ -434,10 +435,18 @@ class SettingsPage(QWidget):
                     "MME-Ombor.exe va versiya.txt qo'yilsa, har bir kompyuter ochilganda yangilashni o'zi taklif qiladi."
                 )
             ),
+            _text(
+                tr(
+                    "Internet orqali: shu ikki fayl internetdagi manzilga (https) qo'yilsa, dastur har ochilganda "
+                    "o'zi tekshiradi. Internet bo'lmasa, tekshiruv o'tkazib yuboriladi va dastur odatdagidek ishlaydi."
+                )
+            ),
             self._update_status,
             _button_row(
                 _action(tr("Fayldan yangilash"), self._update_from_file, "primary"),
                 _action(tr("Yangilanishlar papkasini tanlash"), self._choose_update_folder),
+                _action(tr("Internet manzilini kiritish"), self._set_update_url),
+                _action(tr("Internetdan tekshirish"), self._check_online),
             ),
         )
 
@@ -445,7 +454,45 @@ class SettingsPage(QWidget):
         folder = self._settings.get(UPDATE_FOLDER_KEY)
         self._update_status.setText(
             tr("Joriy versiya: {0}  ·  yangilanishlar papkasi: {1}").format(APP_VERSION, folder or tr("tanlanmagan"))
+            + "\n"
+            + tr("Internetdagi manzil: {0}").format(self._update_url() or tr("kiritilmagan"))
         )
+
+    def _update_url(self) -> str:
+        return update.update_url(self._settings.get(UPDATE_URL_KEY))
+
+    def _set_update_url(self) -> None:
+        dialog = NameDialog(
+            tr("Internetdagi yangilanishlar manzili"), {tr("Manzil (https://…)"): self._update_url()}, self
+        )
+        dialog.allow_empty = True
+        if not dialog.exec():
+            return
+        try:
+            self._settings.set(UPDATE_URL_KEY, update.check_url(dialog.names()[0]))
+        except WarehouseError as error:
+            QMessageBox.warning(self, tr("Dasturni yangilash"), str(error))
+        self._show_update_folder()
+
+    def _check_online(self) -> None:
+        url = self._update_url()
+        if not url:
+            QMessageBox.information(self, tr("Dasturni yangilash"), tr("Avval internetdagi manzilni kiriting."))
+            return
+        if not update.is_installed_program():
+            QMessageBox.information(
+                self, tr("Dasturni yangilash"), tr("Yangilash faqat o'rnatilgan dasturda (exe) ishlaydi.")
+            )
+            return
+        updater = OnlineUpdater(url, self)
+        updater.nothing_found.connect(
+            lambda: QMessageBox.information(
+                self,
+                tr("Dasturni yangilash"),
+                tr("Yangi versiya topilmadi: sizda eng oxirgisi o'rnatilgan yoki hozir internetga chiqib bo'lmadi."),
+            )
+        )
+        updater.check()
 
     def _choose_update_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(
