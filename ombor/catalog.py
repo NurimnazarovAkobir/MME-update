@@ -207,9 +207,7 @@ class GroupCatalog:
         uz, ru = self._names(uz, ru)
         self._check_unique(ru, parent_id)
         with self._conn:
-            cursor = self._conn.execute(
-                "INSERT INTO groups (parent_id, ru, uz) VALUES (?, ?, ?)", (parent_id, ru, uz)
-            )
+            cursor = self._conn.execute("INSERT INTO groups (parent_id, ru, uz) VALUES (?, ?, ?)", (parent_id, ru, uz))
         load(self._conn)
         return cursor.lastrowid
 

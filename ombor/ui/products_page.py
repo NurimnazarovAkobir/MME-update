@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths
-from PySide6.QtWidgets import QCheckBox, QDialog, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QFileDialog, QMessageBox
 
 from ..config import CURRENCY
 from ..errors import WarehouseError
@@ -14,6 +14,7 @@ from ..i18n import tr
 from ..session import Session
 from ..warehouse import Warehouse
 from .dialogs import InventoryDialog, ProductDialog
+from .extra_dialogs import TransferDialog
 from .list_page import ListPage
 from .widgets import Column, ColumnKind, button
 
@@ -37,9 +38,18 @@ class ProductsPage(ListPage):
         super().__init__(tr("Mahsulotlar"), tr("+ Yangi mahsulot"), columns, session)
         self._warehouse = warehouse
 
+        # Ombor tanlagich va «Ko'chirish» faqat bir nechta ombor bo'lganda ko'rinadi.
+        self._store = QComboBox()
+        self._store.currentIndexChanged.connect(self.refresh)
+        self.header_tools.addWidget(self._store)
         self._only_low = QCheckBox(tr("Faqat kam qolgan va tugaganlar"))
         self._only_low.toggled.connect(self.refresh)
         self.header_tools.addWidget(self._only_low)
+        self._transfer = button(tr("Ko'chirish"))
+        self._transfer.setToolTip(tr("Mahsulotni bir ombordan boshqasiga ko'chirish"))
+        self._transfer.clicked.connect(self._move_between_stores)
+        if session.can_add:
+            self.toolbar_tools.addWidget(self._transfer)
         if session.can_add:
             import_button = button(tr("Exceldan yuklash"))
             import_button.setToolTip(tr("Mahsulotlar ro'yxatini Excel faylidan qo'shish"))
@@ -52,6 +62,7 @@ class ProductsPage(ListPage):
             self.header_tools.addWidget(inventory)
 
     def refresh(self) -> None:
+        self._fill_stores()
         products = self._shown_products()
         self.table.set_rows(
             [(p.name, p.stock, p.unit, p.min_stock, p.average_price, p.value, p.status.value) for p in products],
@@ -70,13 +81,44 @@ class ProductsPage(ListPage):
     def delete_item(self, item_id: int) -> None:
         self._warehouse.delete_product(item_id)
 
+    def _fill_stores(self) -> None:
+        """Omborlar ro'yxatini yangilaydi (sozlamalarda yangi ombor qo'shilgan bo'lishi mumkin)."""
+        stores = self._warehouse.stores()
+        selected = self._store.currentData()
+        self._store.blockSignals(True)
+        self._store.clear()
+        self._store.addItem(tr("Barcha omborlar"), None)
+        for store in stores:
+            self._store.addItem(store.name, store.id)
+        self._store.setCurrentIndex(max(self._store.findData(selected), 0))
+        self._store.blockSignals(False)
+        self._store.setVisible(len(stores) > 1)
+        self._transfer.setVisible(len(stores) > 1)
+
     def _shown_products(self) -> list:
-        products = self._warehouse.products(self.search.text())
+        products = self._warehouse.products(self.search.text(), self._store.currentData())
         return [p for p in products if p.needs_attention] if self._only_low.isChecked() else products
+
+    def _move_between_stores(self) -> None:
+        if TransferDialog(self._warehouse, self.session.author, self.table.selected_id(), self).exec():
+            self.refresh()
 
     def _take_inventory(self) -> None:
         """Jadvalda ko'rinib turgan (qidiruv va filtrga mos) mahsulotlar uchun inventarizatsiya varag'i."""
-        dialog = InventoryDialog(self._warehouse, self._shown_products(), self.session.author, self)
+        stores = self._warehouse.stores()
+        store = next((s for s in stores if s.id == self._store.currentData()), None)
+        if store is None and len(stores) > 1:
+            QMessageBox.information(
+                self,
+                tr("Inventarizatsiya"),
+                tr("Avval yuqoridan omborni tanlang: inventarizatsiya har bir omborda alohida."),
+            )
+            return
+        store = store or stores[0]
+        products = self._warehouse.products(self.search.text(), store.id)
+        dialog = InventoryDialog(
+            self._warehouse, products, self.session.author, self, store if len(stores) > 1 else None
+        )
         if dialog.exec():
             self.refresh()
             QMessageBox.information(

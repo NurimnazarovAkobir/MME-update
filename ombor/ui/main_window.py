@@ -21,6 +21,7 @@ from ..services import Services
 from ..session import Session
 from . import theme
 from .dashboard_page import DashboardPage, Destination
+from .debts_page import DebtsPage
 from .dialogs import MovementDialog, ProductDialog
 from .history_page import HistoryPage
 from .icons import Glyph, menu_icon
@@ -47,6 +48,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1100, 680)
         self._warehouse = services.warehouse
         self._warehouse.actor = session.author  # o'zgarishlar tarixiga shu ism yoziladi
+        services.debts.actor = session.author
         self._session = session
 
         dashboard = DashboardPage(self._warehouse, services.reports, services.analytics, session.can_add)
@@ -71,7 +73,13 @@ class MainWindow(QMainWindow):
                 Destination.ISSUES,
             ),
             (self._products_title, Glyph.PRODUCTS, self._products_page, Destination.PRODUCTS),
-            (tr("Hisobotlar"), Glyph.REPORTS, ReportsPage(services.reports, services.analytics), Destination.REPORTS),
+            (
+                tr("Hisobotlar"),
+                Glyph.REPORTS,
+                ReportsPage(services.reports, services.analytics, self._warehouse),
+                Destination.REPORTS,
+            ),
+            (tr("Qarzlar"), Glyph.MONEY, DebtsPage(services.debts, session), None),
         ]
         if session.is_admin:
             pages.append((tr("Tarix"), Glyph.CLOCK, HistoryPage(self._warehouse), None))

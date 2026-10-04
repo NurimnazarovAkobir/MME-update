@@ -329,6 +329,10 @@ class DataTable(QTableWidget):
         """`column` ustunidagi matnlarni rangli yorliq qilib ko'rsatadi (`tones`: matn -> palitra rangi)."""
         self.setItemDelegateForColumn(column + self._offset, BadgeDelegate(tones, self))
 
+    def hide_column(self, column: int, hidden: bool) -> None:
+        """Ma'lumot ustunini (tartib raqami bo'yicha) yashiradi yoki ko'rsatadi."""
+        self.setColumnHidden(column + self._offset, hidden)
+
     def selected_id(self) -> int | None:
         item = self.currentItem()
         return item.data(Qt.ItemDataRole.UserRole) if item and item.isSelected() else None

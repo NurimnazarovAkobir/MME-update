@@ -32,6 +32,7 @@ from ..services import Services
 from ..session import Session
 from . import theme
 from .auth_dialogs import ROLES_HINT, ChangePasswordDialog, ResetPasswordDialog, UserDialog, show_new_recovery_code
+from .extra_dialogs import GroupsDialog, NameDialog
 from .language import language_box
 from .widgets import Column, DataTable, button, card, confirm, label
 
@@ -77,6 +78,9 @@ class SettingsPage(QWidget):
         self._db_path = db_path
         self._users = DataTable((Column(tr("Ismi")), Column(tr("Lavozimi"))))
         self._users.setFixedHeight(USERS_TABLE_HEIGHT)
+        self._stores = DataTable((Column(tr("Ombor nomi")),))
+        self._stores.setFixedHeight(USERS_TABLE_HEIGHT)
+        self._groups = services.groups
         self._backup_status = _text("", "muted")
 
         content = QWidget()
@@ -89,6 +93,7 @@ class SettingsPage(QWidget):
         cards.addWidget(self._account_card())
         if session.is_admin:
             cards.addWidget(self._rules_card())
+            cards.addWidget(self._stores_card())
             cards.addWidget(self._users_card())
             cards.addWidget(self._backup_card())
         cards.addWidget(self._about_card())
@@ -107,6 +112,7 @@ class SettingsPage(QWidget):
             return
         users = self._auth.users()
         self._users.set_rows([(user.name, user.role.title) for user in users], ids=[user.id for user in users])
+        self._fill_stores()
         self._backup_status.setText(self._describe_backups())
 
     # --- Kartochkalar ------------------------------------------------------
@@ -148,7 +154,63 @@ class SettingsPage(QWidget):
             label(tr("Hisob qoidalari"), "sectionTitle"),
             _text(tr("Yoqilsa, guruhsiz yozuv saqlanmaydi va hisobotda «(ko'rsatilmagan)» qatori chiqmaydi.")),
             group_required,
+            _button_row(_action(tr("Guruhlarni tahrirlash"), lambda: GroupsDialog(self._groups, self).exec())),
         )
+
+    # --- Omborlar ----------------------------------------------------------
+
+    def _stores_card(self) -> QFrame:
+        return card(
+            label(tr("Omborlar"), "sectionTitle"),
+            _text(
+                tr(
+                    "Bir nechta ombor bo'lsa, kirim va chiqimda ombor tanlanadi, «Mahsulotlar»da esa mahsulotni "
+                    "ombordan omborga ko'chirish mumkin. Tannarx barcha omborlar uchun bitta."
+                )
+            ),
+            self._stores,
+            _button_row(
+                _action(tr("+ Yangi ombor"), lambda: self._edit_store(None), "primary"),
+                _action(tr("Nomini o'zgartirish"), self._rename_store),
+                _action(tr("O'chirish"), self._delete_store, "danger"),
+            ),
+        )
+
+    def _fill_stores(self) -> None:
+        stores = self._warehouse.stores()
+        self._stores.set_rows([(store.name,) for store in stores], ids=[store.id for store in stores])
+
+    def _edit_store(self, store_id: int | None, name: str = "") -> None:
+        dialog = NameDialog(tr("Ombor"), {tr("Ombor nomi"): name}, self)
+        if not dialog.exec():
+            return
+        try:
+            self._warehouse.save_store(dialog.names()[0], store_id)
+        except WarehouseError as error:
+            QMessageBox.warning(self, tr("Diqqat"), str(error))
+        self._fill_stores()
+
+    def _selected_store(self) -> tuple[int, str] | None:
+        store_id = self._stores.selected_id()
+        if store_id is None:
+            QMessageBox.information(self, tr("Omborlar"), tr("Avval jadvaldan omborni tanlang."))
+            return None
+        return store_id, next(store.name for store in self._warehouse.stores() if store.id == store_id)
+
+    def _rename_store(self) -> None:
+        selected = self._selected_store()
+        if selected:
+            self._edit_store(*selected)
+
+    def _delete_store(self) -> None:
+        selected = self._selected_store()
+        if selected is None:
+            return
+        try:
+            self._warehouse.delete_store(selected[0])
+        except WarehouseError as error:
+            QMessageBox.warning(self, tr("O'chirib bo'lmadi"), str(error))
+        self._fill_stores()
 
     def _about_card(self) -> QFrame:
         lines = (

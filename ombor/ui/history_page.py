@@ -2,10 +2,11 @@
 
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QMessageBox, QTabWidget, QVBoxLayout, QWidget
 
+from ..debts import PAYMENT_ENTITY
 from ..errors import WarehouseError
 from ..i18n import tr
 from ..models import HistoryEntry, MovementKind
-from ..warehouse import PRODUCT_ENTITY, Warehouse
+from ..warehouse import PRODUCT_ENTITY, TRANSFER_ENTITY, Warehouse
 from .labels import LABELS
 from .printing import print_table
 from .widgets import Column, ColumnKind, DataTable, PeriodFilter, button, export_to_excel, label
@@ -16,6 +17,9 @@ _ENTITY_TITLES = {
     MovementKind.IN.value: LABELS[MovementKind.IN].title,
     MovementKind.OUT.value: LABELS[MovementKind.OUT].title,
     PRODUCT_ENTITY: tr("Mahsulot"),
+    TRANSFER_ENTITY: tr("Ko'chirish"),
+    f"{PAYMENT_ENTITY}:IN": tr("Biz to'ladik"),
+    f"{PAYMENT_ENTITY}:OUT": tr("Bizga to'landi"),
 }
 
 

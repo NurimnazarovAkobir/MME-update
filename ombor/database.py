@@ -236,9 +236,7 @@ def prepare(conn: sqlite3.Connection) -> None:
         for column, definition in columns.items():
             if column not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-    conn.execute(
-        "INSERT OR IGNORE INTO warehouses (id, name) VALUES (?, ?)", (MAIN_WAREHOUSE_ID, MAIN_WAREHOUSE_NAME)
-    )
+    conn.execute("INSERT OR IGNORE INTO warehouses (id, name) VALUES (?, ?)", (MAIN_WAREHOUSE_ID, MAIN_WAREHOUSE_NAME))
     conn.commit()
     conn.executescript(f"BEGIN IMMEDIATE;{VIEWS}COMMIT;")
     migrate(conn)

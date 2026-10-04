@@ -126,7 +126,9 @@ class ReturnTests(ExtrasTestCase):
 
     def test_customer_return_reduces_revenue_and_profit_and_restores_stock(self):
         self.warehouse.save_movement(
-            Movement(MovementKind.IN, TODAY, self.pipe, 2, 1000, sale_price=1500, is_return=True, counterparty="Xaridor")
+            Movement(
+                MovementKind.IN, TODAY, self.pipe, 2, 1000, sale_price=1500, is_return=True, counterparty="Xaridor"
+            )
         )
         summary = self.analytics.summary()
         self.assertEqual((summary.revenue, summary.cost, summary.profit, summary.sales_count), (6000, 4000, 2000, 1))
@@ -171,7 +173,13 @@ class DebtTests(ExtrasTestCase):
         self.debts.add_payment(Payment(MovementKind.IN, TODAY, "temir bozor", 4000))
         self.warehouse.save_movement(
             Movement(
-                MovementKind.OUT, TODAY, self.pipe, 2, sale_price=1000, is_return=True, on_credit=True,
+                MovementKind.OUT,
+                TODAY,
+                self.pipe,
+                2,
+                sale_price=1000,
+                is_return=True,
+                on_credit=True,
                 counterparty="Temir bozor",
             )
         )
@@ -228,7 +236,9 @@ class StoreTests(ExtrasTestCase):
         )
 
     def test_main_store_always_exists(self):
-        self.assertEqual([(s.id, s.name) for s in self.warehouse.stores()], [(1, "Asosiy ombor"), (self.site, "Obyekt ombori")])
+        self.assertEqual(
+            [(s.id, s.name) for s in self.warehouse.stores()], [(1, "Asosiy ombor"), (self.site, "Obyekt ombori")]
+        )
         with self.assertRaises(WarehouseError):
             self.warehouse.delete_store(MAIN_WAREHOUSE_ID)
         with self.assertRaises(WarehouseError):
@@ -242,7 +252,9 @@ class StoreTests(ExtrasTestCase):
         self.assertEqual((site.stock, site.value, site.total_stock), (4, 4000, 10))
         self.assertEqual(self.reports.stock_value(), 10_000)
         (transfer,) = self.warehouse.transfers()
-        self.assertEqual((transfer.from_name, transfer.to_name, transfer.quantity), ("Asosiy ombor", "Obyekt ombori", 4))
+        self.assertEqual(
+            (transfer.from_name, transfer.to_name, transfer.quantity), ("Asosiy ombor", "Obyekt ombori", 4)
+        )
 
     def test_cannot_issue_or_move_more_than_the_store_holds(self):
         self._move(4)
@@ -277,7 +289,9 @@ class StoreTests(ExtrasTestCase):
         self.assertEqual(self.warehouse.product(self.pipe, self.site).stock, 3)
         self.assertEqual(self.warehouse.product(self.pipe, MAIN_WAREHOUSE_ID).stock, 6)
         (shortage,) = self.warehouse.movements(MovementKind.OUT)
-        self.assertEqual((shortage.warehouse_id, shortage.warehouse_name, shortage.quantity), (self.site, "Obyekt ombori", 1))
+        self.assertEqual(
+            (shortage.warehouse_id, shortage.warehouse_name, shortage.quantity), (self.site, "Obyekt ombori", 1)
+        )
 
     def test_movements_can_be_filtered_by_store(self):
         self.warehouse.save_movement(Movement(MovementKind.IN, TODAY, self.pipe, 2, 1000, warehouse_id=self.site))

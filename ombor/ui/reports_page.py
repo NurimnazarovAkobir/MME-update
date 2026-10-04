@@ -12,6 +12,7 @@ from ..formatting import fmt_money, fmt_period
 from ..i18n import tr
 from ..models import Granularity, MovementKind, Period
 from ..reports import UNNAMED, GroupBy, Reports
+from ..warehouse import Warehouse
 from .labels import LABELS
 from .printing import print_table
 from .widgets import Column, ColumnKind, DataTable, PeriodNavigator, StatCard, button, export_to_excel, label
@@ -44,8 +45,9 @@ def _group_columns(name: str, operations: str) -> tuple[Column, ...]:
 
 
 class ReportsPage(QWidget):
-    def __init__(self, reports: Reports, analytics: Analytics):
+    def __init__(self, reports: Reports, analytics: Analytics, warehouse: Warehouse):
         super().__init__()
+        self._warehouse = warehouse
         self.setObjectName("page")
         self._reports = reports
         self._analytics = analytics
@@ -191,6 +193,23 @@ class ReportsPage(QWidget):
                 outgoing.person,
                 _group_columns(outgoing.person, tr("Chiqimlar soni")),
                 grouped(MovementKind.OUT, GroupBy.PERSON),
+            ),
+            ReportTab(
+                tr("Ko'chirishlar"),
+                (
+                    Column(tr("Sana"), ColumnKind.DATE),
+                    Column(tr("Mahsulot")),
+                    Column(tr("Miqdor"), ColumnKind.QUANTITY),
+                    Column(tr("Birlik")),
+                    Column(tr("Qaysi ombordan")),
+                    Column(tr("Qaysi omborga")),
+                    Column(tr("Izoh")),
+                    Column(tr("Kiritdi")),
+                ),
+                lambda period: [
+                    (t.date, t.product_name, t.quantity, t.unit, t.from_name, t.to_name, t.note, t.created_by)
+                    for t in self._warehouse.transfers(period)
+                ],
             ),
             ReportTab(
                 tr("Obyektlar bo'yicha rasxod"),

@@ -19,12 +19,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..catalog import GROUPS, display_name, find_group
+from ..catalog import display_name, find_group, groups
 from ..config import CURRENCY, UNITS
+from ..database import MAIN_WAREHOUSE_ID
 from ..errors import WarehouseError
 from ..formatting import fmt_money, fmt_qty
 from ..i18n import tr
-from ..models import Movement, MovementKind, Product, ProductStock
+from ..models import Movement, MovementKind, Product, ProductStock, Store
 from ..warehouse import Warehouse
 from .labels import KindLabels
 from .widgets import NumberInput, button, date_input, label, number_input, suggestion_box
@@ -91,7 +92,7 @@ class GroupFields:
         self.group = QComboBox()
         self.subgroup = QComboBox()
         self.group.addItem(NO_GROUP, "")
-        for group in GROUPS:
+        for group in groups():
             self.group.addItem(group.name.display, group.name.ru)
         self.group.currentIndexChanged.connect(lambda: self._fill_subgroups(""))
         self._fill_subgroups("")
@@ -134,6 +135,20 @@ class ProductDialog(FormDialog):
         self._min_stock = number_input(3, product.min_stock if product else 0)
         self._min_stock.setToolTip(tr("Qoldiq shu miqdorga tushganda mahsulot «Kam qoldi» deb belgilanadi."))
         self._note = QLineEdit(product.note if product else "")
+        self._barcode = QLineEdit(product.barcode if product else "")
+        self._barcode.setPlaceholderText(tr("Skaner bilan o'qiting yoki yozing (ixtiyoriy)"))
+        self._alt_unit = suggestion_box(("", *UNITS), product.alt_unit if product else "")
+        self._alt_factor = number_input(4, product.alt_factor if product else 0)
+        self._alt_factor.setToolTip(
+            tr(
+                "Masalan: asosiy birlik kg, qo'shimcha birlik tonna bo'lsa — 1000. Kirim-chiqimda ikkalasida ham kiritish mumkin."
+            )
+        )
+        alt_row = QHBoxLayout()
+        alt_row.addWidget(self._alt_unit, stretch=1)
+        alt_row.addWidget(label(tr("1 tasi =")))
+        alt_row.addWidget(self._alt_factor, stretch=1)
+        alt_row.addWidget(label(tr("asosiy birlik")))
         self._is_service = QCheckBox(tr("Bu xizmat yoki xarajat (omborda qoldig'i yuritilmaydi)"))
         self._is_service.setToolTip(
             tr("Masalan: yuk tashish, kommunal to'lov, ijara. Kirimi xarajat sifatida hisobotga tushadi.")
@@ -144,9 +159,18 @@ class ProductDialog(FormDialog):
 
         self.form.addRow(tr("Nomi *"), self._name)
         self.form.addRow(tr("O'lchov birligi *"), self._unit)
+        self.form.addRow(tr("Qo'shimcha birlik"), alt_row)
         self.form.addRow(tr("Minimal qoldiq"), self._min_stock)
+        self.form.addRow(tr("Shtrix-kod"), self._barcode)
         self.form.addRow(tr("Izoh"), self._note)
         self.form.addRow("", self._is_service)
+
+    def keyPressEvent(self, event) -> None:
+        # Skaner koddan keyin Enter yuboradi: u oynani saqlab yubormasligi kerak.
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self._barcode.hasFocus():
+            self._note.setFocus()
+            return
+        super().keyPressEvent(event)
 
     def save(self) -> None:
         self.saved_id = self._warehouse.save_product(
@@ -157,6 +181,9 @@ class ProductDialog(FormDialog):
                 note=self._note.text(),
                 id=self._product_id,
                 is_service=self._is_service.isChecked(),
+                barcode=self._barcode.text(),
+                alt_unit=self._alt_unit.currentText(),
+                alt_factor=self._alt_factor.value(),
             )
         )
 
@@ -192,9 +219,15 @@ class MovementDialog(FormDialog):
         self._doc_number.setToolTip(
             tr("Bir nakladnoydagi bir nechta mahsulotni bir xil raqam bilan kiriting — ular birga chop etiladi.")
         )
+        self._store = QComboBox()
+        for store in warehouse.stores():
+            self._store.addItem(store.name, store.id)
+        self._store.setCurrentIndex(max(self._store.findData(movement.warehouse_id if movement else None), 0))
         self._product = self._build_product_box()
         self._stock_hint = label("", "muted")
         self._quantity = number_input(3, movement.quantity if movement else 0)
+        self._unit = QComboBox()  # mahsulotning qo'shimcha birligi bo'lsa, miqdor va narx shu birlikda kiritiladi
+        self._unit.setMinimumWidth(90)
         self._price = number_input(2, movement.price if movement else 0)
         self._price.setSuffix(f" {CURRENCY}")
         self._amount = label("", "total")
@@ -202,6 +235,15 @@ class MovementDialog(FormDialog):
         self._sale_price.setSuffix(f" {CURRENCY}")
         self._sale_price.setToolTip(tr("Bo'sh (0) qoldirilsa, chiqim ichki rasxod hisoblanadi va foydaga kirmaydi."))
         self._profit_hint = label("", "muted")
+        self._is_return = QCheckBox(
+            tr("Qaytarish: xaridordan qaytgan mahsulot")
+            if self._has_price
+            else tr("Qaytarish: yetkazib beruvchiga qaytarilmoqda")
+        )
+        self._is_return.setChecked(bool(movement and movement.is_return))
+        self._on_credit = QCheckBox(tr("Qarzga (to'lov keyin bo'ladi)"))
+        self._on_credit.setToolTip(tr("Belgilansa, summa «Qarzlar» bo'limida shu kontragent hisobiga yoziladi."))
+        self._on_credit.setChecked(bool(movement and movement.on_credit))
         self._groups = GroupFields()
         if movement:
             self._groups.select(movement.category, movement.subcategory)
@@ -211,17 +253,27 @@ class MovementDialog(FormDialog):
         )
         self._note = QLineEdit(movement.note if movement else "")
 
+        quantity_row = QHBoxLayout()
+        quantity_row.addWidget(self._quantity, stretch=1)
+        quantity_row.addWidget(self._unit)
+
         self.form.addRow(tr("Sana *"), self._date)
         self.form.addRow(tr("Hujjat №"), self._doc_number)
+        self.form.addRow(tr("Ombor"), self._store)
+        self.form.setRowVisible(self._store, self._store.count() > 1)
         self.form.addRow(tr("Mahsulot *"), self._product)
         self.form.addRow("", self._stock_hint)
-        self.form.addRow(tr("Miqdor *"), self._quantity)
+        self.form.addRow(tr("Miqdor *"), quantity_row)
         if self._has_price:
             self.form.addRow(tr("Narxi (1 birlik)"), self._price)
             self.form.addRow(tr("Summa"), self._amount)
+            self.form.addRow("", self._is_return)
+            self.form.addRow(tr("Xaridorga qaytariladigan narx"), self._sale_price)
         else:
             self.form.addRow(tr("Sotuv narxi (1 birlik)"), self._sale_price)
             self.form.addRow("", self._profit_hint)
+            self.form.addRow("", self._is_return)
+        self.form.addRow("", self._on_credit)
         self.form.addRow(tr("Guruh *") if warehouse.group_required else tr("Guruh"), self._groups.group)
         self.form.addRow(tr("Kichik guruh"), self._groups.subgroup)
         self.form.addRow(labels.person, self._person)
@@ -239,10 +291,19 @@ class MovementDialog(FormDialog):
 
         self._load_products(movement.product_id if movement else None)
         self._product.currentTextChanged.connect(self._on_product_changed)
+        self._store.currentIndexChanged.connect(self._on_store_changed)
+        self._unit.currentIndexChanged.connect(self._on_unit_changed)
         self._quantity.valueChanged.connect(self._update_amount)
         self._price.valueChanged.connect(self._update_amount)
         self._sale_price.valueChanged.connect(self._update_amount)
+        self._is_return.toggled.connect(self._on_return_toggled)
         self._on_product_changed()
+        self._on_return_toggled()
+
+    def accept(self) -> None:
+        if self._select_by_barcode():
+            return  # skaner koddan keyin Enter yuboradi: mahsulot tanlanadi, oyna yopilmaydi
+        super().accept()
 
     def save(self) -> None:
         product = self._selected_product()
@@ -250,14 +311,15 @@ class MovementDialog(FormDialog):
             raise WarehouseError(
                 tr("Mahsulotni ro'yxatdan tanlang. Ro'yxatda bo'lmasa, avval «Yangi mahsulot» tugmasi bilan qo'shing.")
             )
+        factor = self._factor()
         self._warehouse.save_movement(
             Movement(
                 kind=self._kind,
                 date=self._date.date().toPython(),
                 product_id=product.id,
-                quantity=self._quantity.value(),
-                price=self._price.value(),
-                sale_price=self._sale_price.value(),
+                quantity=self._quantity.value() * factor,
+                price=self._price.value() / factor,
+                sale_price=self._sale_price.value() / factor,
                 category=self._groups.category(),
                 subcategory=self._groups.subcategory(),
                 person=self._person.currentText(),
@@ -265,6 +327,9 @@ class MovementDialog(FormDialog):
                 note=self._note.text(),
                 created_by=self._author,
                 doc_number=self._doc_number.text(),
+                is_return=self._is_return.isChecked(),
+                on_credit=self._on_credit.isChecked(),
+                warehouse_id=self._store.currentData(),
                 id=self._movement_id,
             )
         )
@@ -294,13 +359,14 @@ class MovementDialog(FormDialog):
         box.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         box.completer().setFilterMode(Qt.MatchFlag.MatchContains)
         box.completer().setCompletionMode(box.completer().CompletionMode.PopupCompletion)
-        box.lineEdit().setPlaceholderText(tr("Tanlang yoki nomini yozing"))
+        box.lineEdit().setPlaceholderText(tr("Tanlang, nomini yozing yoki shtrix-kodni o'qiting"))
         return box
 
     def _load_products(self, select_id: int | None) -> None:
+        """Ro'yxatni tanlangan ombordagi qoldiqlar bilan to'ldiradi."""
         self._product.blockSignals(True)
         self._product.clear()
-        for product in self._warehouse.products():
+        for product in self._warehouse.products(warehouse_id=self._store.currentData()):
             self._product.addItem(product.name, product)
         ids = [self._product.itemData(index).id for index in range(self._product.count())]
         self._product.setCurrentIndex(ids.index(select_id) if select_id in ids else -1)
@@ -310,18 +376,58 @@ class MovementDialog(FormDialog):
         index = self._product.findText(self._product.currentText().strip(), Qt.MatchFlag.MatchFixedString)
         return self._product.itemData(index) if index >= 0 else None
 
+    def _select_by_barcode(self) -> bool:
+        """Mahsulot maydoniga shtrix-kod yozilgan (o'qitilgan) bo'lsa, shu mahsulotni tanlaydi."""
+        if self._selected_product() is not None:
+            return False
+        found = self._warehouse.product_by_barcode(self._product.currentText())
+        if found is None:
+            return False
+        self._product.setCurrentIndex(self._product.findText(found.name, Qt.MatchFlag.MatchFixedString))
+        self._quantity.setFocus()
+        self._quantity.selectAll()
+        return True
+
+    def _factor(self) -> float:
+        """Tanlangan birlik necha asosiy birlikka teng (asosiy birlikning o'zi — 1)."""
+        return self._unit.currentData() or 1.0
+
+    def _on_store_changed(self) -> None:
+        selected = self._selected_product()
+        self._load_products(selected.id if selected else None)
+        self._on_product_changed()
+
+    def _on_unit_changed(self) -> None:
+        product = self._selected_product()
+        if product is not None:
+            self._suggest_price(product)
+        self._update_amount()
+
+    def _on_return_toggled(self) -> None:
+        """Kirimda «xaridorga qaytariladigan narx» faqat qaytarishda ko'rinadi."""
+        if self._has_price:
+            self.form.setRowVisible(self._sale_price, self._is_return.isChecked())
+
     def _on_product_changed(self) -> None:
         product = self._selected_product()
+        self._unit.blockSignals(True)
+        self._unit.clear()
         if product is None:
             self._stock_hint.setText("")
-            self._quantity.setSuffix("")
         else:
             self._stock_hint.setText(
                 tr("Xizmat yoki xarajat — qoldig'i yuritilmaydi")
                 if product.is_service
                 else tr("Omborda: {0} {1}").format(fmt_qty(product.stock), product.unit)
             )
-            self._quantity.setSuffix(f" {product.unit}")
+            self._unit.addItem(product.unit, 1.0)
+            # Tahrirlashda miqdor asosiy birlikda saqlangan holicha ko'rsatiladi.
+            if product.has_alt_unit and self._movement_id is None:
+                self._unit.addItem(product.alt_unit, product.alt_factor)
+        self._unit.blockSignals(False)
+        self._unit.setVisible(self._unit.count() > 1)
+        self._quantity.setSuffix(f" {product.unit}" if product and self._unit.count() == 1 else "")
+        if product is not None:
             self._suggest_price(product)
             if self._movement_id is None:  # yangi yozuvda shu mahsulotning oxirgi guruhi taklif qilinadi
                 self._groups.select(*self._warehouse.last_group(product.id))
@@ -332,7 +438,7 @@ class MovementDialog(FormDialog):
         if not self._has_price or self._movement_id is not None:
             return
         if self._price.value() in (0, self._suggested_price):
-            self._suggested_price = round(product.average_price, 2)
+            self._suggested_price = round(product.average_price * self._factor(), 2)
             self._price.setValue(self._suggested_price)
 
     def _update_amount(self) -> None:
@@ -344,7 +450,7 @@ class MovementDialog(FormDialog):
         product = self._selected_product()
         if product is None:
             return ""
-        cost = self._stored_cost if self._stored_cost is not None else product.average_price
+        cost = (self._stored_cost if self._stored_cost is not None else product.average_price) * self._factor()
         text = tr("Tannarxi: {0} {1}").format(fmt_money(cost), CURRENCY)
         if not self._sale_price.value():
             return tr("{0}  ·  sotuv narxi kiritilmasa — ichki rasxod").format(text)
@@ -365,9 +471,16 @@ class InventoryDialog(FormDialog):
     ACTUAL_WIDTH = 180
 
     def __init__(
-        self, warehouse: Warehouse, products: Sequence[ProductStock], author: str, parent: QWidget | None = None
+        self,
+        warehouse: Warehouse,
+        products: Sequence[ProductStock],
+        author: str,
+        parent: QWidget | None = None,
+        store: Store | None = None,
     ):
-        super().__init__(tr("Inventarizatsiya"), parent)
+        """`products` — `store` omboridagi qoldiqlari bilan; `store` berilmasa — asosiy ombor."""
+        super().__init__(tr("Inventarizatsiya — {0}").format(store.name) if store else tr("Inventarizatsiya"), parent)
+        self._store_id = store.id if store else MAIN_WAREHOUSE_ID
         self._warehouse = warehouse
         self._products = [product for product in products if not product.is_service]
         self._author = author
@@ -414,5 +527,5 @@ class InventoryDialog(FormDialog):
     def save(self) -> None:
         counted = {product.id: actual.value() for product, actual in zip(self._products, self._actual)}
         self.adjusted = self._warehouse.take_inventory(
-            counted, self._date.date().toPython(), self._author, self._note.text()
+            counted, self._date.date().toPython(), self._author, self._note.text(), self._store_id
         )

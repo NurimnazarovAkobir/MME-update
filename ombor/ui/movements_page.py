@@ -8,7 +8,7 @@ from ..formatting import fmt_money
 from ..i18n import tr
 from ..models import MovementDetails, MovementKind
 from ..session import Session
-from ..warehouse import Warehouse, display_counterparty
+from ..warehouse import Warehouse, display_counterparty, store_name
 from .dialogs import MovementDialog
 from .labels import KindLabels
 from .list_page import ListPage
@@ -17,6 +17,7 @@ from .widgets import Column, ColumnKind, PeriodFilter, button
 
 # Jadvalda bir vaqtda ko'rsatiladigan eng ko'p qator: juda katta bazada ham sahifa tez ochilishi uchun.
 MAX_ROWS_SHOWN = 2000
+STORE_COLUMN = 2  # bitta ombor bo'lsa, «Ombor» ustuni yashiriladi
 
 
 def _columns(labels: KindLabels) -> tuple[Column, ...]:
@@ -24,6 +25,7 @@ def _columns(labels: KindLabels) -> tuple[Column, ...]:
     start = (
         Column(tr("Sana"), ColumnKind.DATE),
         Column(tr("Hujjat №")),
+        Column(tr("Ombor")),
         Column(tr("Mahsulot")),
         Column(tr("Miqdor"), ColumnKind.QUANTITY),
         Column(tr("Birlik")),
@@ -41,18 +43,26 @@ def _columns(labels: KindLabels) -> tuple[Column, ...]:
         Column(tr("Kichik guruh")),
         Column(labels.person),
         Column(labels.counterparty),
+        Column(tr("Belgi")),
         Column(tr("Izoh")),
         Column(tr("Kiritdi")),
     )
     return (*start, *money, *end)
 
 
+def _marks(movement: MovementDetails) -> str:
+    """Yozuvning alohida belgilari: qaytarish, qarzga."""
+    marks = (tr("Qaytarish") if movement.is_return else "", tr("Qarzga") if movement.on_credit else "")
+    return " · ".join(mark for mark in marks if mark)
+
+
 def _row(movement: MovementDetails) -> tuple:
     m = movement
-    start = (m.date, m.doc_number, m.product_name, m.quantity, m.unit)
+    start = (m.date, m.doc_number, store_name(m.warehouse_name), m.product_name, m.quantity, m.unit)
     money = (m.price, m.amount) if m.kind is MovementKind.IN else (m.sale_price, m.revenue, m.profit)
     groups = (display_name(m.category), display_name(m.subcategory))
-    return (*start, *money, *groups, m.person, display_counterparty(m.counterparty), m.note, m.created_by)
+    end = (m.person, display_counterparty(m.counterparty), _marks(m), m.note, m.created_by)
+    return (*start, *money, *groups, *end)
 
 
 class MovementsPage(ListPage):
@@ -80,6 +90,7 @@ class MovementsPage(ListPage):
             ids=[m.id for m in shown],
             locked=[index for index, m in enumerate(shown) if not self.session.can_change(m)],
         )
+        self.table.hide_column(STORE_COLUMN, len(self._warehouse.stores()) < 2)
         self.footer.setText(self._totals(movements))
 
     def edit_dialog(self, item_id: int | None) -> QDialog:
