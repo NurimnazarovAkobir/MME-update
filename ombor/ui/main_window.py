@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
+    QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -30,7 +31,7 @@ from .dashboard_page import DashboardPage, Destination
 from .debts_page import DebtsPage
 from .dialogs import MovementDialog, ProductDialog
 from .history_page import HistoryPage
-from .icon import app_icon
+from .icon import app_icon, icon_pixmap
 from .icons import Glyph, icon_label, menu_icon
 from .labels import LABELS
 from .language import sign_out
@@ -43,7 +44,6 @@ from .widgets import button, label
 
 SIDEBAR_WIDTH = 250
 LOGO_SIZE = 48
-LOGO_TEXT = "MME"
 MENU_ICON_SIZE = 20
 # Istalgan sahifadan yangi yozuv ochadigan tugmalar (bosh sahifadagi katta tugmalar yordam yozuvida ham bor).
 NEW_RECEIPT_KEY, NEW_ISSUE_KEY, NEW_PRODUCT_KEY = "F2", "F3", "F4"
@@ -212,7 +212,8 @@ class MainWindow(QMainWindow):
         """Yon menyu ostidagi kartochka: dastur nomi va versiyasi."""
         frame = QFrame()
         frame.setObjectName("sidebarCard")
-        badge = icon_label(Glyph.CROWN, "badgeAccent")
+        badge = QLabel()
+        badge.setPixmap(icon_pixmap(36))
         badge.setFixedSize(36, 36)
         names = QVBoxLayout()
         names.setSpacing(0)
@@ -232,9 +233,9 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _brand(session: Session) -> QHBoxLayout:
         """Yuqoridagi belgi, dastur nomi va uning ostida foydalanuvchi lavozimi."""
-        logo = label(LOGO_TEXT, "logo")
+        logo = QLabel()
+        logo.setPixmap(icon_pixmap(LOGO_SIZE))
         logo.setFixedSize(LOGO_SIZE, LOGO_SIZE)
-        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         owner = label(tr("{0} paneli").format(session.user.role.title), "firm")
         owner.setWordWrap(True)
         names = QVBoxLayout()

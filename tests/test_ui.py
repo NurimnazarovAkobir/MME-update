@@ -76,6 +76,19 @@ class UiTestCase(unittest.TestCase):
         return [button.text() for button in widget.findChildren(QPushButton)]
 
 
+class IconTests(UiTestCase):
+    def test_app_icon_comes_from_the_picture_and_makes_a_windows_icon_file(self):
+        from ombor.ui import icon
+
+        self.assertTrue(icon.asset_path("icon.png").is_file())
+        self.assertFalse(icon.app_icon().isNull())
+        self.assertEqual(icon.icon_pixmap(48).width(), 48)
+        target = self.folder / "belgi.ico"
+        icon.write_ico(target)
+        data = target.read_bytes()
+        self.assertEqual(data[:6], bytes([0, 0, 1, 0, len(icon.ICO_SIZES), 0]))
+
+
 class MainWindowTests(UiTestCase):
     def test_every_page_opens_for_each_role(self):
         for user, pages in ((self.admin, 9), (self.keeper, 9), (self.viewer, 9)):

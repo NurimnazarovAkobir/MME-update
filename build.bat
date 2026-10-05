@@ -12,7 +12,8 @@ if not exist build mkdir build
 .venv\Scripts\python -m ombor.ui.icon build\icon.ico || exit /b 1
 
 .venv\Scripts\python -m PyInstaller --noconfirm --clean --onefile --windowed ^
-    --name MME-Ombor --icon build\icon.ico main.py || exit /b 1
+    --name MME-Ombor --icon build\icon.ico --add-data "ombor\assets\icon.png;ombor\assets" ^
+    main.py || exit /b 1
 
 rem O'rnatish skriptlari va yo'riqnoma: dist papkasi mijozga beriladigan to'plam bo'ladi.
 copy /y toplam\* dist\ >nul || exit /b 1

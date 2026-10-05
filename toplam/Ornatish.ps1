@@ -47,6 +47,7 @@ foreach ($folder in $folders) {
         New-Item -ItemType Directory -Force $folder | Out-Null
         $link = $shell.CreateShortcut((Join-Path $folder "$AppName.lnk"))
         $link.TargetPath = $program
+        $link.IconLocation = "$program,0"
         $link.WorkingDirectory = $Target
         $link.Save()
     } catch {
