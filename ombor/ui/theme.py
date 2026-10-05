@@ -449,7 +449,7 @@ QHeaderView::section {{ background: transparent; color: {muted}; border-bottom: 
 QTableWidget {{ outline: none; }}  /* tanlangan katak atrofidagi oq ramka kerak emas */
 QTableWidget::item:focus {{ outline: none; border: none; border-bottom: 1px solid {border}; }}
 
-#sidebar::item {{ padding: 12px 12px; border-radius: 10px; border-left: 3px solid transparent; }}
+#sidebar::item {{ padding: 9px 12px; margin: 1px 0; border-radius: 10px; border-left: 3px solid transparent; }}
 #sidebar::item:selected {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {accent}, stop:1 {accent_dark});
     border-left: 3px solid {accent_light};

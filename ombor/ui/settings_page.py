@@ -6,7 +6,7 @@ Foydalanuvchilar va zaxira nusxa faqat rahbarga ko'rinadi.
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths, Qt, QUrl
+from PySide6.QtCore import QStandardPaths, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -31,6 +32,7 @@ from ..i18n import tr
 from ..models import User
 from ..services import Services
 from ..session import Session
+from ..settings import MAX_FIRM_NAME
 from . import theme
 from .auth_dialogs import (
     ROLES_HINT,
@@ -101,6 +103,8 @@ def _panel(widget: QWidget) -> QFrame:
 
 
 class SettingsPage(QWidget):
+    firm_name_changed = Signal(str)  # rahbar ombor nomini o'zgartirdi — sarlavhalar yangilanadi
+
     def __init__(self, services: Services, session: Session, db_path: Path):
         super().__init__()
         self.setObjectName("page")
@@ -187,8 +191,37 @@ class SettingsPage(QWidget):
             column.addWidget(label(hint, "muted"))
             column.addWidget(control)
             row.addLayout(column)
+        if self._user.is_admin:
+            row.addLayout(self._firm_name_column())
         row.addStretch()
         return _section(Glyph.SETTINGS, "Accent", tr("Asosiy sozlamalar"), columns)
+
+    def _firm_name_column(self) -> QVBoxLayout:
+        """Ombor nomi (faqat rahbar): dastur sarlavhasi va yon menyuda shu nom ko'rinadi."""
+        self._firm_name = QLineEdit(self._settings.firm_name(APP_NAME))
+        self._firm_name.setMaxLength(MAX_FIRM_NAME)
+        self._firm_name.setPlaceholderText(APP_NAME)
+        self._firm_name.returnPressed.connect(self._save_firm_name)
+        save = button(tr("Saqlash"), "primary")
+        save.clicked.connect(self._save_firm_name)
+        field = QHBoxLayout()
+        field.setSpacing(8)
+        field.addWidget(self._firm_name)
+        field.addWidget(save)
+        column = QVBoxLayout()
+        column.setSpacing(4)
+        column.addWidget(label(tr("Ombor nomi"), "fieldTitle"))
+        column.addWidget(label(tr("Dastur sarlavhasi va yon menyuda ko'rinadi."), "muted"))
+        column.addLayout(field)
+        self._firm_name.setFixedWidth(FIELD_WIDTH - 90)
+        return column
+
+    def _save_firm_name(self) -> None:
+        name = self._settings.set_firm_name(self._firm_name.text())
+        shown = name or APP_NAME
+        self._firm_name.setText(shown)
+        self.firm_name_changed.emit(shown)
+        QMessageBox.information(self, tr("Ombor nomi"), tr("Ombor nomi saqlandi: {0}").format(shown))
 
     def _change_theme(self, name: str) -> None:
         self._prefs.set(THEME_KEY, name)
@@ -318,7 +351,7 @@ class SettingsPage(QWidget):
             Glyph.INFO,
             "Accent",
             tr("Dastur haqida va qisqa yo'riqnoma"),
-            _text(f"{APP_NAME} — {tr('Versiya {0}').format(APP_VERSION)}", "muted"),
+            _text(f"{self._settings.firm_name(APP_NAME)} — {tr('Versiya {0}').format(APP_VERSION)}", "muted"),
             *(_text(f"•  {line}") for line in lines),
         )
 

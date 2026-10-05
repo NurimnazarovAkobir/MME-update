@@ -415,6 +415,33 @@ class SettingsCardsTests(UiTestCase):
             self.assertFalse(language.sign_out(None))
         restart.assert_not_called()
 
+    def test_only_admin_renames_the_warehouse_and_the_window_follows(self):
+        from ombor.ui.main_window import MainWindow
+
+        window = MainWindow(self.services, Session(self.admin), self.folder / "ombor.db")
+        self.assertTrue(window.windowTitle().startswith("MME Ombor"))
+        settings = window._pages.widget(window._menu.count() - 1)
+        settings._firm_name.setText("  Metall   Montaj   Ombori  ")
+        with mock.patch.object(QMessageBox, "information"):
+            settings._save_firm_name()
+        self.assertEqual(self.services.settings.firm_name("MME Ombor"), "Metall Montaj Ombori")
+        self.assertTrue(window.windowTitle().startswith("Metall Montaj Ombori — Rahbar"))
+        self.assertTrue(all(name.text() == "Metall Montaj Ombori" for name in window._name_labels))
+        # Boshqa foydalanuvchi ham yangi nomni ko'radi, lekin o'zgartira olmaydi.
+        keeper = MainWindow(self.services, Session(self.keeper), self.folder / "ombor.db")
+        self.assertTrue(keeper.windowTitle().startswith("Metall Montaj Ombori"))
+        keeper_settings = keeper._pages.widget(keeper._menu.count() - 1)
+        self.assertFalse(hasattr(keeper_settings, "_firm_name"))
+        # Bo'sh nom — dastur nomiga qaytish.
+        settings._firm_name.setText("   ")
+        with mock.patch.object(QMessageBox, "information"):
+            settings._save_firm_name()
+        self.assertTrue(window.windowTitle().startswith("MME Ombor"))
+
+    def test_main_store_can_be_renamed(self):
+        self.warehouse.save_store("Markaziy ombor", 1)
+        self.assertEqual(self.warehouse.stores()[0].name, "Markaziy ombor")
+
     def test_theme_is_saved_in_local_prefs_not_in_the_shared_database(self):
         page = SettingsPage(self.services, Session(self.admin), self.folder / "ombor.db")
         page._change_theme("light")

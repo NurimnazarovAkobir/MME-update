@@ -43,6 +43,7 @@ from .update_page import UpdatePage
 from .widgets import button, label
 
 SIDEBAR_WIDTH = 250
+BRAND_WIDTH = 150  # yon menyu tepasidagi nom uchun joy (piksel)
 LOGO_SIZE = 48
 MENU_ICON_SIZE = 20
 # Istalgan sahifadan yangi yozuv ochadigan tugmalar (bosh sahifadagi katta tugmalar yordam yozuvida ham bor).
@@ -80,7 +81,9 @@ class MenuBadgeDelegate(QStyledItemDelegate):
 class MainWindow(QMainWindow):
     def __init__(self, services: Services, session: Session, db_path: Path):
         super().__init__()
-        self.setWindowTitle(f"{APP_NAME} — {session.user.name} ({session.user.role.title})")
+        self._settings = services.settings
+        self._title_suffix = f"{session.user.name} ({session.user.role.title})"
+        self._name_labels: list[QLabel] = []  # ombor nomi ko'rinadigan yozuvlar
         self.resize(1280, 800)
         self.setMinimumSize(1100, 680)
         self._warehouse = services.warehouse
@@ -128,7 +131,9 @@ class MainWindow(QMainWindow):
         self._tray: QSystemTrayIcon | None = None
         self._update_row = len(pages)
         pages.append((self._update_title, Glyph.SYNC, update_page, None))
-        pages.append((tr("Sozlamalar"), Glyph.SETTINGS, SettingsPage(services, session, db_path), None))
+        settings_page = SettingsPage(services, session, db_path)
+        settings_page.firm_name_changed.connect(self._show_firm_name)
+        pages.append((tr("Sozlamalar"), Glyph.SETTINGS, settings_page, None))
 
         colors = theme.palette()
         self._pages = QStackedWidget()
@@ -178,6 +183,7 @@ class MainWindow(QMainWindow):
             QShortcut(QKeySequence(NEW_ISSUE_KEY), self, lambda: self._new_movement(MovementKind.OUT))
             QShortcut(QKeySequence(NEW_PRODUCT_KEY), self, self._new_product)
         self._menu.setCurrentRow(0)
+        self._show_firm_name(self._settings.firm_name(APP_NAME))
 
         # Tarmoqda boshqa kompyuter bazani o'zgartirsa, ochiq sahifa o'zi yangilanadi.
         self._conn = services.conn
@@ -207,8 +213,7 @@ class MainWindow(QMainWindow):
             self._data_version = version
             self._refresh_current()
 
-    @staticmethod
-    def _about_card() -> QFrame:
+    def _about_card(self) -> QFrame:
         """Yon menyu ostidagi kartochka: dastur nomi va versiyasi."""
         frame = QFrame()
         frame.setObjectName("sidebarCard")
@@ -217,7 +222,10 @@ class MainWindow(QMainWindow):
         badge.setFixedSize(36, 36)
         names = QVBoxLayout()
         names.setSpacing(0)
-        names.addWidget(label(APP_NAME, "sidebarCardTitle"))
+        card_name = label(APP_NAME, "sidebarCardTitle")
+        card_name.setWordWrap(True)
+        self._name_labels.append(card_name)
+        names.addWidget(card_name)
         names.addWidget(label(tr("Boshqaruv tizimi"), "firm"))
         top = QHBoxLayout()
         top.setSpacing(10)
@@ -230,8 +238,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(label(tr("Versiya {0}").format(APP_VERSION), "firm"))
         return frame
 
-    @staticmethod
-    def _brand(session: Session) -> QHBoxLayout:
+    def _brand(self, session: Session) -> QHBoxLayout:
         """Yuqoridagi belgi, dastur nomi va uning ostida foydalanuvchi lavozimi."""
         logo = QLabel()
         logo.setPixmap(icon_pixmap(LOGO_SIZE))
@@ -241,7 +248,9 @@ class MainWindow(QMainWindow):
         names = QVBoxLayout()
         names.setSpacing(2)
         names.addStretch()
-        names.addWidget(label(APP_NAME, "brand"))
+        brand_name = label(APP_NAME, "brand")
+        self._name_labels.append(brand_name)
+        names.addWidget(brand_name)
         names.addWidget(owner)
         names.addStretch()
         brand = QHBoxLayout()
@@ -263,6 +272,17 @@ class MainWindow(QMainWindow):
         item = self._menu.item(self._rows[Destination.PRODUCTS])
         item.setText(f"  {self._products_title}  ⚠ {count}" if count else f"  {self._products_title}")
         item.setToolTip(tr("{0} ta mahsulot kam qolgan yoki tugagan").format(count) if count else "")
+
+    def _show_firm_name(self, name: str) -> None:
+        """Rahbar bergan ombor nomini sarlavha va yon menyuda ko'rsatadi."""
+        for name_label in self._name_labels:
+            name_label.setToolTip(name)
+            if name_label.wordWrap():
+                name_label.setText(name)
+            else:  # yuqoridagi sarlavha bir qatorda: uzun nom «…» bilan qisqaradi, menyu pastga surilmaydi
+                name_label.ensurePolished()  # uslublar jadvalidagi shrift (13pt, qalin) bilan o'lchash uchun
+                name_label.setText(name_label.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, BRAND_WIDTH))
+        self.setWindowTitle(f"{name} — {self._title_suffix}")
 
     def _show_update_badge(self, available: bool) -> None:
         """Yangi versiya chiqqanda «Yangilash» yonida belgi — oyna chiqarib ishni to'xtatmaydi."""

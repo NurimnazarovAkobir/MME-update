@@ -569,4 +569,6 @@ TRANSLATIONS = {
     "Ha, chiqish": "Да, выйти",
     "Hisobdan chiqish va boshqa foydalanuvchi bilan kirish": "Выйти и войти под другим пользователем",
     "«Tarix» bo'limidagi barcha o'zgarishlar yozuvi butunlay o'chiriladi va qaytarib bo'lmaydi. Kirim, chiqim va mahsulotlarga tegilmaydi.\n\nDavom etilsinmi?": "Все записи об изменениях в разделе «История» будут удалены без возможности восстановления. Приход, расход и товары не затрагиваются.\n\nПродолжить?",
+    "Dastur sarlavhasi va yon menyuda ko'rinadi.": "Отображается в заголовке программы и в боковом меню.",
+    "Ombor nomi saqlandi: {0}": "Название склада сохранено: {0}",
 }
