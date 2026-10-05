@@ -426,7 +426,9 @@ class SettingsCardsTests(UiTestCase):
             settings._save_firm_name()
         self.assertEqual(self.services.settings.firm_name("MME Ombor"), "Metall Montaj Ombori")
         self.assertTrue(window.windowTitle().startswith("Metall Montaj Ombori — Rahbar"))
-        self.assertTrue(all(name.text() == "Metall Montaj Ombori" for name in window._name_labels))
+        # Yuqorida nom sig'masa «…» bilan qisqaradi; to'liq nomi — sichqoncha ustida.
+        self.assertTrue(all(name.toolTip() == "Metall Montaj Ombori" for name in window._name_labels))
+        self.assertTrue(all(name.text().startswith("Metall") for name in window._name_labels))
         # Boshqa foydalanuvchi ham yangi nomni ko'radi, lekin o'zgartira olmaydi.
         keeper = MainWindow(self.services, Session(self.keeper), self.folder / "ombor.db")
         self.assertTrue(keeper.windowTitle().startswith("Metall Montaj Ombori"))
