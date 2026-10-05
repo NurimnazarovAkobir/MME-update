@@ -33,6 +33,7 @@ from .history_page import HistoryPage
 from .icon import app_icon
 from .icons import Glyph, icon_label, menu_icon
 from .labels import LABELS
+from .language import sign_out
 from .movements_page import MovementsPage
 from .products_page import ProductsPage
 from .reports_page import ReportsPage
@@ -154,6 +155,10 @@ class MainWindow(QMainWindow):
         sidebar.addLayout(self._brand(session))
         sidebar.addWidget(self._menu, stretch=1)
         sidebar.addWidget(version)
+        sign_out_button = button(tr("Chiqish"), "danger", Glyph.SIGN_OUT)
+        sign_out_button.setToolTip(tr("Hisobdan chiqish va boshqa foydalanuvchi bilan kirish"))
+        sign_out_button.clicked.connect(lambda: sign_out(self))
+        sidebar.addWidget(sign_out_button)
 
         central = QWidget()
         layout = QHBoxLayout(central)

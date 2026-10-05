@@ -31,6 +31,7 @@ SUGGESTION_FIELDS = ("person", "counterparty")
 GROUP_REQUIRED_KEY = "group_required"
 PRODUCT_ENTITY = "product"
 TRANSFER_ENTITY = "transfer"
+HISTORY_ENTITY = "history"
 
 # Dastur o'zi yaratadigan yozuvlarning «yetkazib beruvchi / obyekt» maydoni. Bazada shu
 # (o'zbekcha) ko'rinishda saqlanadi, ekranda esa tanlangan tilda ko'rsatiladi.
@@ -529,6 +530,17 @@ class Warehouse:
         return [row[0] for row in rows if row[0] not in _SYSTEM_COUNTERPARTIES]
 
     # --- O'zgarishlar tarixi -----------------------------------------------
+
+    def clear_history(self) -> int:
+        """O'zgarishlar tarixini butunlay tozalaydi; o'chirilgan qatorlar sonini qaytaradi.
+
+        Tarixda bitta yozuv qoladi: kim va qachon tozalagani — tozalashning o'zi izsiz qolmasligi uchun.
+        Kirim, chiqim va o'chirilgan (tiklash mumkin bo'lgan) yozuvlarga tegilmaydi.
+        """
+        with self._conn:
+            removed = self._conn.execute("DELETE FROM history").rowcount
+            self._log(HistoryAction.CLEAR, HISTORY_ENTITY, None, tr("{0} ta yozuv o'chirildi").format(removed))
+        return removed
 
     def history(self, period: Period = Period(), search: str = "", limit: int | None = None) -> list[HistoryEntry]:
         """Kim, qachon, nimani o'zgartirgani — eng yangisidan boshlab."""

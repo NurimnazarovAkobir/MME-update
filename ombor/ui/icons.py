@@ -47,6 +47,7 @@ class Glyph:
     CLIPBOARD = "\ue9d5"
     UNDO = "\ue7a7"
     CROWN = "\ue734"
+    SIGN_OUT = "\uf3b1"
     INFO = "\ue946"
     CHECK = "\ue73e"
     CHEVRON = "\ue76c"

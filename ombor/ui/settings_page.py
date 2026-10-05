@@ -43,7 +43,7 @@ from .auth_dialogs import (
 )
 from .extra_dialogs import GroupsDialog, NameDialog
 from .icons import Glyph, icon_label
-from .language import language_box, restart_application
+from .language import language_box, restart_application, sign_out
 from .widgets import Column, DataTable, button, card, confirm, label, page_header
 
 THEME_KEY = "theme"
@@ -71,8 +71,8 @@ def _text(text: str, object_name: str = "") -> QLabel:
     return widget
 
 
-def _action(text: str, handler, role: str = "") -> QPushButton:
-    widget = button(text, role)
+def _action(text: str, handler, role: str = "", glyph: str = "") -> QPushButton:
+    widget = button(text, role, glyph)
     widget.clicked.connect(handler)
     return widget
 
@@ -198,12 +198,31 @@ class SettingsPage(QWidget):
         buttons = [_action(tr("Parolni o'zgartirish"), self._change_password)]
         if self._user.is_admin:
             buttons.append(_action(tr("Yangi tiklash kodi"), self._new_recovery_code))
+        buttons.append(_action(tr("Chiqish"), self._sign_out, "danger", Glyph.SIGN_OUT))
         return _section(
             Glyph.PERSON,
             "Violet",
             tr("Mening hisobim"),
             _text(tr("Siz {0} ({1}) sifatida kirgansiz.").format(self._user.name, self._user.role.title)),
             _button_row(*buttons),
+        )
+
+    def _sign_out(self) -> None:
+        """Hisobdan chiqish: dastur kirish oynasi bilan qayta ochiladi."""
+        sign_out(self)
+
+    def _clear_history(self) -> None:
+        question = tr(
+            "«Tarix» bo'limidagi barcha o'zgarishlar yozuvi butunlay o'chiriladi va qaytarib bo'lmaydi. "
+            "Kirim, chiqim va mahsulotlarga tegilmaydi.\n\nDavom etilsinmi?"
+        )
+        if not confirm(self, tr("Tarixni tozalash"), question, tr("Ha, tozalash")):
+            return
+        if not PasswordDialog(self._auth, self._user, self).exec():
+            return
+        removed = self._warehouse.clear_history()
+        QMessageBox.information(
+            self, tr("Tarixni tozalash"), tr("Tarix tozalandi: {0} ta yozuv o'chirildi.").format(removed)
         )
 
     def _rules_card(self) -> QFrame:
@@ -216,7 +235,10 @@ class SettingsPage(QWidget):
             tr("Hisob qoidalari"),
             _text(tr("Yoqilsa, guruhsiz yozuv saqlanmaydi va hisobotda «(ko'rsatilmagan)» qatori chiqmaydi.")),
             group_required,
-            _button_row(_action(tr("Guruhlarni tahrirlash"), lambda: GroupsDialog(self._groups, self).exec())),
+            _button_row(
+                _action(tr("Guruhlarni tahrirlash"), lambda: GroupsDialog(self._groups, self).exec()),
+                _action(tr("Tarixni tozalash"), self._clear_history, "danger", Glyph.DELETE),
+            ),
         )
 
     # --- Omborlar ----------------------------------------------------------

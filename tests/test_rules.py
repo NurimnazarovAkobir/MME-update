@@ -147,6 +147,19 @@ class HistoryTests(RulesTestCase):
             self.issue(5)
         self.assertEqual(len(self.warehouse.history()), before)
 
+    def test_clearing_history_removes_everything_but_leaves_who_cleared_it(self):
+        receipt = self.receive(10, 1000)
+        self.warehouse.delete_movement(receipt)
+        self.assertGreater(len(self.warehouse.history()), 1)
+        removed = self.warehouse.clear_history()
+        self.assertGreaterEqual(removed, 3)
+        (entry,) = self.warehouse.history()
+        self.assertEqual((entry.action, entry.actor, entry.entity), (HistoryAction.CLEAR, "Rahbar", "history"))
+        # Ma'lumotlarning o'ziga tegilmaydi: o'chirilgan yozuv hali ham tiklanadi.
+        self.assertEqual([m.id for m in self.warehouse.deleted_movements()], [receipt])
+        self.warehouse.restore_movement(receipt)
+        self.assertEqual(self.warehouse.product(self.pipe).stock, 10)
+
     def test_search_and_limit(self):
         self.receive(10, 1000)
         self.assertEqual(len(self.warehouse.history(search="truba")), 2)

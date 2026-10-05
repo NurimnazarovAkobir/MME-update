@@ -161,8 +161,9 @@ class StoreUiTests(UiTestCase):
         page = SettingsPage(self.services, Session(self.admin), self.folder / "ombor.db")
         page.refresh()
         self.assertEqual(page._stores.rowCount(), 2)
-        with mock.patch.object(NameDialog, "exec", return_value=1), mock.patch.object(
-            NameDialog, "names", return_value=["Zaxira ombor"]
+        with (
+            mock.patch.object(NameDialog, "exec", return_value=1),
+            mock.patch.object(NameDialog, "names", return_value=["Zaxira ombor"]),
         ):
             page._edit_store(None)
         self.assertEqual([store.name for store in self.warehouse.stores()][-1], "Zaxira ombor")
@@ -334,9 +335,10 @@ class GroupUiTests(UiTestCase):
 
     def test_duplicate_group_shows_a_warning(self):
         dialog = GroupsDialog(self.services.groups)
-        with mock.patch.object(dialog, "_ask_names", return_value=["", "ГСМ"]), mock.patch.object(
-            QMessageBox, "warning"
-        ) as warning:
+        with (
+            mock.patch.object(dialog, "_ask_names", return_value=["", "ГСМ"]),
+            mock.patch.object(QMessageBox, "warning") as warning,
+        ):
             dialog._add_group()
         warning.assert_called_once()
         self.assertEqual(dialog._tree.topLevelItemCount(), 12)
@@ -372,6 +374,46 @@ class SettingsCardsTests(UiTestCase):
         page = SettingsPage(self.services, Session(self.viewer), self.folder / "ombor.db")
         page.refresh()
         self.assertNotIn("Hozir nusxa olish", self.button_texts(page))
+
+    def test_admin_clears_history_after_confirming_with_password(self):
+        page = SettingsPage(self.services, Session(self.admin), self.folder / "ombor.db")
+        self.assertIn("Tarixni tozalash", self.button_texts(page))
+        before = len(self.warehouse.history())
+        with (
+            mock.patch("ombor.ui.settings_page.confirm", return_value=True),
+            mock.patch("ombor.ui.settings_page.PasswordDialog.exec", return_value=0),
+        ):
+            page._clear_history()  # parol kiritilmadi — hech narsa o'chmaydi
+        self.assertEqual(len(self.warehouse.history()), before)
+        with (
+            mock.patch("ombor.ui.settings_page.confirm", return_value=True),
+            mock.patch("ombor.ui.settings_page.PasswordDialog.exec", return_value=1),
+            mock.patch.object(QMessageBox, "information"),
+        ):
+            page._clear_history()
+        self.assertEqual(len(self.warehouse.history()), 1)
+        keeper = SettingsPage(self.services, Session(self.keeper), self.folder / "ombor.db")
+        self.assertNotIn("Tarixni tozalash", self.button_texts(keeper))
+
+    def test_every_role_can_sign_out(self):
+        from ombor.ui import language
+        from ombor.ui.main_window import MainWindow
+
+        for user in (self.admin, self.keeper, self.viewer):
+            window = MainWindow(self.services, Session(user), self.folder / "ombor.db")
+            self.assertIn("Chiqish", self.button_texts(window), user.role)
+        with (
+            mock.patch("ombor.ui.widgets.confirm", return_value=True),
+            mock.patch.object(language, "restart_application") as restart,
+        ):
+            self.assertTrue(language.sign_out(None))
+        restart.assert_called_once()
+        with (
+            mock.patch("ombor.ui.widgets.confirm", return_value=False),
+            mock.patch.object(language, "restart_application") as restart,
+        ):
+            self.assertFalse(language.sign_out(None))
+        restart.assert_not_called()
 
     def test_theme_is_saved_in_local_prefs_not_in_the_shared_database(self):
         page = SettingsPage(self.services, Session(self.admin), self.folder / "ombor.db")

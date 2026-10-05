@@ -7,6 +7,7 @@ from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import QApplication, QComboBox
 
 from .. import i18n
+from ..i18n import tr
 from ..local import LocalPrefs
 
 LANGUAGE_LABEL = "Til / Язык"  # til hali tanlanmagan foydalanuvchi ham tushunishi uchun ikki tilda
@@ -29,6 +30,17 @@ def _switch(settings: LocalPrefs, code: str) -> None:
         return
     settings.set(i18n.LANGUAGE_KEY, code)
     restart_application()
+
+
+def sign_out(parent) -> bool:
+    """Hisobdan chiqish: tasdiqlansa, dastur kirish oynasi bilan qayta ochiladi. Chiqilsa — True."""
+    from .widgets import confirm  # widgets shu moduldan oldin yuklanadi — aylanma import bo'lmasligi uchun
+
+    question = tr("Hisobdan chiqilsinmi? Dastur kirish oynasiga qaytadi.")
+    if not confirm(parent, tr("Chiqish"), question, tr("Ha, chiqish")):
+        return False
+    restart_application()
+    return True
 
 
 def restart_application() -> None:

@@ -8,7 +8,7 @@ from ..errors import WarehouseError
 from ..i18n import tr
 from ..models import HistoryEntry, MovementKind
 from ..session import Session
-from ..warehouse import PRODUCT_ENTITY, TRANSFER_ENTITY, Warehouse
+from ..warehouse import HISTORY_ENTITY, PRODUCT_ENTITY, TRANSFER_ENTITY, Warehouse
 from . import theme
 from .icons import Glyph, glyph_icon
 from .labels import LABELS
@@ -34,6 +34,7 @@ _ENTITY_TITLES = {
     MovementKind.OUT.value: LABELS[MovementKind.OUT].title,
     PRODUCT_ENTITY: tr("Mahsulot"),
     TRANSFER_ENTITY: tr("Ko'chirish"),
+    HISTORY_ENTITY: tr("Tarix"),
     f"{PAYMENT_ENTITY}:IN": tr("Biz to'ladik"),
     f"{PAYMENT_ENTITY}:OUT": tr("Bizga to'landi"),
 }

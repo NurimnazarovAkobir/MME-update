@@ -253,6 +253,7 @@ class HistoryAction(Enum):
     EDIT = "edit"
     DELETE = "delete"
     RESTORE = "restore"
+    CLEAR = "clear"
 
     @property
     def title(self) -> str:
@@ -261,6 +262,7 @@ class HistoryAction(Enum):
             HistoryAction.EDIT: tr("O'zgartirildi"),
             HistoryAction.DELETE: tr("O'chirildi"),
             HistoryAction.RESTORE: tr("Tiklandi"),
+            HistoryAction.CLEAR: tr("Tarix tozalandi"),
         }[self]
 
 
