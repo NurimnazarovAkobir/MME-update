@@ -84,6 +84,7 @@ class MainWindow(QMainWindow):
         self._settings = services.settings
         self._title_suffix = f"{session.user.name} ({session.user.role.title})"
         self._name_labels: list[QLabel] = []  # ombor nomi ko'rinadigan yozuvlar
+        self._brand_name: QLabel | None = None  # rahbar bosib nomini o'zgartiradigan sarlavha
         self.resize(1280, 800)
         self.setMinimumSize(1100, 680)
         self._warehouse = services.warehouse
@@ -133,6 +134,7 @@ class MainWindow(QMainWindow):
         pages.append((self._update_title, Glyph.SYNC, update_page, None))
         settings_page = SettingsPage(services, session, db_path)
         settings_page.firm_name_changed.connect(self._show_firm_name)
+        self._settings_page = settings_page
         pages.append((tr("Sozlamalar"), Glyph.SETTINGS, settings_page, None))
 
         colors = theme.palette()
@@ -250,6 +252,10 @@ class MainWindow(QMainWindow):
         names.addStretch()
         brand_name = label(APP_NAME, "brand")
         self._name_labels.append(brand_name)
+        if session.is_admin:  # rahbar nomni bosib o'zgartiradi
+            brand_name.setCursor(Qt.CursorShape.PointingHandCursor)
+            brand_name.installEventFilter(self)
+            self._brand_name = brand_name
         names.addWidget(brand_name)
         names.addWidget(owner)
         names.addStretch()
@@ -273,10 +279,17 @@ class MainWindow(QMainWindow):
         item.setText(f"  {self._products_title}  ⚠ {count}" if count else f"  {self._products_title}")
         item.setToolTip(tr("{0} ta mahsulot kam qolgan yoki tugagan").format(count) if count else "")
 
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self._brand_name and event.type() == QEvent.Type.MouseButtonRelease:
+            self._settings_page.rename_firm()
+            return True
+        return super().eventFilter(watched, event)
+
     def _show_firm_name(self, name: str) -> None:
         """Rahbar bergan ombor nomini sarlavha va yon menyuda ko'rsatadi."""
         for name_label in self._name_labels:
-            name_label.setToolTip(name)
+            hint = tr("Nomini o'zgartirish uchun bosing") if name_label is self._brand_name else ""
+            name_label.setToolTip(f"{name}\n{hint}" if hint else name)
             if name_label.wordWrap():
                 name_label.setText(name)
             else:  # yuqoridagi sarlavha bir qatorda: uzun nom «…» bilan qisqaradi, menyu pastga surilmaydi

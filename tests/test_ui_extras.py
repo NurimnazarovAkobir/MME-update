@@ -427,7 +427,7 @@ class SettingsCardsTests(UiTestCase):
         self.assertEqual(self.services.settings.firm_name("MME Ombor"), "Metall Montaj Ombori")
         self.assertTrue(window.windowTitle().startswith("Metall Montaj Ombori — Rahbar"))
         # Yuqorida nom sig'masa «…» bilan qisqaradi; to'liq nomi — sichqoncha ustida.
-        self.assertTrue(all(name.toolTip() == "Metall Montaj Ombori" for name in window._name_labels))
+        self.assertTrue(all(name.toolTip().startswith("Metall Montaj Ombori") for name in window._name_labels))
         self.assertTrue(all(name.text().startswith("Metall") for name in window._name_labels))
         # Boshqa foydalanuvchi ham yangi nomni ko'radi, lekin o'zgartira olmaydi.
         keeper = MainWindow(self.services, Session(self.keeper), self.folder / "ombor.db")
@@ -439,6 +439,29 @@ class SettingsCardsTests(UiTestCase):
         with mock.patch.object(QMessageBox, "information"):
             settings._save_firm_name()
         self.assertTrue(window.windowTitle().startswith("MME Ombor"))
+
+    def test_admin_renames_by_clicking_the_name_in_the_sidebar(self):
+        from PySide6.QtCore import QEvent, QPointF
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QApplication, QInputDialog
+
+        from ombor.ui.main_window import MainWindow
+
+        window = MainWindow(self.services, Session(self.admin), self.folder / "ombor.db")
+        click = QMouseEvent(
+            QEvent.Type.MouseButtonRelease, QPointF(5, 5), QPointF(5, 5),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+        )
+        with (
+            mock.patch.object(QInputDialog, "getText", return_value=("Metall Ombor", True)),
+            mock.patch.object(QMessageBox, "information"),
+        ):
+            QApplication.sendEvent(window._brand_name, click)
+        self.assertEqual(self.services.settings.firm_name("MME Ombor"), "Metall Ombor")
+        self.assertTrue(window.windowTitle().startswith("Metall Ombor"))
+        self.assertIn("bosing", window._brand_name.toolTip())
+        keeper = MainWindow(self.services, Session(self.keeper), self.folder / "ombor.db")
+        self.assertIsNone(keeper._brand_name)  # omborchi bosib o'zgartira olmaydi
 
     def test_main_store_can_be_renamed(self):
         self.warehouse.save_store("Markaziy ombor", 1)

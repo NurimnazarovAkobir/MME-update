@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -217,11 +218,25 @@ class SettingsPage(QWidget):
         return column
 
     def _save_firm_name(self) -> None:
-        name = self._settings.set_firm_name(self._firm_name.text())
+        self._apply_firm_name(self._firm_name.text())
+
+    def rename_firm(self) -> None:
+        """Yon menyudagi nom bosilganda: rahbar nomni shu yerning o'zida o'zgartiradi."""
+        if not self._user.is_admin:
+            return
+        name, accepted = QInputDialog.getText(
+            self.window(), tr("Ombor nomi"), tr("Yangi nom (bo'sh qoldirilsa — {0}):").format(APP_NAME),
+            text=self._settings.firm_name(APP_NAME),
+        )
+        if accepted:
+            self._apply_firm_name(name)
+
+    def _apply_firm_name(self, text: str) -> None:
+        name = self._settings.set_firm_name(text)
         shown = name or APP_NAME
         self._firm_name.setText(shown)
         self.firm_name_changed.emit(shown)
-        QMessageBox.information(self, tr("Ombor nomi"), tr("Ombor nomi saqlandi: {0}").format(shown))
+        QMessageBox.information(self.window(), tr("Ombor nomi"), tr("Ombor nomi saqlandi: {0}").format(shown))
 
     def _change_theme(self, name: str) -> None:
         self._prefs.set(THEME_KEY, name)
