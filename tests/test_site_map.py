@@ -1,5 +1,8 @@
 """Obyektlarning joylashuvi: koordinatani o'qish, internetsiz xarita va Google Maps'da ochish."""
 
+import io
+import json
+import time
 import unittest
 from unittest import mock
 
@@ -7,7 +10,8 @@ from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtTest import QTest
 
 from ombor.errors import WarehouseError
-from ombor.geo import Location, maps_url, parse_location
+from ombor import geo
+from ombor.geo import FoundPlace, Location, LookupFailed, maps_url, parse_location
 from ombor.models import Site
 from ombor.session import Session
 from ombor.ui import sites_page
@@ -144,3 +148,97 @@ class SiteMapTests(UiTestCase):
             page._open_in_maps(self.qibray)
             page._open_in_maps(self.sites.save(Site("Manzilsiz")))
         self.assertEqual((opened.call_count, told.call_count), (1, 1))
+
+
+YAKKASAROY = FoundPlace(Location(41.267072, 69.230158), "12, Yakkasaroy tumani, Toshkent")
+
+
+class FindAddressTests(unittest.TestCase):
+    def answer(self, places):
+        return mock.patch.object(
+            geo.urllib.request, "urlopen", return_value=io.BytesIO(json.dumps(places).encode())
+        )
+
+    def test_first_found_place_is_returned(self):
+        places = [{"lat": "41.267072", "lon": "69.230158", "display_name": "12, Yakkasaroy tumani, Toshkent"}]
+        with self.answer(places) as urlopen:
+            self.assertEqual(geo.find_address("  Yakkasaroy   12 "), YAKKASAROY)
+        request = urlopen.call_args.args[0]
+        self.assertIn("q=Yakkasaroy+12", request.full_url)
+        self.assertIn("countrycodes=uz", request.full_url)
+        self.assertTrue(request.get_header("User-agent").startswith("MME-Ombor/"))
+
+    def test_unknown_address_gives_nothing_and_no_internet_is_reported(self):
+        with self.answer([]):
+            self.assertIsNone(geo.find_address("yo'q joy"))
+        with mock.patch.object(geo.urllib.request, "urlopen") as urlopen:
+            self.assertIsNone(geo.find_address("   "))
+            urlopen.assert_not_called()
+        with mock.patch.object(geo.urllib.request, "urlopen", side_effect=OSError("tarmoq yo'q")):
+            with self.assertRaises(LookupFailed):
+                geo.find_address("Yakkasaroy 12")
+
+
+class AddressLookupTests(UiTestCase):
+    """Obyekt oynasida joylashuvning manzil bo'yicha o'zi topilishi (internet o'rniga tayyor javob)."""
+
+    def setUp(self):
+        super().setUp()
+        self.sites = self.services.sites
+
+    def dialog(self, result, site=None) -> SiteDialog:
+        """`result` — qidiruv javobi: FoundPlace, None yoki LookupFailed (ko'tariladi)."""
+        outcome = {"side_effect": result} if isinstance(result, Exception) else {"return_value": result}
+        answer = mock.patch.object(geo, "find_address", **outcome)
+        self.asked = answer.start()
+        self.addCleanup(answer.stop)
+        return SiteDialog(self.sites, site)
+
+    def wait(self, dialog: SiteDialog) -> None:
+        deadline = time.monotonic() + 5
+        while dialog._is_searching and time.monotonic() < deadline:
+            self.app.processEvents()
+            time.sleep(0.01)
+        self.assertFalse(dialog._is_searching)
+
+    def test_location_is_found_from_the_address_and_saved(self):
+        dialog = self.dialog(YAKKASAROY)
+        dialog._name.setText("Yangi obyekt")
+        dialog._address.setText("Yakkasaroy 12")
+        dialog._address.editingFinished.emit()
+        self.wait(dialog)
+        self.assertEqual(dialog._location.text(), "41.267072, 69.230158")
+        self.assertIn("Yakkasaroy tumani", dialog._location_hint.text())
+        dialog._address.editingFinished.emit()  # o'sha manzil qayta so'ralmaydi
+        self.asked.assert_called_once_with("Yakkasaroy 12")
+        dialog.accept()
+        self.assertEqual(self.sites.get(dialog.saved_id).location, YAKKASAROY.location)
+
+    def test_saving_waits_for_the_search_and_uses_the_name_without_an_address(self):
+        dialog = self.dialog(YAKKASAROY)
+        dialog._name.setText("Yakkasaroy 12")
+        dialog.accept()
+        self.assertIsNone(dialog.saved_id)  # javob hali kelmagan
+        self.wait(dialog)
+        self.asked.assert_called_once_with("Yakkasaroy 12")
+        self.assertEqual(self.sites.get(dialog.saved_id).location, YAKKASAROY.location)
+
+    def test_site_is_saved_without_a_location_when_nothing_is_found_or_there_is_no_internet(self):
+        for name, result in (("Topilmas", None), ("Internetsiz", LookupFailed("tarmoq yo'q"))):
+            dialog = self.dialog(result)
+            dialog._name.setText(name)
+            dialog.accept()
+            self.wait(dialog)
+            self.assertIsNone(self.sites.get(dialog.saved_id).location, name)
+            self.assertTrue(dialog._location_hint.text())
+
+    def test_typed_coordinates_are_kept_unless_the_search_is_asked_for(self):
+        placed = self.sites.save(Site("Chilonzor", latitude=CHILONZOR.latitude, longitude=CHILONZOR.longitude))
+        dialog = self.dialog(YAKKASAROY, self.sites.get(placed))
+        dialog._address.setText("Yakkasaroy 12")
+        dialog._address.editingFinished.emit()
+        self.asked.assert_not_called()
+        self.assertEqual(dialog._location.text(), str(CHILONZOR))
+        dialog._find_location(replace=True)  # «Topish» tugmasi
+        self.wait(dialog)
+        self.assertEqual(dialog._location.text(), str(YAKKASAROY.location))

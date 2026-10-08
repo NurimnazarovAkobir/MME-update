@@ -1,19 +1,29 @@
-"""Joylashuv: koordinatani matn yoki xarita havolasidan o'qish va Google Maps havolasini tuzish.
+"""Joylashuv: koordinatani matn yoki xarita havolasidan o'qish, manzil bo'yicha topish va Google Maps havolasi.
 
-Internet kerak emas: koordinata havolaning o'zidan olinadi. Qisqa havolalarda (maps.app.goo.gl/…)
-koordinata yo'q — ularni faqat internet orqali ochish mumkin, shuning uchun ular qabul qilinmaydi.
+Koordinatani o'qish uchun internet kerak emas: u havolaning o'zidan olinadi. Qisqa havolalarda
+(maps.app.goo.gl/…) koordinata yo'q, shuning uchun ular qabul qilinmaydi. Manzil bo'yicha topish
+(`find_address`) internet orqali ishlaydi: manzil matni OpenStreetMap qidiruv xizmatiga yuboriladi.
 """
 
+import json
 import math
 import re
+import urllib.request
 from dataclasses import dataclass
-from urllib.parse import quote_plus, unquote
+from urllib.parse import quote_plus, unquote, urlencode
 
+from .config import APP_VERSION
 from .errors import WarehouseError
 from .i18n import tr
 
 KM_PER_DEGREE = 111.32  # bir daraja kenglik — taxminan shuncha kilometr
 MAPS_SEARCH_URL = "https://www.google.com/maps/search/?api=1&query="
+# Manzil bo'yicha qidiruv: OpenStreetMap ning bepul xizmati (kalit kerak emas; kam so'rov uchun mo'ljallangan).
+GEOCODER_URL = "https://nominatim.openstreetmap.org/search"
+GEOCODER_COUNTRIES = "uz"  # qisqa manzil («Yakkasaroy 12») boshqa davlatdan topilib qolmasligi uchun
+GEOCODER_LANGUAGE = "uz,ru"
+GEOCODER_AGENT = f"MME-Ombor/{APP_VERSION}"  # xizmat qoidasi: dastur o'zini tanishtirishi kerak
+LOOKUP_TIMEOUT_SECONDS = 6
 
 _NUMBER = r"(-?\d{1,3}(?:\.\d+)?)"
 _PAIR = rf"{_NUMBER}\s*[,;\s]\s*{_NUMBER}"
@@ -42,6 +52,44 @@ class Location:
         east = (self.longitude - origin.longitude) * KM_PER_DEGREE * math.cos(math.radians(origin.latitude))
         north = (self.latitude - origin.latitude) * KM_PER_DEGREE
         return east, north
+
+
+@dataclass(frozen=True)
+class FoundPlace:
+    """Manzil bo'yicha topilgan joy: koordinatasi va xaritadagi to'liq nomi (foydalanuvchi tekshirishi uchun)."""
+
+    location: Location
+    title: str
+
+
+class LookupFailed(Exception):
+    """Manzilni qidirib bo'lmadi: internet yo'q yoki xizmat javob bermadi."""
+
+
+def find_address(address: str, timeout: float = LOOKUP_TIMEOUT_SECONDS) -> FoundPlace | None:
+    """Manzil matni bo'yicha joyni internetdan topadi; topilmasa — None, ulanib bo'lmasa — LookupFailed."""
+    query = " ".join(address.split())
+    if not query:
+        return None
+    parameters = urlencode(
+        {
+            "q": query,
+            "format": "jsonv2",
+            "limit": 1,
+            "countrycodes": GEOCODER_COUNTRIES,
+            "accept-language": GEOCODER_LANGUAGE,
+        }
+    )
+    request = urllib.request.Request(f"{GEOCODER_URL}?{parameters}", headers={"User-Agent": GEOCODER_AGENT})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            places = json.load(response)
+        if not places:
+            return None
+        place = places[0]
+        return FoundPlace(Location(float(place["lat"]), float(place["lon"])), place.get("display_name", query))
+    except (OSError, ValueError, KeyError, TypeError) as error:  # tarmoq xatosi yoki kutilmagan javob
+        raise LookupFailed(str(error)) from error
 
 
 def parse_location(text: str) -> Location | None:

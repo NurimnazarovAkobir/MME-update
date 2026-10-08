@@ -649,7 +649,6 @@ TRANSLATIONS = {
     # Obyektlar xaritasi
     "41.2856, 69.2034 yoki xarita havolasi (ixtiyoriy)": "41.2856, 69.2034 или ссылка на карту (необязательно)",
     "Bu obyektning joylashuvi ham, manzili ham yozilmagan. Obyektni tahrirlab, ularni kiriting.": "У этого объекта не указаны ни местоположение, ни адрес. Откройте объект и заполните их.",
-    "Google Maps'da joyni sichqonchaning o'ng tugmasi bilan bosing va birinchi qatorni (koordinatani) nusxalab, shu yerga qo'ying. Obyekt dasturdagi xaritada ko'rinadi.": "В Google Maps нажмите на место правой кнопкой мыши, скопируйте первую строку (координаты) и вставьте сюда. Объект появится на карте в программе.",
     "Google Maps'da ochish": "Открыть в Google Maps",
     "Joylashuv": "Местоположение",
     "Joylashuvi yozilgan obyekt yo'q.\nObyektni tahrirlab, «Joylashuv» maydoniga koordinatasini kiriting.": "Нет объектов с указанным местоположением.\nОткройте объект и введите координаты в поле «Местоположение».",
@@ -661,4 +660,11 @@ TRANSLATIONS = {
     "Xarita": "Карта",
     "{0} km": "{0} км",
     "{0} m": "{0} м",
+    "Topish": "Найти",
+    "Joylashuvni manzil bo'yicha internetdan topadi": "Находит местоположение по адресу через интернет",
+    "Manzil yozilsa, joylashuv internetdan o'zi topiladi. Qo'lda kiritish ham mumkin: Google Maps'da joyni o'ng tugma bilan bosing va birinchi qatorni (koordinatani) nusxalang.": "Если указан адрес, местоположение находится через интернет автоматически. Можно ввести и вручную: в Google Maps нажмите на место правой кнопкой мыши и скопируйте первую строку (координаты).",
+    "Joylashuv qidirilmoqda…": "Поиск местоположения…",
+    "Topildi: {0}": "Найдено: {0}",
+    "Bu manzil xaritadan topilmadi. Aniqroq yozing (masalan: Toshkent, Yakkasaroy, 12) yoki koordinatani qo'lda kiriting.": "Этот адрес не найден на карте. Уточните его (например: Ташкент, Яккасарай, 12) или введите координаты вручную.",
+    "Internetga ulanib bo'lmadi — joylashuv topilmadi. Koordinatani qo'lda kiritish mumkin.": "Нет подключения к интернету — местоположение не найдено. Координаты можно ввести вручную.",
 }
