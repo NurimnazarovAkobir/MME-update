@@ -297,6 +297,63 @@ class Store:
 
 
 @dataclass(frozen=True)
+class Site:
+    """Obyekt — mahsulot beriladigan va ortgani omborga qaytadigan qurilish (montaj) joyi."""
+
+    name: str
+    address: str = ""
+    manager: str = ""  # mas'ul shaxs (masalan, prorab)
+    note: str = ""
+    id: int | None = None
+
+
+@dataclass(frozen=True)
+class SiteTotals(Site):
+    """Obyekt va unga berilgan hamda undan qaytgan mahsulotlarning tannarxi."""
+
+    issued: float = 0.0
+    returned: float = 0.0
+
+    @property
+    def remaining(self) -> float:
+        """Obyektda qolgan (ishlatilgan yoki hali qaytmagan) mahsulotlar tannarxi."""
+        return self.issued - self.returned
+
+
+@dataclass(frozen=True)
+class SiteProduct:
+    """Bitta obyektdagi bitta mahsulot: qancha berilgan va qancha qaytgan."""
+
+    site: str
+    product_id: int
+    product_name: str
+    unit: str
+    issued: float
+    returned: float
+    returned_amount: float  # qaytgan mahsulotning tannarxi
+
+    @property
+    def remaining(self) -> float:
+        return round(self.issued - self.returned, 6)
+
+
+@dataclass(frozen=True)
+class SiteReturn:
+    """Obyektdan omborga qaytgan mahsulot (vozvrat); narxi va guruhini dastur o'zi to'ldiradi."""
+
+    date: date
+    site_id: int
+    product_id: int
+    quantity: float
+    person: str = ""  # kim olib keldi
+    note: str = ""
+    doc_number: str = ""
+    created_by: str = ""
+    warehouse_id: int = 1
+    id: int | None = None
+
+
+@dataclass(frozen=True)
 class Transfer:
     """Mahsulotni bir ombordan boshqasiga ko'chirish."""
 

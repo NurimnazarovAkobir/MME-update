@@ -8,6 +8,7 @@ from ..errors import WarehouseError
 from ..i18n import tr
 from ..models import HistoryEntry, MovementKind
 from ..session import Session
+from ..sites import SITE_ENTITY
 from ..warehouse import HISTORY_ENTITY, PRODUCT_ENTITY, TRANSFER_ENTITY, Warehouse
 from . import theme
 from .icons import Glyph, glyph_icon
@@ -35,6 +36,7 @@ _ENTITY_TITLES = {
     PRODUCT_ENTITY: tr("Mahsulot"),
     TRANSFER_ENTITY: tr("Ko'chirish"),
     HISTORY_ENTITY: tr("Tarix"),
+    SITE_ENTITY: tr("Obyekt"),
     f"{PAYMENT_ENTITY}:IN": tr("Biz to'ladik"),
     f"{PAYMENT_ENTITY}:OUT": tr("Bizga to'landi"),
 }

@@ -38,7 +38,9 @@ from .language import sign_out
 from .movements_page import MovementsPage
 from .products_page import ProductsPage
 from .reports_page import ReportsPage
+from .returns_page import ReturnsPage
 from .settings_page import SettingsPage
+from .sites_page import SitesPage
 from .update_page import UpdatePage
 from .widgets import button, label
 
@@ -88,9 +90,9 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self.setMinimumSize(1100, 680)
         self._warehouse = services.warehouse
-        self._warehouse.actor = session.author  # o'zgarishlar tarixiga shu ism yoziladi
-        services.debts.actor = session.author
-        self._warehouse.actor_role = services.debts.actor_role = session.user.role.value
+        for service in (self._warehouse, services.debts, services.sites):
+            service.actor = session.author  # o'zgarishlar tarixiga shu ism va lavozim yoziladi
+            service.actor_role = session.user.role.value
         self._session = session
 
         dashboard = DashboardPage(self._warehouse, services.reports, services.analytics, session.can_add)
@@ -114,7 +116,9 @@ class MainWindow(QMainWindow):
                 MovementsPage(self._warehouse, LABELS[MovementKind.OUT], session),
                 Destination.ISSUES,
             ),
+            (tr("Vozvrat"), Glyph.UNDO, ReturnsPage(services.sites, self._warehouse, session), None),
             (self._products_title, Glyph.PRODUCTS, self._products_page, Destination.PRODUCTS),
+            (tr("Obyektlar"), Glyph.PIN, SitesPage(services.sites, session), None),
             (
                 tr("Hisobotlar"),
                 Glyph.REPORTS,
@@ -143,6 +147,7 @@ class MainWindow(QMainWindow):
         self._menu.setObjectName("sidebar")
         self._menu.setIconSize(QSize(MENU_ICON_SIZE, MENU_ICON_SIZE))
         self._menu.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._menu.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._menu.setItemDelegate(MenuBadgeDelegate(self._menu))
         self._rows: dict[Destination, int] = {}
         for row, (title, glyph, page, destination) in enumerate(pages):
@@ -158,7 +163,7 @@ class MainWindow(QMainWindow):
         sidebar_panel.setFixedWidth(SIDEBAR_WIDTH)
         sidebar = QVBoxLayout(sidebar_panel)
         sidebar.setContentsMargins(16, 20, 16, 16)
-        sidebar.setSpacing(18)
+        sidebar.setSpacing(12)
         sidebar.addLayout(self._brand(session))
         sidebar.addWidget(self._menu, stretch=1)
         sidebar.addWidget(version)

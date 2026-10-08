@@ -8,7 +8,7 @@ from ..catalog import display_name
 from ..config import CURRENCY
 from ..formatting import fmt_compact, fmt_money
 from ..i18n import tr
-from ..models import MovementDetails, MovementKind, Period
+from ..models import MovementDetails, MovementKind
 from ..session import Session
 from ..warehouse import Warehouse, display_counterparty, store_name
 from .dialogs import MovementDialog
@@ -16,7 +16,7 @@ from .icons import Glyph
 from .labels import KindLabels
 from .list_page import ListPage
 from .printing import print_waybill
-from .widgets import THIS_MONTH, THIS_WEEK, TODAY, Column, ColumnKind, PeriodFilter, StatCard, button
+from .widgets import Column, ColumnKind, PeriodFilter, button
 
 # Jadvalda bir vaqtda ko'rsatiladigan eng ko'p qator: juda katta bazada ham sahifa tez ochilishi uchun.
 MAX_ROWS_SHOWN = 2000
@@ -97,18 +97,7 @@ class MovementsPage(ListPage):
         self._period = PeriodFilter()
         self._period.changed.connect(self.refresh)
         self.header_tools.addWidget(self._period)
-        # Bugun, shu hafta va shu oy — har biri o'z rangida; jadvaldagi sanalar ham shu ranglarda.
-        self._recent = {}
-        for preset, glyph, tone, period_of in (
-            (TODAY, Glyph.CLOCK, "Good", Period.day_of),
-            (THIS_WEEK, Glyph.CALENDAR, "Accent", Period.week_of),
-            (THIS_MONTH, Glyph.CHART, "Violet", Period.month_of),
-        ):
-            stat = StatCard(preset, glyph, tone, clickable=True)
-            stat.setToolTip(tr("Bosilsa, jadvalda faqat shu davr yozuvlari qoladi"))
-            stat.clicked.connect(lambda preset=preset: self._period.select(preset))
-            self._recent[stat] = period_of
-            self.summary.addWidget(stat)
+        self._recent = self.add_recent_cards(self._period)
 
         waybill = button(tr("Nakladnoy"), glyph=Glyph.DOCUMENT)
         waybill.setToolTip(tr("Tanlangan yozuvning hujjatini chop etish (bir xil raqamli yozuvlar birga chiqadi)"))

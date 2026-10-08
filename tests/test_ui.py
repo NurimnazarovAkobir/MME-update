@@ -27,7 +27,7 @@ from ombor.ui.products_page import ProductsPage  # noqa: E402
 from ombor.ui.settings_page import SettingsPage  # noqa: E402
 
 TODAY = date.today()
-RECEIPTS_ROW, PRODUCTS_ROW = 1, 3
+RECEIPTS_ROW, PRODUCTS_ROW = 1, 4
 
 
 def discard_widgets() -> None:
@@ -91,7 +91,7 @@ class IconTests(UiTestCase):
 
 class MainWindowTests(UiTestCase):
     def test_every_page_opens_for_each_role(self):
-        for user, pages in ((self.admin, 9), (self.keeper, 9), (self.viewer, 9)):
+        for user, pages in ((self.admin, 11), (self.keeper, 11), (self.viewer, 11)):
             window = self.window(user)
             self.assertEqual(window._menu.count(), pages, user.role)
             for row in range(window._menu.count()):

@@ -5,12 +5,13 @@ from .costing import recalculate_costs
 from .driver import sqlite3
 from .models import Role
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 LEGACY_PASSWORD_KEY = "password"
 LEGACY_ADMIN_NAME = "Rahbar"
 # 3-versiyagacha «boshlang'ich qoldiq» belgisi o'sha paytdagi tilda yozilgan; endi bitta ko'rinishda saqlanadi.
 LEGACY_OPENING_BALANCE = "Начальный остаток"
 OPENING_BALANCE = "Boshlang'ich qoldiq"
+INVENTORY_SHORTAGE = "Inventarizatsiya (kamomad)"  # dastur o'zi yozadigan chiqim — obyekt emas
 
 
 def migrate(conn: sqlite3.Connection) -> None:
@@ -24,10 +25,20 @@ def migrate(conn: sqlite3.Connection) -> None:
         _move_groups_to_movements(conn)
         _allow_new_roles(conn)
         catalog.seed(conn)
+        _collect_sites(conn)
         conn.execute(
             "UPDATE movements SET counterparty = ? WHERE counterparty = ?", (OPENING_BALANCE, LEGACY_OPENING_BALANCE)
         )
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+
+def _collect_sites(conn: sqlite3.Connection) -> None:
+    """7-versiyagacha obyektlar ro'yxati bo'lmagan: chiqimlarda yozilgan nomlardan yig'iladi."""
+    conn.execute(
+        "INSERT OR IGNORE INTO sites (name) SELECT DISTINCT counterparty FROM movements"
+        " WHERE kind = 'OUT' AND NOT is_return AND deleted_at IS NULL AND counterparty NOT IN ('', ?)",
+        (INVENTORY_SHORTAGE,),
+    )
 
 
 def _fix_issue_costs(conn: sqlite3.Connection) -> None:

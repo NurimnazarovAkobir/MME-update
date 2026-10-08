@@ -52,6 +52,16 @@ CREATE TABLE IF NOT EXISTS movements (
     warehouse_id INTEGER NOT NULL DEFAULT 1 REFERENCES warehouses(id)
 );
 
+-- Obyektlar: mahsulot beriladigan va undan qaytadigan joylar. Yozuvlar bilan nomi orqali bog'lanadi:
+-- chiqimning (va obyektdan qaytgan kirimning) `counterparty` maydoni — obyekt nomi.
+CREATE TABLE IF NOT EXISTS sites (
+    id      INTEGER PRIMARY KEY,
+    name    TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    address TEXT NOT NULL DEFAULT '',
+    manager TEXT NOT NULL DEFAULT '',  -- mas'ul shaxs
+    note    TEXT NOT NULL DEFAULT ''
+);
+
 -- Mahsulotni bir ombordan boshqasiga ko'chirish: umumiy qoldiq va tannarx o'zgarmaydi.
 CREATE TABLE IF NOT EXISTS transfers (
     id         INTEGER PRIMARY KEY,

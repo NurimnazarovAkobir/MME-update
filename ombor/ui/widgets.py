@@ -693,7 +693,11 @@ class DataTable(QTableWidget):
             widths[data[-1]] += extra % len(data)
         else:
             flexible = [column for column in visible if self._is_text_column(column)]
-            fixed = {column: content[column] for column in visible if column not in flexible}
+            fixed = {
+                column: max(content[column], self._header_word_width(column))
+                for column in visible
+                if column not in flexible
+            }
             if self._offset and 0 in fixed:
                 fixed[0] = widths[0]  # «Amallar» sarlavhasi kesilmasin
             room = available - sum(fixed.values())
@@ -706,6 +710,14 @@ class DataTable(QTableWidget):
                 widths = _shrink(content, available)  # juda tor oyna: eng keng ustunlar torayadi
         for column, width in widths.items():
             header.resizeSection(column, width)
+
+    def _header_word_width(self, column: int) -> int:
+        """Sarlavhaning eng uzun so'zi sig'adigan kenglik: ikki qatorga bo'linganda ham so'z kesilmaydi."""
+        header = self.horizontalHeader()
+        title = self.horizontalHeaderItem(column).text()
+        metrics = header.fontMetrics()
+        longest = max((metrics.horizontalAdvance(word) for word in title.split()), default=0)
+        return header.sectionSizeHint(column) - metrics.horizontalAdvance(title) + longest
 
     def _is_text_column(self, column: int) -> bool:
         index = column - self._offset

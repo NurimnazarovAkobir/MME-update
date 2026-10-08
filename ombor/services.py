@@ -12,6 +12,7 @@ from .driver import sqlite3
 from .local import LocalPrefs
 from .reports import Reports
 from .settings import Settings
+from .sites import Sites
 from .vault import Vault
 from .warehouse import Warehouse
 
@@ -25,6 +26,7 @@ class Services:
     backup: Backup
     settings: Settings
     debts: Debts
+    sites: Sites
     groups: GroupCatalog
     prefs: LocalPrefs  # shu kompyuterning shaxsiy sozlamalari
     vault: Vault | None  # baza shifrlangan bo'lsa — uning kaliti
@@ -39,14 +41,16 @@ class Services:
         vault: Vault | None = None,
     ) -> "Services":
         """`prefs` berilmasa — faqat xotirada turadigan sozlamalar; `vault` — baza shifrlangan bo'lsa."""
+        warehouse = Warehouse(conn)
         return cls(
-            warehouse=Warehouse(conn),
+            warehouse=warehouse,
             reports=Reports(conn),
             analytics=Analytics(conn),
             auth=Auth(conn, vault),
             backup=Backup(conn, backup_folder, vault),
             settings=Settings(conn),
             debts=Debts(conn),
+            sites=Sites(conn, warehouse),
             groups=GroupCatalog(conn),
             prefs=prefs or LocalPrefs(),
             vault=vault,

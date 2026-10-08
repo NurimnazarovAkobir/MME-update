@@ -286,14 +286,15 @@ class Warehouse:
         )
         return [_to_movement(row) for row in rows]
 
-    def save_movement(self, movement: Movement) -> int:
+    def save_movement(self, movement: Movement, require_group: bool = True) -> int:
         """Kirim/chiqimni qo'shadi yoki yangilaydi.
 
         Biror sanada ombordagidan ko'p chiqim hosil bo'lsa, rad etadi. Chiqim narxi
         kiritilmaydi — tannarx sifatida hisoblanadi (costing.py); `movement.price`
         faqat kirimda, `movement.sale_price` faqat chiqimda ishlatiladi.
+        `require_group=False` — guruhini dastur o'zi to'ldiradigan yozuvlar uchun (obyektdan qaytish).
         """
-        if self.group_required and not movement.category.strip():
+        if require_group and self.group_required and not movement.category.strip():
             raise WarehouseError(tr("Guruhni tanlang."))
         return self._store(movement)
 
@@ -321,6 +322,7 @@ class Warehouse:
                 raise WarehouseError(tr("Yozuv topilmadi."))
             movement = _to_movement(row)
             self._conn.execute("UPDATE movements SET deleted_at = NULL, deleted_by = '' WHERE id = ?", (movement_id,))
+            self._remember_site(movement)
             self._recalculate({movement.product_id})
             self._log(HistoryAction.RESTORE, movement.kind.value, movement_id, _describe_movement(movement))
 
@@ -519,15 +521,17 @@ class Warehouse:
         return (row["category"], row["subcategory"]) if row else ("", "")
 
     def suggestions(self, kind: MovementKind, field: str) -> list[str]:
-        """Avval kiritilgan ismlar/obyektlar — qayta yozmaslik uchun (dastur o'zi yozgan belgilarsiz)."""
+        """Avval kiritilgan ismlar/obyektlar — qayta yozmaslik uchun (dastur o'zi yozgan belgilarsiz).
+
+        Chiqimning «obyekt» maydonida «Obyektlar» ro'yxatidagi hali ishlatilmagan nomlar ham taklif qilinadi.
+        """
         if field not in SUGGESTION_FIELDS:
             raise ValueError(f"Noma'lum maydon: {field}")
-        rows = self._conn.execute(
-            f"SELECT DISTINCT {field} FROM movements"
-            f" WHERE kind = ? AND {field} <> '' AND deleted_at IS NULL ORDER BY {field}",
-            (kind.value,),
-        )
-        return [row[0] for row in rows if row[0] not in _SYSTEM_COUNTERPARTIES]
+        query = f"SELECT {field} FROM movements WHERE kind = ? AND {field} <> '' AND deleted_at IS NULL"
+        if kind is MovementKind.OUT and field == "counterparty":
+            query += " UNION SELECT name FROM sites"
+        names = {row[0] for row in self._conn.execute(query, (kind.value,))}
+        return sorted(names - _SYSTEM_COUNTERPARTIES.keys())
 
     # --- O'zgarishlar tarixi -----------------------------------------------
 
@@ -621,6 +625,7 @@ class Warehouse:
                 )
                 movement_id = movement.id
             self._recalculate(affected_products)
+            self._remember_site(movement)
             self._log(
                 HistoryAction.ADD if previous is None else HistoryAction.EDIT,
                 movement.kind.value,
@@ -629,6 +634,13 @@ class Warehouse:
                 _describe_movement(previous) if previous else "",
             )
         return movement_id
+
+    def _remember_site(self, movement: Movement) -> None:
+        """Chiqimda yozilgan yangi obyekt «Obyektlar» ro'yxatiga o'zi qo'shiladi."""
+        name = movement.counterparty.strip()
+        is_issue = movement.kind is MovementKind.OUT and not movement.is_return
+        if is_issue and name and name not in _SYSTEM_COUNTERPARTIES:
+            self._conn.execute("INSERT OR IGNORE INTO sites (name) VALUES (?)", (name,))
 
     def _has_movements(self, product_id: int) -> bool:
         row = self._conn.execute("SELECT 1 FROM movements WHERE product_id = ? LIMIT 1", (product_id,)).fetchone()

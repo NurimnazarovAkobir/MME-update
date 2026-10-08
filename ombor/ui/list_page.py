@@ -1,17 +1,33 @@
 """Ro'yxatli sahifalar uchun umumiy asos."""
 
-from typing import Sequence
+from datetime import date
+from typing import Callable, Sequence
 
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLineEdit, QMessageBox, QVBoxLayout, QWidget
 
 from ..errors import WarehouseError
 from ..i18n import tr
+from ..models import Period
 from ..session import Session
 from .icons import Glyph
 from .printing import print_table
-from .widgets import Column, DataTable, button, confirm, export_to_excel, label, page_header, table_card
+from .widgets import (
+    THIS_MONTH,
+    THIS_WEEK,
+    TODAY,
+    Column,
+    DataTable,
+    PeriodFilter,
+    StatCard,
+    button,
+    confirm,
+    export_to_excel,
+    label,
+    page_header,
+    table_card,
+)
 
-SEARCH_WIDTH = 220
+SEARCH_WIDTH = (130, 220)  # tor oynada qidiruv maydoni torayadi, tugmalar kesilmaydi
 
 
 class ListPage(QWidget):
@@ -47,7 +63,8 @@ class ListPage(QWidget):
         self.search = QLineEdit()
         self.search.setPlaceholderText(tr("Qidirish…"))
         self.search.setClearButtonEnabled(True)
-        self.search.setFixedWidth(SEARCH_WIDTH)
+        self.search.setMinimumWidth(SEARCH_WIDTH[0])
+        self.search.setMaximumWidth(SEARCH_WIDTH[1])
         self.search.textChanged.connect(self.refresh)
         self.footer = label("", "total")
 
@@ -83,6 +100,24 @@ class ListPage(QWidget):
         layout.addLayout(toolbar)
         layout.addWidget(table_card(self.table), stretch=1)
         layout.addWidget(self.footer)
+
+    def add_recent_cards(self, period: PeriodFilter) -> dict[StatCard, Callable[[date], Period]]:
+        """«Bugun», «Shu hafta», «Shu oy» kartochkalari — jadvaldagi sanalar bilan bir xil ranglarda.
+
+        Kartochka bosilsa, `period` filtri shu davrga o'tadi. Qaytgan lug'at: kartochka -> uning davri.
+        """
+        cards = {}
+        for preset, glyph, tone, period_of in (
+            (TODAY, Glyph.CLOCK, "Good", Period.day_of),
+            (THIS_WEEK, Glyph.CALENDAR, "Accent", Period.week_of),
+            (THIS_MONTH, Glyph.CHART, "Violet", Period.month_of),
+        ):
+            stat = StatCard(preset, glyph, tone, clickable=True)
+            stat.setToolTip(tr("Bosilsa, jadvalda faqat shu davr yozuvlari qoladi"))
+            stat.clicked.connect(lambda preset=preset: period.select(preset))
+            cards[stat] = period_of
+            self.summary.addWidget(stat)
+        return cards
 
     def refresh(self) -> None:
         raise NotImplementedError

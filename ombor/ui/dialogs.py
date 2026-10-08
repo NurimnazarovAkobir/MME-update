@@ -33,6 +33,17 @@ from .widgets import NumberInput, button, date_input, label, number_input, sugge
 NO_GROUP = tr("Tanlanmagan")
 
 
+def product_box(placeholder: str = tr("Tanlang, nomini yozing yoki shtrix-kodni o'qiting")) -> QComboBox:
+    """Mahsulot tanlash: yozib qidirsa bo'ladigan ro'yxat; ro'yxatda yo'q nom qabul qilinmaydi."""
+    box = QComboBox()
+    box.setEditable(True)
+    box.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+    box.completer().setFilterMode(Qt.MatchFlag.MatchContains)
+    box.completer().setCompletionMode(box.completer().CompletionMode.PopupCompletion)
+    box.lineEdit().setPlaceholderText(placeholder)
+    return box
+
+
 class FormDialog(QDialog):
     """Maydonlar va «Saqlash / Bekor qilish» tugmalaridan iborat oyna.
 
@@ -223,7 +234,7 @@ class MovementDialog(FormDialog):
         for store in warehouse.stores():
             self._store.addItem(store.name, store.id)
         self._store.setCurrentIndex(max(self._store.findData(movement.warehouse_id if movement else None), 0))
-        self._product = self._build_product_box()
+        self._product = product_box()
         self._stock_hint = label("", "muted")
         self._quantity = number_input(3, movement.quantity if movement else 0)
         self._unit = QComboBox()  # mahsulotning qo'shimcha birligi bo'lsa, miqdor va narx shu birlikda kiritiladi
@@ -350,17 +361,6 @@ class MovementDialog(FormDialog):
         self._load_products(None)  # qoldiqlar yangilanadi, mahsulot maydoni bo'shaydi
         self._on_product_changed()
         self._product.setFocus()
-
-    @staticmethod
-    def _build_product_box() -> QComboBox:
-        """Yozib qidirsa bo'ladigan ro'yxat; ro'yxatda yo'q nom qabul qilinmaydi."""
-        box = QComboBox()
-        box.setEditable(True)
-        box.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        box.completer().setFilterMode(Qt.MatchFlag.MatchContains)
-        box.completer().setCompletionMode(box.completer().CompletionMode.PopupCompletion)
-        box.lineEdit().setPlaceholderText(tr("Tanlang, nomini yozing yoki shtrix-kodni o'qiting"))
-        return box
 
     def _load_products(self, select_id: int | None) -> None:
         """Ro'yxatni tanlangan ombordagi qoldiqlar bilan to'ldiradi."""
