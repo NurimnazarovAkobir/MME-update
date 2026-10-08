@@ -17,6 +17,11 @@ class LocalPrefs:
         self._path = path
         self._values = read_prefs(path) if path else {}
 
+    @property
+    def folder(self) -> Path | None:
+        """Shu kompyuterning shaxsiy fayllari turadigan papka; sozlamalar faqat xotirada bo'lsa — None."""
+        return self._path.parent if self._path else None
+
     def get(self, key: str, default: str = "") -> str:
         return self._values.get(key) or default
 

@@ -1,27 +1,41 @@
-"""Obyektlarning joylashuvi: koordinatani o'qish, internetsiz xarita va Google Maps'da ochish."""
+"""Obyektlarning joylashuvi: koordinatani o'qish, manzil bo'yicha topish, xarita va Google Maps'da ochish."""
 
 import io
 import json
+import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
-from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtCore import QBuffer, QIODevice, QPoint, QPointF, Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtTest import QTest
 
+from ombor import geo, tiles
 from ombor.errors import WarehouseError
-from ombor import geo
-from ombor.geo import FoundPlace, Location, LookupFailed, maps_url, parse_location
+from ombor.geo import FoundPlace, Location, LookupFailed, maps_url, parse_location, place_queries
 from ombor.models import Site
 from ombor.session import Session
+from ombor.tiles import TileStore
 from ombor.ui import sites_page
 from ombor.ui.site_dialogs import SiteDialog
 from ombor.ui.site_map import MapPoint, SiteMap
 from ombor.ui.sites_page import SitesPage
+from ombor.ui.tile_loader import TileLoader
 from tests.test_ui import UiTestCase
 
 CHILONZOR = Location(41.2756, 69.2034)
 QIBRAY = Location(41.3890, 69.4650)
+YAKKASAROY = FoundPlace(Location(41.267072, 69.230158), "12, Yakkasaroy tumani, Toshkent")
+
+
+def wait_until(app, done, seconds: float = 5) -> None:
+    """Fon oqimidagi ish tugaguncha signallarni qayta ishlab turadi."""
+    deadline = time.monotonic() + seconds
+    while not done() and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
 
 
 class LocationTests(unittest.TestCase):
@@ -48,10 +62,96 @@ class LocationTests(unittest.TestCase):
         self.assertTrue(maps_url(None, "Toshkent, Chilonzor 5").endswith("query=Toshkent%2C+Chilonzor+5"))
         self.assertIsNone(maps_url(None, "  "))
 
-    def test_offset_is_measured_in_kilometres(self):
-        east, north = QIBRAY.offset_km(CHILONZOR)
-        self.assertAlmostEqual(north, 12.6, delta=0.2)
-        self.assertAlmostEqual(east, 21.9, delta=0.3)
+    def test_map_position_runs_east_and_south_and_converts_back(self):
+        (west, south), (east, north) = CHILONZOR.to_unit(), QIBRAY.to_unit()
+        self.assertLess(west, east)
+        self.assertGreater(south, north)  # xaritada shimol yuqorida: y kichikroq
+        back = Location.from_unit(west, south)
+        self.assertAlmostEqual(back.latitude, CHILONZOR.latitude, places=6)
+        self.assertAlmostEqual(back.longitude, CHILONZOR.longitude, places=6)
+        self.assertAlmostEqual(geo.metres_per_unit(0), 40_075_017, delta=1)
+
+
+class FindPlaceTests(unittest.TestCase):
+    def answer(self, places):
+        return mock.patch.object(
+            geo.urllib.request, "urlopen", return_value=io.BytesIO(json.dumps(places).encode())
+        )
+
+    def test_first_found_place_is_returned(self):
+        places = [{"lat": "41.267072", "lon": "69.230158", "display_name": "12, Yakkasaroy tumani, Toshkent"}]
+        with self.answer(places) as urlopen:
+            self.assertEqual(geo.find_address("  Yakkasaroy   12 "), YAKKASAROY)
+        request = urlopen.call_args.args[0]
+        self.assertIn("q=Yakkasaroy+12", request.full_url)
+        self.assertIn("countrycodes=uz", request.full_url)
+        self.assertTrue(request.get_header("User-agent").startswith("MME-Ombor/"))
+
+    def test_unknown_address_gives_nothing_and_no_internet_is_reported(self):
+        with self.answer([]):
+            self.assertIsNone(geo.find_address("yo'q joy"))
+        with mock.patch.object(geo.urllib.request, "urlopen") as urlopen:
+            self.assertIsNone(geo.find_address("   "))
+            urlopen.assert_not_called()
+        with mock.patch.object(geo.urllib.request, "urlopen", side_effect=OSError("tarmoq yo'q")):
+            with self.assertRaises(LookupFailed):
+                geo.find_address("Yakkasaroy 12")
+
+    def test_house_number_alone_is_never_searched(self):
+        # «12-uy» ning o'zi istalgan shahardan topilib qoladi — obyekt nomi bilan birga qidiriladi.
+        self.assertEqual(
+            place_queries("Toshkent, Chilonzor 12", "12-uy"),
+            ["Toshkent, Chilonzor 12, 12-uy", "Toshkent, Chilonzor 12"],
+        )
+        self.assertEqual(place_queries("Yakkasaroy 12", ""), ["Yakkasaroy 12"])
+        self.assertEqual(place_queries("  ", " "), [])
+
+    def test_full_address_is_searched_before_the_name(self):
+        self.assertEqual(
+            place_queries("Angar-2", "Yakkasaroy, Bobur 12"),
+            ["Yakkasaroy, Bobur 12", "Angar-2, Yakkasaroy, Bobur 12"],
+        )
+
+    def test_next_wording_is_tried_when_the_first_finds_nothing(self):
+        queries = place_queries("Toshkent, Chilonzor 12", "12-uy")
+        with (
+            mock.patch.object(geo, "find_address", side_effect=[None, YAKKASAROY]) as asked,
+            mock.patch.object(geo.time, "sleep") as paused,
+        ):
+            self.assertEqual(geo.find_place("Toshkent, Chilonzor 12", "12-uy"), YAKKASAROY)
+        self.assertEqual([call.args[0] for call in asked.call_args_list], queries)
+        paused.assert_called_once()  # xizmat qoidasi: so'rovlar orasida tanaffus
+
+
+class TileStoreTests(unittest.TestCase):
+    def test_tile_is_downloaded_once_and_then_read_from_disk(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        store = TileStore(Path(folder.name))
+        with mock.patch.object(tiles.urllib.request, "urlopen", return_value=io.BytesIO(b"rasm")) as urlopen:
+            self.assertEqual(store.load((12, 2836, 1535)), b"rasm")
+        self.assertTrue(urlopen.call_args.args[0].full_url.endswith("/12/2836/1535.png"))
+        with mock.patch.object(tiles.urllib.request, "urlopen", side_effect=OSError) as urlopen:
+            self.assertEqual(store.load((12, 2836, 1535)), b"rasm")  # internetsiz — diskdan
+            urlopen.assert_not_called()
+            self.assertIsNone(store.load((12, 1, 1)))  # saqlanmagan bo'lak internetsiz yo'q
+
+
+class FakeStore:
+    """Internet o'rniga: har bir bo'lak uchun bir xil yashil rasm."""
+
+    def __init__(self):
+        pixmap = QPixmap(tiles.TILE_SIZE, tiles.TILE_SIZE)
+        pixmap.fill(Qt.GlobalColor.green)
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        pixmap.save(buffer, "PNG")
+        self._image = bytes(buffer.data())
+        self.asked = []
+
+    def load(self, tile):
+        self.asked.append(tile)
+        return self._image
 
 
 class SiteMapTests(UiTestCase):
@@ -69,6 +169,14 @@ class SiteMapTests(UiTestCase):
         page.resize(1000, 600)
         page.refresh()
         return page
+
+    def site_map(self, loader=None) -> SiteMap:
+        site_map = SiteMap(loader)
+        site_map.resize(400, 300)
+        site_map.set_points(
+            [MapPoint(self.chilonzor, "Chilonzor", CHILONZOR), MapPoint(self.qibray, "Qibray", QIBRAY)]
+        )
+        return site_map
 
     def test_location_is_saved_with_the_site(self):
         self.assertEqual(self.sites.get(self.chilonzor).location, CHILONZOR)
@@ -89,19 +197,59 @@ class SiteMapTests(UiTestCase):
         again.save()  # bo'sh qoldirilsa, joylashuv olib tashlanadi
         self.assertIsNone(self.sites.get(self.unplaced).location)
 
-    def test_map_draws_placed_sites_with_north_up(self):
-        site_map = SiteMap()
-        site_map.resize(400, 300)
-        site_map.set_points(
-            [MapPoint(self.chilonzor, "Chilonzor", CHILONZOR), MapPoint(self.qibray, "Qibray", QIBRAY)]
-        )
+    def test_map_fits_all_sites_with_north_up(self):
+        site_map = self.site_map()
         site_map.grab()
-        south_west, north_east = site_map._positions[self.chilonzor], site_map._positions[self.qibray]
+        south_west, north_east = site_map.position_of(self.chilonzor), site_map.position_of(self.qibray)
         self.assertLess(south_west.x(), north_east.x())
         self.assertGreater(south_west.y(), north_east.y())
         self.assertTrue(all(0 < p.x() < 400 and 0 < p.y() < 300 for p in (south_west, north_east)))
         self.assertIsNone(site_map.point_at(QPointF(5, 150)))
+        self.assertIsNone(site_map.position_of(self.unplaced))
         SiteMap().grab()  # bo'sh xarita ham xatosiz chiziladi
+
+    def test_real_map_tiles_are_loaded_in_the_background_and_drawn(self):
+        store = FakeStore()
+        loader = TileLoader(store)
+        site_map = self.site_map(loader)
+        site_map.grab()  # birinchi chizishda bo'laklar so'raladi
+        wait_until(self.app, lambda: store.asked and not loader._waiting)
+        self.assertTrue(store.asked)
+        self.assertTrue(all(zoom == site_map._zoom for zoom, _, _ in store.asked))
+        corner = site_map.grab().toImage().pixelColor(380, 150)
+        self.assertGreater(corner.green(), 200)  # xarita rasmi chizilgan
+        asked_before = len(store.asked)
+        site_map.grab()
+        self.assertEqual(len(store.asked), asked_before)  # tayyor bo'laklar qayta so'ralmaydi
+
+    def test_map_is_zoomed_at_the_cursor_and_moved_by_dragging(self):
+        site_map = self.site_map()
+        site_map.grab()
+        zoom, before = site_map._zoom, site_map.position_of(self.chilonzor)
+        site_map._zoom_at(before, 1)
+        self.assertEqual(site_map._zoom, zoom + 1)
+        after = site_map.position_of(self.chilonzor)
+        self.assertAlmostEqual(after.x(), before.x(), delta=0.5)  # sichqoncha ostidagi joy qimirlamaydi
+        self.assertAlmostEqual(after.y(), before.y(), delta=0.5)
+        empty = QPoint(200, 20)
+        QTest.mousePress(site_map, Qt.MouseButton.LeftButton, pos=empty)
+        QTest.mouseMove(site_map, empty + QPoint(30, 10))
+        QTest.mouseRelease(site_map, Qt.MouseButton.LeftButton, pos=empty + QPoint(30, 10))
+        moved = site_map.position_of(self.chilonzor)
+        self.assertAlmostEqual(moved.x() - after.x(), 30, delta=1)
+        self.assertAlmostEqual(moved.y() - after.y(), 10, delta=1)
+
+    def test_clicking_a_pin_selects_the_site(self):
+        site_map = self.site_map()
+        site_map.grab()
+        chosen = []
+        site_map.selected.connect(chosen.append)
+        tip = site_map.position_of(self.chilonzor)
+        head = QPoint(round(tip.x()), round(tip.y()) - 14)
+        self.assertEqual(site_map.point_at(QPointF(head)).id, self.chilonzor)
+        QTest.mouseClick(site_map, Qt.MouseButton.LeftButton, pos=head)
+        self.assertEqual(chosen, [self.chilonzor])
+        site_map.grab()  # tanlangan belgi ham xatosiz chiziladi
 
     def test_map_and_table_select_each_other(self):
         page = self.page()
@@ -110,20 +258,6 @@ class SiteMapTests(UiTestCase):
         self.assertEqual(page._map._selected_id, self.qibray)
         page._map.selected.emit(self.chilonzor)
         self.assertEqual(page.table.selected_id(), self.chilonzor)
-
-    def test_clicking_a_pin_selects_the_site(self):
-        site_map = SiteMap()
-        site_map.resize(400, 300)
-        site_map.set_points([MapPoint(self.chilonzor, "Chilonzor", CHILONZOR)])
-        site_map.grab()
-        chosen = []
-        site_map.selected.connect(chosen.append)
-        tip = site_map._positions[self.chilonzor]
-        head = QPoint(round(tip.x()), round(tip.y()) - 14)
-        self.assertEqual(site_map.point_at(QPointF(head)).id, self.chilonzor)
-        QTest.mouseClick(site_map, Qt.MouseButton.LeftButton, pos=head)
-        self.assertEqual(chosen, [self.chilonzor])
-        site_map.grab()  # tanlangan belgi ham xatosiz chiziladi
 
     def test_address_columns_give_way_to_the_map(self):
         page = self.page()
@@ -149,38 +283,13 @@ class SiteMapTests(UiTestCase):
             page._open_in_maps(self.sites.save(Site("Manzilsiz")))
         self.assertEqual((opened.call_count, told.call_count), (1, 1))
 
-
-YAKKASAROY = FoundPlace(Location(41.267072, 69.230158), "12, Yakkasaroy tumani, Toshkent")
-
-
-class FindAddressTests(unittest.TestCase):
-    def answer(self, places):
-        return mock.patch.object(
-            geo.urllib.request, "urlopen", return_value=io.BytesIO(json.dumps(places).encode())
-        )
-
-    def test_first_found_place_is_returned(self):
-        places = [{"lat": "41.267072", "lon": "69.230158", "display_name": "12, Yakkasaroy tumani, Toshkent"}]
-        with self.answer(places) as urlopen:
-            self.assertEqual(geo.find_address("  Yakkasaroy   12 "), YAKKASAROY)
-        request = urlopen.call_args.args[0]
-        self.assertIn("q=Yakkasaroy+12", request.full_url)
-        self.assertIn("countrycodes=uz", request.full_url)
-        self.assertTrue(request.get_header("User-agent").startswith("MME-Ombor/"))
-
-    def test_unknown_address_gives_nothing_and_no_internet_is_reported(self):
-        with self.answer([]):
-            self.assertIsNone(geo.find_address("yo'q joy"))
-        with mock.patch.object(geo.urllib.request, "urlopen") as urlopen:
-            self.assertIsNone(geo.find_address("   "))
-            urlopen.assert_not_called()
-        with mock.patch.object(geo.urllib.request, "urlopen", side_effect=OSError("tarmoq yo'q")):
-            with self.assertRaises(LookupFailed):
-                geo.find_address("Yakkasaroy 12")
+    def test_main_window_keeps_map_pictures_only_with_a_personal_folder(self):
+        window = self.window(self.admin)
+        self.assertIsNone(window._map_tiles(self.services))  # testda sozlamalar faqat xotirada
 
 
-class AddressLookupTests(UiTestCase):
-    """Obyekt oynasida joylashuvning manzil bo'yicha o'zi topilishi (internet o'rniga tayyor javob)."""
+class PlaceLookupTests(UiTestCase):
+    """Obyekt oynasida joylashuvning nom va manzil bo'yicha o'zi topilishi (internet o'rniga tayyor javob)."""
 
     def setUp(self):
         super().setUp()
@@ -189,19 +298,16 @@ class AddressLookupTests(UiTestCase):
     def dialog(self, result, site=None) -> SiteDialog:
         """`result` — qidiruv javobi: FoundPlace, None yoki LookupFailed (ko'tariladi)."""
         outcome = {"side_effect": result} if isinstance(result, Exception) else {"return_value": result}
-        answer = mock.patch.object(geo, "find_address", **outcome)
+        answer = mock.patch.object(geo, "find_place", **outcome)
         self.asked = answer.start()
         self.addCleanup(answer.stop)
         return SiteDialog(self.sites, site)
 
     def wait(self, dialog: SiteDialog) -> None:
-        deadline = time.monotonic() + 5
-        while dialog._is_searching and time.monotonic() < deadline:
-            self.app.processEvents()
-            time.sleep(0.01)
+        wait_until(self.app, lambda: not dialog._is_searching)
         self.assertFalse(dialog._is_searching)
 
-    def test_location_is_found_from_the_address_and_saved(self):
+    def test_location_is_found_from_the_name_and_address_and_saved(self):
         dialog = self.dialog(YAKKASAROY)
         dialog._name.setText("Yangi obyekt")
         dialog._address.setText("Yakkasaroy 12")
@@ -209,18 +315,18 @@ class AddressLookupTests(UiTestCase):
         self.wait(dialog)
         self.assertEqual(dialog._location.text(), "41.267072, 69.230158")
         self.assertIn("Yakkasaroy tumani", dialog._location_hint.text())
-        dialog._address.editingFinished.emit()  # o'sha manzil qayta so'ralmaydi
-        self.asked.assert_called_once_with("Yakkasaroy 12")
+        dialog._address.editingFinished.emit()  # o'sha nom va manzil qayta so'ralmaydi
+        self.asked.assert_called_once_with("Yangi obyekt", "Yakkasaroy 12")
         dialog.accept()
         self.assertEqual(self.sites.get(dialog.saved_id).location, YAKKASAROY.location)
 
-    def test_saving_waits_for_the_search_and_uses_the_name_without_an_address(self):
+    def test_saving_waits_for_the_search(self):
         dialog = self.dialog(YAKKASAROY)
         dialog._name.setText("Yakkasaroy 12")
         dialog.accept()
         self.assertIsNone(dialog.saved_id)  # javob hali kelmagan
         self.wait(dialog)
-        self.asked.assert_called_once_with("Yakkasaroy 12")
+        self.asked.assert_called_once_with("Yakkasaroy 12", "")
         self.assertEqual(self.sites.get(dialog.saved_id).location, YAKKASAROY.location)
 
     def test_site_is_saved_without_a_location_when_nothing_is_found_or_there_is_no_internet(self):

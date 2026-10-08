@@ -8,6 +8,7 @@ Koordinatani o'qish uchun internet kerak emas: u havolaning o'zidan olinadi. Qis
 import json
 import math
 import re
+import time
 import urllib.request
 from dataclasses import dataclass
 from urllib.parse import quote_plus, unquote, urlencode
@@ -16,15 +17,20 @@ from .config import APP_VERSION
 from .errors import WarehouseError
 from .i18n import tr
 
-KM_PER_DEGREE = 111.32  # bir daraja kenglik — taxminan shuncha kilometr
+EQUATOR_METRES = 40_075_016.686  # yer ekvatorining uzunligi: xarita masshtabi shundan hisoblanadi
 MAPS_SEARCH_URL = "https://www.google.com/maps/search/?api=1&query="
 # Manzil bo'yicha qidiruv: OpenStreetMap ning bepul xizmati (kalit kerak emas; kam so'rov uchun mo'ljallangan).
 GEOCODER_URL = "https://nominatim.openstreetmap.org/search"
 GEOCODER_COUNTRIES = "uz"  # qisqa manzil («Yakkasaroy 12») boshqa davlatdan topilib qolmasligi uchun
 GEOCODER_LANGUAGE = "uz,ru"
-GEOCODER_AGENT = f"MME-Ombor/{APP_VERSION}"  # xizmat qoidasi: dastur o'zini tanishtirishi kerak
+USER_AGENT = f"MME-Ombor/{APP_VERSION}"  # OpenStreetMap qoidasi: dastur o'zini tanishtirishi kerak
 LOOKUP_TIMEOUT_SECONDS = 6
+LOOKUP_PAUSE_SECONDS = 1.0  # xizmat qoidasi: soniyasiga bittadan ortiq so'rov yuborilmaydi
+# Manzilda shulardan boshqa so'z bo'lmasa («12-uy», «5 xonadon»), u yolg'iz o'zi qidirilmaydi:
+# bunday matn istalgan shahardan topilib qoladi.
+_HOUSE_WORDS = {"uy", "uyi", "dom", "xonadon", "kv", "kvartira", "bino", "korpus", "blok", "ofis", "qavat", "etaj"}
 
+MAX_MAP_LATITUDE = 85.0511  # Web Mercator xaritasi shu kenglikkacha chiziladi
 _NUMBER = r"(-?\d{1,3}(?:\.\d+)?)"
 _PAIR = rf"{_NUMBER}\s*[,;\s]\s*{_NUMBER}"
 _PLAIN = re.compile(rf"^{_PAIR}$")
@@ -47,11 +53,22 @@ class Location:
     def __str__(self) -> str:
         return f"{self.latitude:.6f}, {self.longitude:.6f}"
 
-    def offset_km(self, origin: "Location") -> tuple[float, float]:
-        """`origin` dan sharqqa va shimolga necha kilometr (kichik masofalar uchun yetarli aniqlikda)."""
-        east = (self.longitude - origin.longitude) * KM_PER_DEGREE * math.cos(math.radians(origin.latitude))
-        north = (self.latitude - origin.latitude) * KM_PER_DEGREE
-        return east, north
+    def to_unit(self) -> tuple[float, float]:
+        """Xaritadagi o'rni (Web Mercator): butun dunyo 0…1 kvadratga sig'adi, (0, 0) — shimoli-g'arb."""
+        latitude = math.radians(max(min(self.latitude, MAX_MAP_LATITUDE), -MAX_MAP_LATITUDE))
+        x = (self.longitude + 180) / 360
+        y = (1 - math.asinh(math.tan(latitude)) / math.pi) / 2
+        return x, y
+
+    @classmethod
+    def from_unit(cls, x: float, y: float) -> "Location":
+        latitude = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y))))
+        return cls(latitude, x * 360 - 180)
+
+
+def metres_per_unit(latitude: float) -> float:
+    """Shu kenglikda xaritaning butun eni (0…1) necha metrga to'g'ri keladi."""
+    return EQUATOR_METRES * math.cos(math.radians(latitude))
 
 
 @dataclass(frozen=True)
@@ -64,6 +81,31 @@ class FoundPlace:
 
 class LookupFailed(Exception):
     """Manzilni qidirib bo'lmadi: internet yo'q yoki xizmat javob bermadi."""
+
+
+def place_queries(name: str, address: str) -> list[str]:
+    """Obyektni xaritadan qidirish uchun matnlar — eng ishonchlisidan boshlab.
+
+    To'liq manzil («Bobur ko'chasi 12») o'zi qidiriladi. Manzil faqat uy raqami bo'lsa («12-uy») yoki
+    yozilmagan bo'lsa, obyekt nomi asos bo'ladi: aks holda «12-uy» boshqa shahardan topilib qoladi.
+    """
+    name, address = " ".join(name.split()), " ".join(address.split())
+    words = re.findall(r"[^\W\d_]+", address.casefold())
+    names_a_place = any(word not in _HOUSE_WORDS and len(word) > 2 for word in words)
+    together = f"{name}, {address}" if name and address else name or address
+    queries = [address, together] if names_a_place else [together, name]
+    return list(dict.fromkeys(query for query in queries if query))
+
+
+def find_place(name: str, address: str, timeout: float = LOOKUP_TIMEOUT_SECONDS) -> FoundPlace | None:
+    """Obyektni nomi va manzili bo'yicha internetdan topadi (`place_queries` tartibida, birinchi topilgani)."""
+    for attempt, query in enumerate(place_queries(name, address)):
+        if attempt:
+            time.sleep(LOOKUP_PAUSE_SECONDS)
+        found = find_address(query, timeout)
+        if found is not None:
+            return found
+    return None
 
 
 def find_address(address: str, timeout: float = LOOKUP_TIMEOUT_SECONDS) -> FoundPlace | None:
@@ -80,7 +122,7 @@ def find_address(address: str, timeout: float = LOOKUP_TIMEOUT_SECONDS) -> Found
             "accept-language": GEOCODER_LANGUAGE,
         }
     )
-    request = urllib.request.Request(f"{GEOCODER_URL}?{parameters}", headers={"User-Agent": GEOCODER_AGENT})
+    request = urllib.request.Request(f"{GEOCODER_URL}?{parameters}", headers={"User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             places = json.load(response)

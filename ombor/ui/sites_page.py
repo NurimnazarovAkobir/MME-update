@@ -14,6 +14,7 @@ from .icons import Glyph
 from .list_page import ListPage
 from .site_dialogs import SiteDialog, TableDialog
 from .site_map import MapPoint, SiteMap
+from .tile_loader import TileLoader
 from .widgets import Column, ColumnKind, StatCard, button, section_header
 
 _COLUMNS = (
@@ -38,7 +39,8 @@ _PRODUCT_COLUMNS = (
 class SitesPage(ListPage):
     delete_question = tr("Bu obyekt ro'yxatdan o'chirilsinmi?")
 
-    def __init__(self, sites: Sites, session: Session):
+    def __init__(self, sites: Sites, session: Session, tiles: TileLoader | None = None):
+        """`tiles` — xarita rasmlarini yuklovchi; berilmasa, xaritada faqat masofa to'ri va belgilar bo'ladi."""
         super().__init__(
             tr("Obyektlar"),
             tr("+ Yangi obyekt"),
@@ -61,7 +63,7 @@ class SitesPage(ListPage):
         products.clicked.connect(self._show_products)
         self.toolbar_tools.addWidget(products)
 
-        self._map = SiteMap()
+        self._map = SiteMap(tiles)
         self._map.selected.connect(self.table.select_id)
         self._map.opened.connect(self._open_in_maps)
         self.table.itemSelectionChanged.connect(lambda: self._map.select(self.table.selected_id()))
@@ -117,7 +119,9 @@ class SitesPage(ListPage):
         open_button.setToolTip(tr("Tanlangan obyektni internetdagi xaritada ochadi (internet kerak)"))
         open_button.clicked.connect(self._open_selected_in_maps)
         header = QHBoxLayout()
-        header.addWidget(section_header(Glyph.PIN, tr("Xarita")), stretch=1)
+        title = section_header(Glyph.PIN, tr("Xarita"))
+        title.setToolTip(tr("Surish — sichqoncha bilan; kattalashtirish — g'ildirak yoki ikki marta bosish"))
+        header.addWidget(title, stretch=1)
         header.addWidget(open_button)
         panel = QFrame()
         panel.setObjectName("card")

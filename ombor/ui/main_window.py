@@ -26,6 +26,7 @@ from ..i18n import tr
 from ..models import MovementKind
 from ..services import Services
 from ..session import Session
+from ..tiles import TileStore
 from . import theme
 from .dashboard_page import DashboardPage, Destination
 from .debts_page import DebtsPage
@@ -44,6 +45,7 @@ from .returns_page import ReturnsPage
 from .settings_page import SettingsPage
 from .site_dialogs import ReturnDialog
 from .sites_page import SitesPage
+from .tile_loader import TileLoader
 from .update_page import UpdatePage
 from .widgets import button, label
 
@@ -54,6 +56,7 @@ MENU_ICON_SIZE = 20
 # Istalgan sahifadan yangi yozuv ochadigan tugmalar (bosh sahifadagi katta tugmalar yordam yozuvida ham bor).
 NEW_RECEIPT_KEY, NEW_ISSUE_KEY, NEW_PRODUCT_KEY, NEW_RETURN_KEY = "F2", "F3", "F4", "F5"
 REFRESH_INTERVAL_MS = 10_000
+MAP_FOLDER = "xarita"  # yuklab olingan xarita rasmlari (shu kompyuterning shaxsiy papkasida)
 NOTIFICATION_MS = 15_000
 BADGE_ROLE = Qt.ItemDataRole.UserRole + 1  # menyu qatoridagi belgi soni
 BADGE_SIZE, BADGE_MARGIN = 22, 14
@@ -140,7 +143,7 @@ class MainWindow(QMainWindow):
             ),
             (tr("Vozvrat"), Glyph.UNDO, ReturnsPage(services.sites, self._warehouse, session), None),
             (self._products_title, Glyph.PRODUCTS, self._products_page, Destination.PRODUCTS),
-            (tr("Obyektlar"), Glyph.PIN, SitesPage(services.sites, session), Destination.SITES),
+            (tr("Obyektlar"), Glyph.PIN, SitesPage(services.sites, session, self._map_tiles(services)), Destination.SITES),
             (
                 tr("Hisobotlar"),
                 Glyph.REPORTS,
@@ -244,6 +247,14 @@ class MainWindow(QMainWindow):
         if version != self._data_version:
             self._data_version = version
             self._refresh_current()
+
+    def _map_tiles(self, services: Services) -> TileLoader | None:
+        """Xarita rasmlarini yuklovchi; ular shu kompyuterdagi «xarita» papkasida saqlanadi.
+
+        Shaxsiy papka bo'lmasa (sozlamalar faqat xotirada), xarita rasmsiz ishlaydi.
+        """
+        folder = services.prefs.folder
+        return TileLoader(TileStore(folder / MAP_FOLDER), self) if folder else None
 
     def _about_card(self) -> QFrame:
         """Yon menyu ostidagi kartochka: dastur nomi va versiyasi."""

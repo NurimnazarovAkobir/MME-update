@@ -43,20 +43,20 @@ TABLE_DIALOG_SIZE = (860, 520)
 UNIT_WIDTH = 90
 
 
-class AddressFinder(QObject):
-    """Manzil bo'yicha joyni internetdan fonda qidiradi; oyna bu paytda qotib qolmaydi."""
+class PlaceFinder(QObject):
+    """Obyektni nomi va manzili bo'yicha internetdan fonda qidiradi; oyna bu paytda qotib qolmaydi."""
 
-    # Qidirilgan matn va natija: FoundPlace — topildi, None — topilmadi, LookupFailed — ulanib bo'lmadi.
-    finished = Signal(str, object)
+    # Qidirilgan (nom, manzil) va natija: FoundPlace — topildi, None — topilmadi, LookupFailed — ulanib bo'lmadi.
+    finished = Signal(object, object)
 
-    def find(self, address: str) -> None:
+    def find(self, name: str, address: str) -> None:
         def run() -> None:
             try:
-                result = geo.find_address(address)
+                result = geo.find_place(name, address)
             except LookupFailed as failure:
                 result = failure
             try:
-                self.finished.emit(address, result)
+                self.finished.emit((name, address), result)
             except RuntimeError:
                 pass  # oyna yopilib bo'lgan: natijani yetkazadigan joy qolmagan
 
@@ -66,9 +66,9 @@ class AddressFinder(QObject):
 class SiteDialog(FormDialog):
     """Yangi obyekt yoki mavjudini tahrirlash.
 
-    Joylashuv bo'sh bo'lsa, u manzil (manzil yozilmagan bo'lsa — nom) bo'yicha internetdan o'zi
-    topiladi: maydondan chiqilganda yoki «Saqlash» bosilganda. Internet bo'lmasa, obyekt
-    joylashuvsiz saqlanadi — koordinatani keyin qo'lda kiritish mumkin.
+    Joylashuv bo'sh bo'lsa, u nom va manzil bo'yicha internetdan o'zi topiladi (qanday matn
+    qidirilishi — `geo.place_queries` da): maydondan chiqilganda yoki «Saqlash» bosilganda.
+    Internet bo'lmasa, obyekt joylashuvsiz saqlanadi — koordinatani keyin qo'lda kiritish mumkin.
     """
 
     def __init__(self, sites: Sites, site: Site | None = None, parent: QWidget | None = None):
@@ -76,9 +76,9 @@ class SiteDialog(FormDialog):
         self._sites = sites
         self._site_id = site.id if site else None
         self.saved_id: int | None = None
-        self._finder = AddressFinder(self)
+        self._finder = PlaceFinder(self)
         self._finder.finished.connect(self._on_place_found)
-        self._searched = ""  # oxirgi qidirilgan matn: bir xil manzil qayta-qayta so'ralmaydi
+        self._searched = ("", "")  # oxirgi qidirilgan (nom, manzil): bir xili qayta-qayta so'ralmaydi
         self._is_searching = False  # shu matn bo'yicha javob hali kelmagan
         self._found_text = ""  # qidiruv yozgan koordinata: foydalanuvchi o'zi yozganiga tegilmaydi
         self._saves_when_found = False  # «Saqlash» qidiruv tugashini kutyapti
@@ -92,7 +92,7 @@ class SiteDialog(FormDialog):
         self._location = QLineEdit(str(site.location) if site and site.location else "")
         self._location.setPlaceholderText(tr("41.2856, 69.2034 yoki xarita havolasi (ixtiyoriy)"))
         find = button(tr("Topish"), glyph=Glyph.PIN)
-        find.setToolTip(tr("Joylashuvni manzil bo'yicha internetdan topadi"))
+        find.setToolTip(tr("Joylashuvni nom va manzil bo'yicha internetdan qayta topadi"))
         find.setAutoDefault(False)
         find.clicked.connect(lambda: self._find_location(replace=True))
         location_row = QHBoxLayout()
@@ -100,8 +100,8 @@ class SiteDialog(FormDialog):
         location_row.addWidget(find)
         self._location_hint = label(
             tr(
-                "Manzil yozilsa, joylashuv internetdan o'zi topiladi. Qo'lda kiritish ham mumkin: "
-                "Google Maps'da joyni o'ng tugma bilan bosing va birinchi qatorni (koordinatani) nusxalang."
+                "Joylashuv nom va manzil bo'yicha internetdan o'zi topiladi — shahar va tumanni ham yozing. "
+                "Qo'lda: Google Maps'da joyni o'ng tugma bilan bosib, birinchi qatorni (koordinatani) nusxalang."
             ),
             "muted",
         )
@@ -124,27 +124,23 @@ class SiteDialog(FormDialog):
             return
         super().accept()
 
-    def _place_query(self) -> str:
-        """Qidiriladigan matn: manzil, u yozilmagan bo'lsa — obyekt nomi."""
-        return " ".join((self._address.text().strip() or self._name.text()).split())
-
     def _find_location(self, replace: bool = False) -> bool:
         """Joylashuvni fonda qidirishni boshlaydi; boshlangan bo'lsa — True.
 
         O'zi (maydondan chiqilganda) faqat joylashuv bo'sh yoki avval qidiruv yozgan bo'lsa qidiradi;
         `replace` — «Topish» tugmasi: foydalanuvchi yozgan koordinata ham almashtiriladi.
         """
-        query = self._place_query()
+        query = (self._name.text().strip(), self._address.text().strip())
         is_ours = self._location.text().strip() in ("", self._found_text)
-        if not query or (not replace and (not is_ours or query == self._searched)):
+        if not any(query) or (not replace and (not is_ours or query == self._searched)):
             return False
         self._searched = query
         self._is_searching = True
         self._location_hint.setText(tr("Joylashuv qidirilmoqda…"))
-        self._finder.find(query)
+        self._finder.find(*query)
         return True
 
-    def _on_place_found(self, query: str, result: FoundPlace | LookupFailed | None) -> None:
+    def _on_place_found(self, query: tuple[str, str], result: FoundPlace | LookupFailed | None) -> None:
         if query != self._searched:
             return  # shu orada manzil o'zgargan: bu eski javob, yangisi hali keladi
         self._is_searching = False
@@ -162,7 +158,7 @@ class SiteDialog(FormDialog):
         elif result is None:
             self._location_hint.setText(
                 tr(
-                    "Bu manzil xaritadan topilmadi. Aniqroq yozing (masalan: Toshkent, Yakkasaroy, 12) "
+                    "Xaritadan topilmadi. Manzilni aniqroq yozing (masalan: Toshkent, Chilonzor 12-kvartal) "
                     "yoki koordinatani qo'lda kiriting."
                 )
             )
