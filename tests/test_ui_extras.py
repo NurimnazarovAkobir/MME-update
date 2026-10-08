@@ -118,7 +118,7 @@ class StoreUiTests(UiTestCase):
         self.site = self.warehouse.save_store("Obyekt ombori")
 
     def test_store_column_appears_only_with_several_stores(self):
-        page = MovementsPage(self.warehouse, LABELS[MovementKind.IN], Session(self.admin))
+        page = MovementsPage(self.warehouse, self.services.sites, LABELS[MovementKind.IN], Session(self.admin))
         page.refresh()
         self.assertFalse(page.table.isColumnHidden(STORE_COLUMN + 1))
         self.warehouse.delete_store(self.site)
@@ -172,7 +172,7 @@ class StoreUiTests(UiTestCase):
 
 class FitAndHistoryTests(UiTestCase):
     def page(self, user=None) -> MovementsPage:
-        page = MovementsPage(self.warehouse, LABELS[MovementKind.IN], Session(user or self.admin))
+        page = MovementsPage(self.warehouse, self.services.sites, LABELS[MovementKind.IN], Session(user or self.admin))
         page.resize(1100, 600)
         page.show()
         page.refresh()

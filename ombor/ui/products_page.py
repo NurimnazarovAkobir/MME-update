@@ -47,6 +47,7 @@ class ProductsPage(ListPage):
             subtitle=tr("Mahsulotlar ro'yxati va ombordagi qoldiq"),
         )
         self._warehouse = warehouse
+        self.empty_hint = tr("Ish mahsulot qo'shishdan boshlanadi: «Yangi mahsulot» tugmasini bosing.")
         # «Holati» — rangli yorliq: yetarli yashil, kam qolgan sariq, tugagan qizil.
         self.table.set_badges(
             STATUS_COLUMN,

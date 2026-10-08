@@ -13,6 +13,7 @@ from ..formatting import fmt_money, fmt_period
 from ..i18n import tr
 from ..models import Granularity, MovementKind, Period
 from ..reports import UNNAMED, GroupBy, Reports
+from ..sites import Sites
 from ..warehouse import Warehouse
 from . import theme
 from .icons import Glyph, glyph_icon
@@ -50,6 +51,7 @@ _TAB_GLYPHS = (
     Glyph.PEOPLE,
     Glyph.SWITCH,
     Glyph.PIN,
+    Glyph.BOX,
 )
 
 
@@ -78,9 +80,10 @@ def _change(current: float, previous: float | None) -> float | None:
 
 
 class ReportsPage(QWidget):
-    def __init__(self, reports: Reports, analytics: Analytics, warehouse: Warehouse):
+    def __init__(self, reports: Reports, analytics: Analytics, warehouse: Warehouse, sites: Sites):
         super().__init__()
         self._warehouse = warehouse
+        self._sites = sites
         self.setObjectName("page")
         self._reports = reports
         self._analytics = analytics
@@ -259,9 +262,33 @@ class ReportsPage(QWidget):
                 ],
             ),
             ReportTab(
-                tr("Obyektlar bo'yicha rasxod"),
-                _group_columns(tr("Obyekt"), tr("Chiqimlar soni")),
-                grouped(MovementKind.OUT, GroupBy.COUNTERPARTY),
+                tr("Obyekt xarajati"),
+                (
+                    Column(tr("Obyekt")),
+                    Column(tr("Berilgan, {0}").format(CURRENCY), ColumnKind.MONEY),
+                    Column(tr("Qaytgan, {0}").format(CURRENCY), ColumnKind.MONEY),
+                    Column(tr("Sof xarajat, {0}").format(CURRENCY), ColumnKind.MONEY),
+                ),
+                lambda period: [
+                    (site.name, site.issued, site.returned, site.remaining)
+                    for site in self._sites.all(period=period)
+                    if site.issued or site.returned
+                ],
+            ),
+            ReportTab(
+                tr("Obyekt mahsulotlari"),
+                (
+                    Column(tr("Obyekt")),
+                    Column(tr("Mahsulot")),
+                    Column(tr("Birlik")),
+                    Column(tr("Berilgan"), ColumnKind.QUANTITY),
+                    Column(tr("Qaytgan"), ColumnKind.QUANTITY),
+                    Column(tr("Sof xarajat, {0}").format(CURRENCY), ColumnKind.MONEY),
+                ),
+                lambda period: [
+                    (row.site, row.product_name, row.unit, row.issued, row.returned, row.net_amount)
+                    for row in self._sites.products(period=period)
+                ],
             ),
         )
 

@@ -10,8 +10,10 @@ from ..formatting import fmt_compact, fmt_money
 from ..i18n import tr
 from ..models import MovementDetails, MovementKind
 from ..session import Session
+from ..sites import Sites
 from ..warehouse import Warehouse, display_counterparty, store_name
 from .dialogs import MovementDialog
+from .document_dialog import DocumentDialog
 from .icons import Glyph
 from .labels import KindLabels
 from .list_page import ListPage
@@ -71,7 +73,7 @@ def _row(movement: MovementDetails) -> tuple:
 class MovementsPage(ListPage):
     locked_message = tr("Omborchi faqat o'zi bugun kiritgan yozuvni o'zgartira oladi. Boshqasini rahbar tuzatadi.")
 
-    def __init__(self, warehouse: Warehouse, labels: KindLabels, session: Session):
+    def __init__(self, warehouse: Warehouse, sites: Sites, labels: KindLabels, session: Session):
         # Omborchida ham qator tugmalari bor, lekin faqat o'zi bugun kiritgan yozuvlarda.
         is_receipt = labels.kind is MovementKind.IN
         super().__init__(
@@ -88,7 +90,15 @@ class MovementsPage(ListPage):
             ),
         )
         self._warehouse = warehouse
+        self._sites = sites
         self._labels = labels
+        # Obyektdan qaytgan mahsulot kirim (xarid) emas: u «Vozvrat» bo'limida ko'rsatiladi.
+        self._returns = False if is_receipt else None
+        self.empty_hint = (
+            tr("Hali kirim yo'q. Mahsulot kelganda «Yangi kirim» tugmasini bosing.")
+            if is_receipt
+            else tr("Hali chiqim yo'q. Mahsulot berilganda «Yangi chiqim» tugmasini bosing.")
+        )
         # Hech bir yozuvda to'ldirilmagan bo'lsa, yashiriladigan ustunlar: jadval oynaga sig'ishi uchun.
         titles = [column.title for column in _columns(labels)]
         self._optional_columns = [
@@ -105,7 +115,9 @@ class MovementsPage(ListPage):
         self.toolbar_tools.addWidget(waybill)
 
     def refresh(self) -> None:
-        movements = self._warehouse.movements(self._labels.kind, self._period.period(), self.search.text())
+        movements = self._warehouse.movements(
+            self._labels.kind, self._period.period(), self.search.text(), returns=self._returns
+        )
         shown = movements[:MAX_ROWS_SHOWN]
         self.table.set_rows(
             [_row(m) for m in shown],
@@ -121,12 +133,15 @@ class MovementsPage(ListPage):
         """Bugun, shu hafta va shu oy bo'yicha jami (qidiruv va davr filtridan qat'i nazar)."""
         today = date.today()
         for stat, period_of in self._recent.items():
-            found = self._warehouse.movements(self._labels.kind, period_of(today))
+            found = self._warehouse.movements(self._labels.kind, period_of(today), returns=self._returns)
             amount = sum(m.amount if self._labels.kind is MovementKind.IN else (m.revenue or m.amount) for m in found)
             stat.set_value(fmt_compact(amount), tr("{0}  ·  {1} ta yozuv").format(CURRENCY, len(found)))
 
     def edit_dialog(self, item_id: int | None) -> QDialog:
-        movement = self._warehouse.movement(item_id) if item_id is not None else None
+        """Yangi yozuv — bir nechta mahsulotli hujjat; mavjudini tahrirlash — bitta yozuvning to'liq shakli."""
+        if item_id is None:
+            return DocumentDialog(self._warehouse, self._sites, self._labels, self.session.author, self)
+        movement = self._warehouse.movement(item_id)
         return MovementDialog(self._warehouse, self._labels, self.session.author, movement, self)
 
     def delete_item(self, item_id: int) -> None:

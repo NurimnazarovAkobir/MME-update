@@ -11,8 +11,10 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
+    QLayout,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -31,6 +33,7 @@ from .labels import KindLabels
 from .widgets import NumberInput, button, date_input, label, number_input, suggestion_box
 
 NO_GROUP = tr("Tanlanmagan")
+DIALOG_MIN_WIDTH = 520  # pastdagi uchta tugma kesilmasdan sig'adi
 
 
 def product_box(placeholder: str = tr("Tanlang, nomini yozing yoki shtrix-kodni o'qiting")) -> QComboBox:
@@ -49,6 +52,8 @@ class FormDialog(QDialog):
 
     Voris sinf maydonlarni `self.form` ga qo'shadi va `save()` ni yozadi.
     `save()` WarehouseError ko'tarsa, xabar ko'rsatiladi va oyna ochiq qoladi.
+    Kam ishlatiladigan maydonlar `add_extra_row` bilan qo'shiladi: ular «Qo'shimcha maydonlar»
+    tugmasi bosilgunga qadar yashirin turadi, shunda oyna qisqa va tushunarli bo'ladi.
     """
 
     def __init__(
@@ -60,11 +65,13 @@ class FormDialog(QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(DIALOG_MIN_WIDTH)
 
         self.form = QFormLayout()
         self.form.setVerticalSpacing(12)
         self.form.setHorizontalSpacing(16)
+        self._extra_fields: list[QWidget | QLayout] = []
+        self._extras_toggle: QPushButton | None = None
 
         save = button(save_text, "primary")
         save.setDefault(True)
@@ -94,6 +101,32 @@ class FormDialog(QDialog):
             QMessageBox.warning(self, tr("Diqqat"), str(error))
             return
         super().accept()
+
+    def add_extra_row(self, title: str, field: QWidget | QLayout) -> None:
+        """Kam ishlatiladigan maydonni qo'shadi; birinchisidan oldin «Qo'shimcha maydonlar» tugmasi chiqadi."""
+        if self._extras_toggle is None:
+            self._extras_toggle = button("", "link")
+            self._extras_toggle.setCheckable(True)
+            self._extras_toggle.setAutoDefault(False)
+            self._extras_toggle.toggled.connect(self.show_extras)
+            self.form.addRow(self._extras_toggle)
+        self.form.addRow(title, field)
+        self._extra_fields.append(field)
+        self.show_extras(self.extras_shown)
+
+    @property
+    def extras_shown(self) -> bool:
+        return self._extras_toggle is not None and self._extras_toggle.isChecked()
+
+    def show_extras(self, shown: bool = True) -> None:
+        """Qo'shimcha maydonlarni ochadi yoki yig'adi."""
+        self._extras_toggle.blockSignals(True)
+        self._extras_toggle.setChecked(shown)
+        self._extras_toggle.blockSignals(False)
+        self._extras_toggle.setText(tr("Qo'shimcha maydonlar") + ("  ▴" if shown else "  ▾"))
+        for field in self._extra_fields:
+            self.form.setRowVisible(field, shown)
+        self.adjustSize()
 
 
 class GroupFields:
@@ -268,8 +301,8 @@ class MovementDialog(FormDialog):
         quantity_row.addWidget(self._quantity, stretch=1)
         quantity_row.addWidget(self._unit)
 
+        # Asosiy maydonlar — har doim ko'rinadi; qolganlari «Qo'shimcha maydonlar» ostida.
         self.form.addRow(tr("Sana *"), self._date)
-        self.form.addRow(tr("Hujjat №"), self._doc_number)
         self.form.addRow(tr("Ombor"), self._store)
         self.form.setRowVisible(self._store, self._store.count() > 1)
         self.form.addRow(tr("Mahsulot *"), self._product)
@@ -278,18 +311,24 @@ class MovementDialog(FormDialog):
         if self._has_price:
             self.form.addRow(tr("Narxi (1 birlik)"), self._price)
             self.form.addRow(tr("Summa"), self._amount)
-            self.form.addRow("", self._is_return)
-            self.form.addRow(tr("Xaridorga qaytariladigan narx"), self._sale_price)
-        else:
-            self.form.addRow(tr("Sotuv narxi (1 birlik)"), self._sale_price)
-            self.form.addRow("", self._profit_hint)
-            self.form.addRow("", self._is_return)
-        self.form.addRow("", self._on_credit)
-        self.form.addRow(tr("Guruh *") if warehouse.group_required else tr("Guruh"), self._groups.group)
-        self.form.addRow(tr("Kichik guruh"), self._groups.subgroup)
-        self.form.addRow(labels.person, self._person)
         self.form.addRow(labels.counterparty, self._counterparty)
-        self.form.addRow(tr("Izoh"), self._note)
+        if warehouse.group_required:
+            self.form.addRow(tr("Guruh *"), self._groups.group)
+            self.form.addRow(tr("Kichik guruh"), self._groups.subgroup)
+
+        self.add_extra_row(tr("Hujjat №"), self._doc_number)
+        if not self._has_price:
+            self.add_extra_row(tr("Sotuv narxi (1 birlik)"), self._sale_price)
+            self.add_extra_row("", self._profit_hint)
+        self.add_extra_row("", self._is_return)
+        if self._has_price:
+            self.add_extra_row(tr("Xaridorga qaytariladigan narx"), self._sale_price)
+        self.add_extra_row("", self._on_credit)
+        if not warehouse.group_required:
+            self.add_extra_row(tr("Guruh"), self._groups.group)
+            self.add_extra_row(tr("Kichik guruh"), self._groups.subgroup)
+        self.add_extra_row(labels.person, self._person)
+        self.add_extra_row(tr("Izoh"), self._note)
 
         self._saved_hint = label("", "muted")
         if movement is None:
@@ -309,7 +348,7 @@ class MovementDialog(FormDialog):
         self._sale_price.valueChanged.connect(self._update_amount)
         self._is_return.toggled.connect(self._on_return_toggled)
         self._on_product_changed()
-        self._on_return_toggled()
+        self.show_extras(movement is not None)  # tahrirlashda yozuvning hamma maydoni ko'rinib turadi
 
     def accept(self) -> None:
         if self._select_by_barcode():
@@ -403,10 +442,14 @@ class MovementDialog(FormDialog):
             self._suggest_price(product)
         self._update_amount()
 
+    def show_extras(self, shown: bool = True) -> None:
+        super().show_extras(shown)
+        self._on_return_toggled()
+
     def _on_return_toggled(self) -> None:
         """Kirimda «xaridorga qaytariladigan narx» faqat qaytarishda ko'rinadi."""
         if self._has_price:
-            self.form.setRowVisible(self._sale_price, self._is_return.isChecked())
+            self.form.setRowVisible(self._sale_price, self.extras_shown and self._is_return.isChecked())
 
     def _on_product_changed(self) -> None:
         product = self._selected_product()

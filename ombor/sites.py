@@ -24,7 +24,7 @@ from .warehouse import Warehouse
 
 SITE_ENTITY = "site"
 
-_IS_ISSUE = "(m.kind = 'OUT' AND NOT m.is_return)"
+_IS_ISSUE = "(m.kind = 'OUT' AND NOT m.is_return AND m.sale_price = 0)"  # sotuv — obyektga berish emas
 _IS_RETURN = "(m.kind = 'IN' AND m.is_return)"
 _BELONGS_TO_SITE = f"m.counterparty = s.name COLLATE NOCASE AND ({_IS_ISSUE} OR {_IS_RETURN})"
 
@@ -42,17 +42,19 @@ class Sites:
 
     # --- Obyektlar ro'yxati --------------------------------------------------
 
-    def all(self, search: str = "") -> list[SiteTotals]:
-        """Obyektlar, nomi bo'yicha; har birida berilgan va qaytgan mahsulotlar tannarxi."""
+    def all(self, search: str = "", period: Period = Period()) -> list[SiteTotals]:
+        """Obyektlar, nomi bo'yicha; har birida `period` ichida berilgan va qaytgan mahsulotlar tannarxi."""
+        in_period, params = period_filter(period, "m.date")
         rows = self._conn.execute(
             f"""
             SELECT s.id, s.name, s.address, s.manager, s.note,
                    COALESCE(SUM(CASE WHEN {_IS_ISSUE} THEN m.quantity * m.price END), 0) AS issued,
                    COALESCE(SUM(CASE WHEN {_IS_RETURN} THEN m.quantity * m.price END), 0) AS returned
             FROM sites s
-            LEFT JOIN movements m ON {_BELONGS_TO_SITE} AND m.deleted_at IS NULL
+            LEFT JOIN movements m ON {_BELONGS_TO_SITE} AND m.deleted_at IS NULL AND {in_period}
             GROUP BY s.id ORDER BY s.name
-            """
+            """,
+            params,
         )
         needle = search.strip().casefold()
         found = [SiteTotals(**dict(row)) for row in rows]
@@ -133,6 +135,7 @@ class Sites:
             SELECT s.name AS site, m.product_id, m.product_name, m.unit,
                    SUM(CASE WHEN {_IS_ISSUE} THEN m.quantity ELSE 0 END) AS issued,
                    SUM(CASE WHEN {_IS_RETURN} THEN m.quantity ELSE 0 END) AS returned,
+                   SUM(CASE WHEN {_IS_ISSUE} THEN m.amount ELSE 0 END) AS issued_amount,
                    SUM(CASE WHEN {_IS_RETURN} THEN m.amount ELSE 0 END) AS returned_amount
             FROM sites s
             JOIN movement_details m ON {_BELONGS_TO_SITE}
@@ -145,8 +148,7 @@ class Sites:
 
     def returns(self, period: Period = Period(), search: str = "") -> list[MovementDetails]:
         """Qaytgan mahsulotlar yozuvlari, eng yangisidan boshlab."""
-        receipts = self._warehouse.movements(MovementKind.IN, period, search)
-        return [movement for movement in receipts if movement.is_return]
+        return self._warehouse.movements(MovementKind.IN, period, search, returns=True)
 
     def save_return(self, site_return: SiteReturn) -> int:
         """Obyektdan qaytgan mahsulotni omborga kirim qiladi (yoki shunday yozuvni yangilaydi).

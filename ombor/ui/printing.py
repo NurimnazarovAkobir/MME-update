@@ -17,6 +17,15 @@ from .labels import KindLabels
 from .widgets import Column, ColumnKind, DataTable
 
 _NUMERIC_KINDS = (ColumnKind.QUANTITY, ColumnKind.MONEY)
+_firm_name = APP_NAME  # chop etilgan varaqlarda chiqadigan ombor nomi
+
+
+def set_firm_name(name: str) -> None:
+    """Rahbar bergan ombor nomi: bundan keyin chop etiladigan varaqlarda shu nom chiqadi."""
+    global _firm_name
+    _firm_name = name
+
+
 # sana va sonlar ikki qatorga bo'linmaydi
 _UNBREAKABLE_KINDS = (*_NUMERIC_KINDS, ColumnKind.DATE, ColumnKind.DATETIME)
 
@@ -46,7 +55,7 @@ def table_html(table: DataTable, title: str) -> str:
     printed = tr("chop etildi: {0}").format(datetime.now().strftime("%d.%m.%Y %H:%M"))
     return (
         f"<html><head><style>{_STYLE}</style></head><body>"
-        f"<h2>{escape(title)}</h2><p>{escape(APP_NAME)} · {escape(printed)}</p>"
+        f"<h2>{escape(title)}</h2><p>{escape(_firm_name)} · {escape(printed)}</p>"
         f"<table cellspacing='0'><thead><tr>{header}</tr></thead><tbody>{body}</tbody></table>"
         "</body></html>"
     )
@@ -95,7 +104,7 @@ def waybill_html(movements: Sequence[MovementDetails], labels: KindLabels) -> st
     )
     return (
         f"<html><head><style>{_WAYBILL_STYLE}</style></head><body>"
-        f"<h2>{escape(title)}</h2>"
+        f"<p>{escape(_firm_name)}</p><h2>{escape(title)}</h2>"
         + "".join(f"<p><b>{escape(name)}:</b> {escape(value)}</p>" for name, value in details if value)
         + f"<table cellspacing='0'><thead><tr>{''.join(f'<th>{escape(text)}</th>' for text in headers)}</tr></thead>"
         f"<tbody>{''.join(lines)}"

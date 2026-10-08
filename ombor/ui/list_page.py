@@ -42,6 +42,7 @@ class ListPage(QWidget):
 
     delete_question = tr("Bu yozuv o'chirilsinmi?")
     locked_message = tr("Bu yozuvni faqat rahbar o'zgartira oladi.")
+    empty_hint = ""  # jadval bo'sh turganda ko'rsatiladigan yo'l-yo'riq (voris sinf yozadi)
 
     def __init__(
         self,
@@ -65,6 +66,7 @@ class ListPage(QWidget):
         self.search.setClearButtonEnabled(True)
         self.search.setMinimumWidth(SEARCH_WIDTH[0])
         self.search.setMaximumWidth(SEARCH_WIDTH[1])
+        self.search.textChanged.connect(self._show_empty_text)
         self.search.textChanged.connect(self.refresh)
         self.footer = label("", "total")
 
@@ -118,6 +120,15 @@ class ListPage(QWidget):
             cards[stat] = period_of
             self.summary.addWidget(stat)
         return cards
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._show_empty_text()
+
+    def _show_empty_text(self) -> None:
+        """Bo'sh jadvalda: qidiruv bo'lsa — «topilmadi», aks holda sahifaning yo'l-yo'rig'i."""
+        searching = bool(self.search.text().strip())
+        self.table.empty_text = tr("Hech narsa topilmadi") if searching else self.empty_hint
 
     def refresh(self) -> None:
         raise NotImplementedError

@@ -2,8 +2,17 @@
 
 from typing import Sequence
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QComboBox, QDialog, QHBoxLayout, QLineEdit, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QHBoxLayout,
+    QLineEdit,
+    QMessageBox,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ..errors import WarehouseError
 from ..formatting import fmt_qty
@@ -28,6 +37,7 @@ from .widgets import (
 )
 
 TABLE_DIALOG_SIZE = (860, 520)
+UNIT_WIDTH = 90
 
 
 class SiteDialog(FormDialog):
@@ -55,6 +65,57 @@ class SiteDialog(FormDialog):
         self.saved_id = self._sites.save(
             Site(self._name.text(), self._address.text(), self._manager.text(), self._note.text(), self._site_id)
         )
+
+
+class SitePicker(QWidget):
+    """Obyekt tanlash: ro'yxat va yonida «Yangi obyekt» tugmasi.
+
+    Nom qo'lda yozilmaydi — shuning uchun bitta obyekt imlo xatosi bilan ikki xil bo'lib qolmaydi.
+    """
+
+    changed = Signal()
+
+    def __init__(self, sites: Sites, selected_id: int | None = None):
+        super().__init__()
+        self._sites = sites
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)  # oyna cho'zilsa ham bo'yi o'smaydi
+        self.combo = QComboBox()
+        self.combo.setPlaceholderText(tr("Obyektni tanlang"))
+        new_site = button(tr("Yangi obyekt"), glyph=Glyph.ADD)
+        new_site.setAutoDefault(False)
+        new_site.clicked.connect(self.add_site)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.combo, stretch=1)
+        layout.addWidget(new_site)
+        self._load(selected_id)
+        self.combo.currentIndexChanged.connect(lambda: self.changed.emit())
+
+    def site_id(self) -> int | None:
+        return self.combo.currentData()
+
+    def require_site_id(self) -> int:
+        """Tanlangan obyekt; tanlanmagan bo'lsa — foydalanuvchiga tushunarli xato."""
+        if self.site_id() is None:
+            raise WarehouseError(tr("Obyektni tanlang. Ro'yxatda bo'lmasa, «Yangi obyekt» tugmasi bilan qo'shing."))
+        return self.site_id()
+
+    def site_name(self) -> str:
+        return self.combo.currentText() if self.site_id() is not None else ""
+
+    def add_site(self) -> None:
+        dialog = SiteDialog(self._sites, parent=self)
+        if dialog.exec():
+            self._load(dialog.saved_id)
+            self.changed.emit()
+
+    def _load(self, select_id: int | None) -> None:
+        self.combo.blockSignals(True)
+        self.combo.clear()
+        for site in self._sites.all():
+            self.combo.addItem(site.name, site.id)
+        self.combo.setCurrentIndex(self.combo.findData(select_id))
+        self.combo.blockSignals(False)
 
 
 class ReturnDialog(FormDialog):
@@ -87,33 +148,33 @@ class ReturnDialog(FormDialog):
         for store in warehouse.stores():
             self._store.addItem(store.name, store.id)
         self._store.setCurrentIndex(max(self._store.findData(movement.warehouse_id if movement else None), 0))
-        self._site = QComboBox()
-        self._site.setPlaceholderText(tr("Obyektni tanlang"))
-        new_site = button(tr("Yangi obyekt"), glyph=Glyph.ADD)
-        new_site.setAutoDefault(False)
-        new_site.clicked.connect(self._add_site)
+        current = sites.find(movement.counterparty) if movement else None
+        self._site = SitePicker(sites, current.id if current else None)
         self._product = product_box(tr("Tanlang yoki nomini yozing"))
         self._balance_hint = label("", "muted")
         self._quantity = number_input(3, movement.quantity if movement else 0)
+        self._unit = QComboBox()  # mahsulotning qo'shimcha birligi bo'lsa, miqdorni shu birlikda kiritish mumkin
+        self._unit.setMinimumWidth(UNIT_WIDTH)
         self._person = suggestion_box(
             warehouse.suggestions(MovementKind.IN, "person"), movement.person if movement else ""
         )
         self._note = QLineEdit(movement.note if movement else "")
 
-        site_row = QHBoxLayout()
-        site_row.addWidget(self._site, stretch=1)
-        site_row.addWidget(new_site)
+        quantity_row = QHBoxLayout()
+        quantity_row.addWidget(self._quantity, stretch=1)
+        quantity_row.addWidget(self._unit)
 
         self.form.addRow(tr("Sana *"), self._date)
-        self.form.addRow(tr("Hujjat №"), self._doc_number)
         self.form.addRow(tr("Qaysi omborga"), self._store)
         self.form.setRowVisible(self._store, self._store.count() > 1)
-        self.form.addRow(tr("Obyekt *"), site_row)
+        self.form.addRow(tr("Obyekt *"), self._site)
         self.form.addRow(tr("Mahsulot *"), self._product)
         self.form.addRow("", self._balance_hint)
-        self.form.addRow(tr("Qaytgan miqdor *"), self._quantity)
-        self.form.addRow(tr("Kim olib keldi"), self._person)
-        self.form.addRow(tr("Izoh"), self._note)
+        self.form.addRow(tr("Qaytgan miqdor *"), quantity_row)
+        self.add_extra_row(tr("Hujjat №"), self._doc_number)
+        self.add_extra_row(tr("Kim olib keldi"), self._person)
+        self.add_extra_row(tr("Izoh"), self._note)
+        self.show_extras(movement is not None)
 
         self._saved_hint = label("", "muted")
         if movement is None:
@@ -123,31 +184,26 @@ class ReturnDialog(FormDialog):
             self.extra_buttons.addWidget(another)
             self.extra_buttons.addWidget(self._saved_hint)
 
-        current = sites.find(movement.counterparty) if movement else None
-        self._load_sites(current.id if current else None)
         self._load_products(movement.product_id if movement else None)
-        self._site.currentIndexChanged.connect(self._on_site_changed)
-        self._product.currentTextChanged.connect(self._show_balance)
-        self._show_balance()
+        self._site.changed.connect(self._on_site_changed)
+        self._product.currentTextChanged.connect(self._on_product_changed)
+        self._on_product_changed()
 
     def accept(self) -> None:
         if self._quantity_accepted():
             super().accept()
 
     def save(self) -> None:
-        if self._site.currentData() is None:
-            raise WarehouseError(
-                tr("Obyektni tanlang. Ro'yxatda bo'lmasa, «Yangi obyekt» tugmasi bilan qo'shing.")
-            )
+        site_id = self._site.require_site_id()
         product = self._selected_product()
         if product is None:
             raise WarehouseError(tr("Mahsulotni ro'yxatdan tanlang."))
         self._sites.save_return(
             SiteReturn(
                 date=self._date.date().toPython(),
-                site_id=self._site.currentData(),
+                site_id=site_id,
                 product_id=product.id,
-                quantity=self._quantity.value(),
+                quantity=self._base_quantity(),
                 person=self._person.currentText(),
                 note=self._note.text(),
                 doc_number=self._doc_number.text(),
@@ -171,31 +227,17 @@ class ReturnDialog(FormDialog):
         self._quantity.setValue(0)
         self._note.clear()
         self._load_products(None)
-        self._show_balance()
+        self._on_product_changed()
         self._product.setFocus()
-
-    def _add_site(self) -> None:
-        dialog = SiteDialog(self._sites, parent=self)
-        if dialog.exec():
-            self._load_sites(dialog.saved_id)
-
-    def _load_sites(self, select_id: int | None) -> None:
-        self._site.blockSignals(True)
-        self._site.clear()
-        for site in self._sites.all():
-            self._site.addItem(site.name, site.id)
-        self._site.setCurrentIndex(self._site.findData(select_id))
-        self._site.blockSignals(False)
-        self._on_site_changed()
 
     def _on_site_changed(self) -> None:
         selected = self._selected_product()
         self._load_products(selected.id if selected else None)
-        self._show_balance()
+        self._on_product_changed()
 
     def _load_products(self, select_id: int | None) -> None:
         """Mahsulotlar ro'yxati: avval tanlangan obyektda turganlari, keyin qolganlari."""
-        site_id = self._site.currentData()
+        site_id = self._site.site_id()
         self._at_site = {row.product_id: row for row in self._sites.products(site_id)} if site_id else {}
         products = [product for product in self._warehouse.products() if not product.is_service]
         products.sort(key=lambda product: (self._remaining(product.id) <= 0, product.name.casefold()))
@@ -212,16 +254,20 @@ class ReturnDialog(FormDialog):
         return self._product.itemData(index) if index >= 0 else None
 
     def _remaining(self, product_id: int) -> float:
-        """Tanlangan obyektda shu mahsulotdan qancha turibdi (berilgan minus qaytgan)."""
+        """Tanlangan obyektda shu mahsulotdan qancha turibdi (berilgan minus qaytgan), asosiy birlikda."""
         row = self._at_site.get(product_id)
         return row.remaining if row else 0.0
+
+    def _base_quantity(self) -> float:
+        """Kiritilgan miqdor asosiy birlikda (qo'shimcha birlik tanlangan bo'lsa — aylantirilgan)."""
+        return self._quantity.value() * (self._unit.currentData() or 1.0)
 
     def _quantity_accepted(self) -> bool:
         """Yangi vozvratda miqdor obyektda turganidan ko'p bo'lsa, tasdiq so'raydi (tahrirlashda tekshirilmaydi)."""
         product = self._selected_product()
-        if self._movement_id is not None or product is None or self._site.currentData() is None:
+        if self._movement_id is not None or product is None or self._site.site_id() is None:
             return True
-        if self._quantity.value() <= self._remaining(product.id):
+        if self._base_quantity() <= self._remaining(product.id):
             return True
         return confirm(
             self,
@@ -230,20 +276,26 @@ class ReturnDialog(FormDialog):
             tr("Ha, saqlash"),
         )
 
-    def _show_balance(self) -> None:
+    def _on_product_changed(self) -> None:
         product = self._selected_product()
-        self._quantity.setSuffix(f" {product.unit}" if product else "")
-        if product is None or self._site.currentData() is None:
-            self._balance_hint.setText("")
-            return
+        self._unit.clear()
+        if product is not None:
+            self._unit.addItem(product.unit, 1.0)
+            # Tahrirlashda miqdor asosiy birlikda saqlangan holicha ko'rsatiladi.
+            if product.has_alt_unit and self._movement_id is None:
+                self._unit.addItem(product.alt_unit, product.alt_factor)
+        self._unit.setVisible(self._unit.count() > 1)
+        self._quantity.setSuffix(f" {product.unit}" if product and self._unit.count() == 1 else "")
+        self._balance_hint.setText(self._balance_text(product))
+
+    def _balance_text(self, product: ProductStock | None) -> str:
+        if product is None or self._site.site_id() is None:
+            return ""
         row = self._at_site.get(product.id)
         if row is None:
-            self._balance_hint.setText(tr("Bu mahsulot shu obyektga berilmagan"))
-            return
-        self._balance_hint.setText(
-            tr("Berilgan: {0}  ·  qaytgan: {1}  ·  obyektda: {2} {3}").format(
-                fmt_qty(row.issued), fmt_qty(row.returned), fmt_qty(row.remaining), product.unit
-            )
+            return tr("Bu mahsulot shu obyektga berilmagan")
+        return tr("Berilgan: {0}  ·  qaytgan: {1}  ·  obyektda: {2} {3}").format(
+            fmt_qty(row.issued), fmt_qty(row.returned), fmt_qty(row.remaining), product.unit
         )
 
 

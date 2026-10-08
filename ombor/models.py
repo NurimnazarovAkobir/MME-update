@@ -330,11 +330,17 @@ class SiteProduct:
     unit: str
     issued: float
     returned: float
+    issued_amount: float  # berilgan mahsulotning tannarxi
     returned_amount: float  # qaytgan mahsulotning tannarxi
 
     @property
     def remaining(self) -> float:
         return round(self.issued - self.returned, 6)
+
+    @property
+    def net_amount(self) -> float:
+        """Obyektning shu mahsulot bo'yicha sof xarajati: berilgan minus qaytgan."""
+        return self.issued_amount - self.returned_amount
 
 
 @dataclass(frozen=True)

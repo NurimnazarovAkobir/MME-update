@@ -116,7 +116,7 @@ class MainWindowTests(UiTestCase):
 
 class MovementsPageTests(UiTestCase):
     def page(self, user) -> MovementsPage:
-        page = MovementsPage(self.warehouse, LABELS[MovementKind.IN], Session(user))
+        page = MovementsPage(self.warehouse, self.services.sites, LABELS[MovementKind.IN], Session(user))
         page.refresh()
         return page
 
@@ -251,7 +251,7 @@ class OtherPagesTests(UiTestCase):
                 "INSERT INTO movements (kind, date, product_id, quantity, price) VALUES ('IN', ?, ?, 1, 100)",
                 ((TODAY - timedelta(days=offset % 30)).isoformat(), self.pipe),
             )
-        page = MovementsPage(self.warehouse, LABELS[MovementKind.IN], Session(self.admin))
+        page = MovementsPage(self.warehouse, self.services.sites, LABELS[MovementKind.IN], Session(self.admin))
         page.refresh()
         table = page.table
         # Jadval sahifalarga bo'linadi: ekranda bir sahifa, jami va chop etish — hamma qatorlar bo'yicha.

@@ -74,6 +74,7 @@ class ReturnsPage(ListPage):
         )
         self._sites = sites
         self._warehouse = warehouse
+        self.empty_hint = tr("Hali vozvrat yo'q. Obyektdan mahsulot qaytganda «Yangi vozvrat» tugmasini bosing.")
         self._period = PeriodFilter()
         self._period.changed.connect(self.refresh)
         self.header_tools.addWidget(self._period)

@@ -153,10 +153,10 @@ class SitePagesTests(SitesTestCase):
 
     def test_return_dialog_shows_what_is_at_the_site_and_saves(self):
         dialog = ReturnDialog(self.sites, self.warehouse, "Vali")
-        self.assertEqual(dialog._site.currentIndex(), -1)
+        self.assertEqual(dialog._site.combo.currentIndex(), -1)
         with self.assertRaises(WarehouseError):
             dialog.save()  # obyekt tanlanmagan
-        dialog._site.setCurrentIndex(dialog._site.findText("Chilonzor"))
+        dialog._site.combo.setCurrentIndex(dialog._site.combo.findText("Chilonzor"))
         self.assertEqual(dialog._product.itemText(0), "Truba 40x40")  # obyektda turgan mahsulot — birinchi
         dialog._product.setCurrentIndex(0)
         self.assertIn("40", dialog._balance_hint.text())
@@ -167,7 +167,7 @@ class SitePagesTests(SitesTestCase):
 
     def test_returning_more_than_the_site_has_needs_confirmation(self):
         dialog = ReturnDialog(self.sites, self.warehouse, "Rahbar")
-        dialog._site.setCurrentIndex(0)
+        dialog._site.combo.setCurrentIndex(0)
         dialog._product.setCurrentIndex(0)
         dialog._quantity.setValue(41)
         with mock.patch("ombor.ui.site_dialogs.confirm", return_value=False):
@@ -180,13 +180,13 @@ class SitePagesTests(SitesTestCase):
     def test_several_products_are_returned_without_closing_the_dialog(self):
         self._issue(self.sheet, 5)
         dialog = ReturnDialog(self.sites, self.warehouse, "Rahbar")
-        dialog._site.setCurrentIndex(0)
+        dialog._site.combo.setCurrentIndex(0)
         for name, quantity in (("Truba 40x40", 3), ("List 2mm", 2)):
             dialog._product.setCurrentIndex(dialog._product.findText(name))
             dialog._quantity.setValue(quantity)
             dialog._save_and_continue()
         self.assertEqual(dialog.saved_count, 2)
-        self.assertEqual(dialog._site.currentText(), "Chilonzor")
+        self.assertEqual(dialog._site.combo.currentText(), "Chilonzor")
         self.assertEqual(sorted(m.quantity for m in self.sites.returns()), [2, 3])
 
     def test_new_site_can_be_added_from_the_return_dialog(self):
@@ -198,8 +198,8 @@ class SitePagesTests(SitesTestCase):
             return 1
 
         with mock.patch.object(SiteDialog, "exec", add_site):
-            dialog._add_site()
-        self.assertEqual(dialog._site.currentText(), "Sergeli")
+            dialog._site.add_site()
+        self.assertEqual(dialog._site.combo.currentText(), "Sergeli")
 
     def test_returns_page_lists_returns_and_summary_by_site(self):
         self._return(self.pipe, 15, person="Ali")
@@ -223,7 +223,7 @@ class SitePagesTests(SitesTestCase):
         page = ReturnsPage(self.sites, self.warehouse, Session(self.admin))
         dialog = page.edit_dialog(by_admin)
         self.assertIsInstance(dialog, ReturnDialog)
-        self.assertEqual((dialog._site.currentText(), dialog._product.currentText()), ("Chilonzor", "Truba 40x40"))
+        self.assertEqual((dialog._site.combo.currentText(), dialog._product.currentText()), ("Chilonzor", "Truba 40x40"))
         dialog._quantity.setValue(7)
         dialog.accept()
         self.assertEqual(self.warehouse.movement(by_admin).quantity, 7)

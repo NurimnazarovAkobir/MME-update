@@ -6,12 +6,12 @@ from enum import Enum
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
-from ..analytics import Analytics
 from ..config import CURRENCY
-from ..formatting import MONTH_NAMES, fmt_compact, fmt_long_date, fmt_qty
+from ..formatting import MONTH_NAMES, fmt_compact, fmt_long_date
 from ..i18n import tr
 from ..models import MovementKind, Period
 from ..reports import Reports
+from ..sites import Sites
 from ..warehouse import Warehouse
 from .chart import BarChart
 from .icons import Glyph, icon_label
@@ -35,28 +35,30 @@ class Destination(Enum):
     ISSUES = "issues"
     PRODUCTS = "products"
     REPORTS = "reports"
+    SITES = "sites"
 
 
 class DashboardPage(QWidget):
     """Yangi yozuv yoki boshqa bo'lim so'ralganda signal chiqaradi; ularni asosiy oyna bajaradi."""
 
     movement_requested = Signal(MovementKind)
+    return_requested = Signal()
     product_requested = Signal()
     page_requested = Signal(Destination)
 
-    def __init__(self, warehouse: Warehouse, reports: Reports, analytics: Analytics, can_add: bool = True):
+    def __init__(self, warehouse: Warehouse, reports: Reports, sites: Sites, can_add: bool = True):
         """`can_add` — yangi yozuv tugmalari ko'rinadimi (kuzatuvchiga ko'rinmaydi)."""
         super().__init__()
         self.setObjectName("page")
         self._warehouse = warehouse
+        self._sites = sites
         self._reports = reports
-        self._analytics = analytics
 
         self._today = label("", "dateText")
         self._stock_value = self._stat(tr("Ombor qiymati"), Glyph.MONEY, "Accent", Destination.PRODUCTS)
         self._month_in = self._stat(tr("Bu oy kirim"), Glyph.ARROW_DOWN, "Good", Destination.RECEIPTS)
         self._month_out = self._stat(tr("Bu oy chiqim"), Glyph.ARROW_UP, "Out", Destination.ISSUES)
-        self._month_profit = self._stat(tr("Bu oy sotuvdan foyda"), Glyph.CHART, "Good", Destination.REPORTS)
+        self._at_sites = self._stat(tr("Obyektlarda"), Glyph.PIN, "Violet", Destination.SITES)
         self._chart = BarChart([LABELS[MovementKind.IN].title, LABELS[MovementKind.OUT].title], unit=CURRENCY)
         self._chart.setMinimumHeight(CHART_MIN_HEIGHT)
         self._chart.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -76,7 +78,7 @@ class DashboardPage(QWidget):
 
         cards = QHBoxLayout()
         cards.setSpacing(14)
-        for stat in (self._stock_value, self._month_in, self._month_out, self._month_profit):
+        for stat in (self._stock_value, self._month_in, self._month_out, self._at_sites):
             cards.addWidget(stat, stretch=1)
 
         chart_title = tr("Oxirgi {0} oy: kirim va chiqim, {1}").format(CHART_MONTHS, CURRENCY)
@@ -95,7 +97,6 @@ class DashboardPage(QWidget):
         today = date.today()
         month = Period.month_of(today)
         totals = self._reports.totals(month)
-        profit = self._analytics.summary(month)
         recent = self._warehouse.movements(limit=RECENT_LIMIT)
 
         self._today.setText(fmt_long_date(today))
@@ -106,9 +107,10 @@ class DashboardPage(QWidget):
         self._month_out.set_value(
             fmt_compact(totals.amount_out), tr("{0}  ·  {1} ta chiqim").format(CURRENCY, totals.count_out)
         )
-        self._month_profit.set_value(
-            fmt_compact(profit.profit),
-            tr("{0}  ·  rentabellik {1}%").format(CURRENCY, fmt_qty(round(profit.margin * 100, 1))),
+        sites = self._sites.all()
+        self._at_sites.set_value(
+            fmt_compact(sum(site.remaining for site in sites)),
+            tr("{0}  ·  {1} ta obyekt").format(CURRENCY, len(sites)),
         )
         self._chart.set_data(
             [
@@ -145,16 +147,18 @@ class DashboardPage(QWidget):
         return header
 
     def _tiles(self) -> QHBoxLayout:
-        """Uchta katta tugma: kundalik ishning deyarli hammasi shulardan boshlanadi."""
+        """To'rtta katta tugma: kundalik ishning deyarli hammasi shulardan boshlanadi."""
         receipt = _tile(LABELS[MovementKind.IN].title, Glyph.ADD, "tileIn", tr("Yangi kirim (F2)"))
         receipt.clicked.connect(lambda: self.movement_requested.emit(MovementKind.IN))
         issue = _tile(LABELS[MovementKind.OUT].title, Glyph.REMOVE, "tileOut", tr("Yangi chiqim (F3)"))
         issue.clicked.connect(lambda: self.movement_requested.emit(MovementKind.OUT))
-        product = _tile(tr("Yangi mahsulot"), Glyph.GRID, "tile", tr("Yangi mahsulot (F4)"))
+        returned = _tile(tr("Vozvrat"), Glyph.UNDO, "tile", tr("Obyektdan qaytgan mahsulot (F5)"))
+        returned.clicked.connect(self.return_requested.emit)
+        product = _tile(tr("Mahsulot"), Glyph.GRID, "tile", tr("Yangi mahsulot (F4)"))
         product.clicked.connect(self.product_requested.emit)
         tiles = QHBoxLayout()
         tiles.setSpacing(14)
-        for tile in (receipt, issue, product):
+        for tile in (receipt, issue, returned, product):
             tiles.addWidget(tile)
         return tiles
 
@@ -174,8 +178,8 @@ def _tile(title: str, glyph: str, role: str, tooltip: str) -> QPushButton:
     name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
     layout = QHBoxLayout(tile)
-    layout.setContentsMargins(22, 0, 22, 0)
-    layout.setSpacing(16)
+    layout.setContentsMargins(16, 0, 16, 0)
+    layout.setSpacing(12)
     layout.addWidget(icon)
     layout.addWidget(name)
     layout.addStretch()

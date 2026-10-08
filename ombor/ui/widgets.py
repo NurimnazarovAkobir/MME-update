@@ -250,6 +250,7 @@ class StatCard(QFrame):
         self._value.setText(value)
         self._hint.setText(hint)
         self._spark.set_values(series)
+        self._spark.setVisible(bool(series))
         self._delta.setVisible(change is not None)
         if change is not None:
             arrow = "↑" if change >= 0 else "↓"
@@ -450,6 +451,7 @@ class DataTable(QTableWidget):
         # Har bir qator: (qiymatlar, id, e'tibor talab qiladimi, tugmasizmi) — saralashda birga ko'chadi.
         self._records: list[tuple[Sequence, int | None, bool, bool]] = []
         self._page_size: int | None = None  # None — hamma qatorlar bitta sahifada
+        self.empty_text = ""  # jadval bo'sh turganda ko'rsatiladigan matn; bo'sh bo'lsa — umumiy yozuv
         self._page = 0
         self._sort_column: int | None = None
         self._sort_descending = False
@@ -728,7 +730,8 @@ class DataTable(QTableWidget):
         if self.rowCount() == 0:
             painter = QPainter(self.viewport())
             painter.setPen(QColor(theme.palette().muted))
-            painter.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, tr("Hozircha ma'lumot yo'q"))
+            text = self.empty_text or tr("Hozircha ma'lumot yo'q")
+            painter.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, text)
 
     @staticmethod
     def _alignment(column: Column) -> Qt.AlignmentFlag:

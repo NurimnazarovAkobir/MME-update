@@ -16,6 +16,9 @@ UNNAMED = tr("(ko'rsatilmagan)")
 EARLIEST_DATE = ""
 LATEST_DATE = "9999-12-31"
 
+# «Kirim» summalariga qaytgan mahsulot (vozvrat) kirmaydi: u xarid emas va o'z bo'limida ko'rsatiladi.
+_IS_RECEIPT = "kind = 'IN' AND NOT is_return"
+
 # Har bir yozuv sanasidan o'sha davrning birinchi kunini beruvchi SQL ifodalari.
 _BUCKET_START = {
     Granularity.DAY: "date",
@@ -94,9 +97,9 @@ class Reports:
         where, params = period_filter(period)
         row = self._conn.execute(
             f"""
-            SELECT COALESCE(SUM(CASE WHEN kind = 'IN' THEN amount END), 0) AS amount_in,
+            SELECT COALESCE(SUM(CASE WHEN {_IS_RECEIPT} THEN amount END), 0) AS amount_in,
                    COALESCE(SUM(CASE WHEN kind = 'OUT' THEN amount END), 0) AS amount_out,
-                   COUNT(CASE WHEN kind = 'IN' THEN 1 END) AS count_in,
+                   COUNT(CASE WHEN {_IS_RECEIPT} THEN 1 END) AS count_in,
                    COUNT(CASE WHEN kind = 'OUT' THEN 1 END) AS count_out
             FROM movement_details WHERE {where}
             """,
@@ -145,7 +148,7 @@ class Reports:
         rows = self._conn.execute(
             f"""
             SELECT {column} AS name, COUNT(*) AS operations, COALESCE(SUM(amount), 0) AS amount
-            FROM movement_details WHERE kind = ? AND {where}
+            FROM movement_details WHERE kind = ? AND NOT (kind = 'IN' AND is_return) AND {where}
             GROUP BY {column} ORDER BY amount DESC, name
             """,
             [kind.value, *params],
@@ -160,7 +163,7 @@ class Reports:
         rows = self._conn.execute(
             f"""
             SELECT category, subcategory,
-                   COALESCE(SUM(CASE WHEN kind = 'IN' THEN amount END), 0) AS amount_in,
+                   COALESCE(SUM(CASE WHEN {_IS_RECEIPT} THEN amount END), 0) AS amount_in,
                    COALESCE(SUM(CASE WHEN kind = 'OUT' THEN amount END), 0) AS amount_out
             FROM movement_details WHERE {where}
             GROUP BY category, subcategory ORDER BY category, subcategory
@@ -178,9 +181,9 @@ class Reports:
         rows = self._conn.execute(
             f"""
             SELECT {_BUCKET_START[step]} AS start,
-                   COALESCE(SUM(CASE WHEN kind = 'IN' THEN amount END), 0) AS amount_in,
+                   COALESCE(SUM(CASE WHEN {_IS_RECEIPT} THEN amount END), 0) AS amount_in,
                    COALESCE(SUM(CASE WHEN kind = 'OUT' THEN amount END), 0) AS amount_out,
-                   COUNT(CASE WHEN kind = 'IN' THEN 1 END) AS count_in,
+                   COUNT(CASE WHEN {_IS_RECEIPT} THEN 1 END) AS count_in,
                    COUNT(CASE WHEN kind = 'OUT' THEN 1 END) AS count_out,
                    COALESCE(SUM(profit), 0) AS profit
             FROM movement_details WHERE {where}

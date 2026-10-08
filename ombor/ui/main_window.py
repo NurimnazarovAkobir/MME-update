@@ -29,17 +29,20 @@ from ..session import Session
 from . import theme
 from .dashboard_page import DashboardPage, Destination
 from .debts_page import DebtsPage
-from .dialogs import MovementDialog, ProductDialog
+from .dialogs import ProductDialog
+from .document_dialog import DocumentDialog
 from .history_page import HistoryPage
 from .icon import app_icon, icon_pixmap
 from .icons import Glyph, icon_label, menu_icon
 from .labels import LABELS
 from .language import sign_out
 from .movements_page import MovementsPage
+from .printing import set_firm_name
 from .products_page import ProductsPage
 from .reports_page import ReportsPage
 from .returns_page import ReturnsPage
 from .settings_page import SettingsPage
+from .site_dialogs import ReturnDialog
 from .sites_page import SitesPage
 from .update_page import UpdatePage
 from .widgets import button, label
@@ -49,17 +52,34 @@ BRAND_WIDTH = 150  # yon menyu tepasidagi nom uchun joy (piksel)
 LOGO_SIZE = 48
 MENU_ICON_SIZE = 20
 # Istalgan sahifadan yangi yozuv ochadigan tugmalar (bosh sahifadagi katta tugmalar yordam yozuvida ham bor).
-NEW_RECEIPT_KEY, NEW_ISSUE_KEY, NEW_PRODUCT_KEY = "F2", "F3", "F4"
+NEW_RECEIPT_KEY, NEW_ISSUE_KEY, NEW_PRODUCT_KEY, NEW_RETURN_KEY = "F2", "F3", "F4", "F5"
 REFRESH_INTERVAL_MS = 10_000
 NOTIFICATION_MS = 15_000
 BADGE_ROLE = Qt.ItemDataRole.UserRole + 1  # menyu qatoridagi belgi soni
 BADGE_SIZE, BADGE_MARGIN = 22, 14
+DIVIDER_ROLE = Qt.ItemDataRole.UserRole + 2  # shu qator ustida ajratuvchi chiziq chiziladi
+DIVIDER_GAP, DIVIDER_INSET = 15, 10  # chiziq uchun qator ustidagi joy va chetlardan masofa
 
 
 class MenuBadgeDelegate(QStyledItemDelegate):
-    """Menyu qatorining o'ng chetida qizil doira ichida son chizadi (masalan, yangilanish kelganda «1»)."""
+    """Menyu qatorini chizadi: o'ng chetida qizil doira ichida son (masalan, yangilanish kelganda «1»)
+    va, belgilangan qator ustida, kam ishlatiladigan bo'limlarni ajratib turuvchi chiziq."""
+
+    def sizeHint(self, option: QStyleOptionViewItem, index):
+        hint = super().sizeHint(option, index)
+        if index.data(DIVIDER_ROLE):
+            hint.setHeight(hint.height() + DIVIDER_GAP)
+        return hint
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
+        if index.data(DIVIDER_ROLE):
+            line_y = option.rect.top() + DIVIDER_GAP // 2
+            painter.save()
+            painter.setPen(QColor(theme.palette().sidebar_hover))
+            painter.drawLine(option.rect.left() + DIVIDER_INSET, line_y, option.rect.right() - DIVIDER_INSET, line_y)
+            painter.restore()
+            option = QStyleOptionViewItem(option)
+            option.rect = option.rect.adjusted(0, DIVIDER_GAP, 0, 0)  # qatorning o'zi chiziqdan pastda
         super().paint(painter, option, index)
         count = index.data(BADGE_ROLE)
         if not count:
@@ -95,8 +115,10 @@ class MainWindow(QMainWindow):
             service.actor_role = session.user.role.value
         self._session = session
 
-        dashboard = DashboardPage(self._warehouse, services.reports, services.analytics, session.can_add)
+        self._sites = services.sites
+        dashboard = DashboardPage(self._warehouse, services.reports, services.sites, session.can_add)
         dashboard.movement_requested.connect(self._new_movement)
+        dashboard.return_requested.connect(self._new_return)
         dashboard.product_requested.connect(self._new_product)
         dashboard.page_requested.connect(self._open_destination)
         self._products_page = ProductsPage(self._warehouse, session)
@@ -107,26 +129,27 @@ class MainWindow(QMainWindow):
             (
                 tr("Kirim"),
                 Glyph.RECEIPT,
-                MovementsPage(self._warehouse, LABELS[MovementKind.IN], session),
+                MovementsPage(self._warehouse, services.sites, LABELS[MovementKind.IN], session),
                 Destination.RECEIPTS,
             ),
             (
                 tr("Chiqim"),
                 Glyph.ISSUE,
-                MovementsPage(self._warehouse, LABELS[MovementKind.OUT], session),
+                MovementsPage(self._warehouse, services.sites, LABELS[MovementKind.OUT], session),
                 Destination.ISSUES,
             ),
             (tr("Vozvrat"), Glyph.UNDO, ReturnsPage(services.sites, self._warehouse, session), None),
             (self._products_title, Glyph.PRODUCTS, self._products_page, Destination.PRODUCTS),
-            (tr("Obyektlar"), Glyph.PIN, SitesPage(services.sites, session), None),
+            (tr("Obyektlar"), Glyph.PIN, SitesPage(services.sites, session), Destination.SITES),
             (
                 tr("Hisobotlar"),
                 Glyph.REPORTS,
-                ReportsPage(services.reports, services.analytics, self._warehouse),
+                ReportsPage(services.reports, services.analytics, self._warehouse, services.sites),
                 Destination.REPORTS,
             ),
             (tr("Qarzlar"), Glyph.MONEY, DebtsPage(services.debts, session), None),
         ]
+        service_row = len(pages)  # shu qatordan boshlab — kam ishlatiladigan bo'limlar (chiziq bilan ajratiladi)
         pages.append((tr("Tarix"), Glyph.CLOCK, HistoryPage(self._warehouse, session), None))
         self._update_title = tr("Yangilash")
         self._update_page = UpdatePage(services, session)
@@ -155,6 +178,7 @@ class MainWindow(QMainWindow):
             self._pages.addWidget(page)
             if destination is not None:
                 self._rows[destination] = row
+        self._menu.item(service_row).setData(DIVIDER_ROLE, True)
         self._menu.currentRowChanged.connect(self._show_page)
 
         version = self._about_card()
@@ -189,6 +213,7 @@ class MainWindow(QMainWindow):
             QShortcut(QKeySequence(NEW_RECEIPT_KEY), self, lambda: self._new_movement(MovementKind.IN))
             QShortcut(QKeySequence(NEW_ISSUE_KEY), self, lambda: self._new_movement(MovementKind.OUT))
             QShortcut(QKeySequence(NEW_PRODUCT_KEY), self, self._new_product)
+            QShortcut(QKeySequence(NEW_RETURN_KEY), self, self._new_return)
         self._menu.setCurrentRow(0)
         self._show_firm_name(self._settings.firm_name(APP_NAME))
 
@@ -301,6 +326,7 @@ class MainWindow(QMainWindow):
                 name_label.ensurePolished()  # uslublar jadvalidagi shrift (13pt, qalin) bilan o'lchash uchun
                 name_label.setText(name_label.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, BRAND_WIDTH))
         self.setWindowTitle(f"{name} — {self._title_suffix}")
+        set_firm_name(name)  # chop etiladigan varaqlarda ham shu nom chiqadi
 
     def _show_update_badge(self, available: bool) -> None:
         """Yangi versiya chiqqanda «Yangilash» yonida belgi — oyna chiqarib ishni to'xtatmaydi."""
@@ -369,8 +395,12 @@ class MainWindow(QMainWindow):
         self._update_attention_badge()
 
     def _new_movement(self, kind: MovementKind) -> None:
-        MovementDialog(self._warehouse, LABELS[kind], self._session.author, parent=self).exec()
-        self._refresh_current()  # oyna bekor qilinsa ham, «Saqlash va yana qo'shish» bilan yozilganlari bo'lishi mumkin
+        DocumentDialog(self._warehouse, self._sites, LABELS[kind], self._session.author, self).exec()
+        self._refresh_current()  # oyna bekor qilinsa ham, «To'liq shakl»da saqlangan yozuvlar bo'lishi mumkin
+
+    def _new_return(self) -> None:
+        ReturnDialog(self._sites, self._warehouse, self._session.author, parent=self).exec()
+        self._refresh_current()  # «Saqlash va yana qo'shish» bilan yozilganlari bo'lishi mumkin
 
     def _new_product(self) -> None:
         if ProductDialog(self._warehouse, parent=self).exec():

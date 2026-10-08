@@ -5,7 +5,7 @@ from .costing import recalculate_costs
 from .driver import sqlite3
 from .models import Role
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 LEGACY_PASSWORD_KEY = "password"
 LEGACY_ADMIN_NAME = "Rahbar"
 # 3-versiyagacha «boshlang'ich qoldiq» belgisi o'sha paytdagi tilda yozilgan; endi bitta ko'rinishda saqlanadi.
@@ -26,6 +26,7 @@ def migrate(conn: sqlite3.Connection) -> None:
         _allow_new_roles(conn)
         catalog.seed(conn)
         _collect_sites(conn)
+        _drop_customer_sites(conn)
         conn.execute(
             "UPDATE movements SET counterparty = ? WHERE counterparty = ?", (OPENING_BALANCE, LEGACY_OPENING_BALANCE)
         )
@@ -36,8 +37,27 @@ def _collect_sites(conn: sqlite3.Connection) -> None:
     """7-versiyagacha obyektlar ro'yxati bo'lmagan: chiqimlarda yozilgan nomlardan yig'iladi."""
     conn.execute(
         "INSERT OR IGNORE INTO sites (name) SELECT DISTINCT counterparty FROM movements"
-        " WHERE kind = 'OUT' AND NOT is_return AND deleted_at IS NULL AND counterparty NOT IN ('', ?)",
+        " WHERE kind = 'OUT' AND NOT is_return AND sale_price = 0 AND deleted_at IS NULL"
+        " AND counterparty NOT IN ('', ?)",
         (INVENTORY_SHORTAGE,),
+    )
+
+
+def _drop_customer_sites(conn: sqlite3.Connection) -> None:
+    """7-versiyada sotuvdagi xaridorlar ham obyekt bo'lib yig'ilgan: ular ro'yxatdan chiqariladi.
+
+    Faqat ma'lumoti to'ldirilmagan va obyekt sifatida ishlatilmagan (ichki chiqimi ham, vozvrati ham yo'q) nomlar.
+    """
+    conn.execute(
+        """
+        DELETE FROM sites
+        WHERE address = '' AND manager = '' AND note = ''
+          AND EXISTS (SELECT 1 FROM movements m WHERE m.counterparty = sites.name COLLATE NOCASE
+                      AND m.kind = 'OUT' AND NOT m.is_return AND m.sale_price > 0)
+          AND NOT EXISTS (SELECT 1 FROM movements m WHERE m.counterparty = sites.name COLLATE NOCASE
+                          AND ((m.kind = 'OUT' AND NOT m.is_return AND m.sale_price = 0)
+                               OR (m.kind = 'IN' AND m.is_return)))
+        """
     )
 
 

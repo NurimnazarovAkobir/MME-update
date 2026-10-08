@@ -44,6 +44,7 @@ class SitesPage(ListPage):
             subtitle=tr("Mahsulot beriladigan joylar: har biriga qancha berilgan va qanchasi qaytgan"),
         )
         self._sites = sites
+        self.empty_hint = tr("Hali obyekt yo'q. «Yangi obyekt» tugmasi bilan qo'shing — chiqimda shu ro'yxatdan tanlanadi.")
         self._count = StatCard(tr("Obyektlar"), Glyph.PIN, "Accent")
         self._issued = StatCard(tr("Berilgan"), Glyph.ISSUE, "Out")
         self._returned = StatCard(tr("Qaytgan"), Glyph.UNDO, "Good")

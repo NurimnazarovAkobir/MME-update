@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Sequence
 
 from .catalog import display_name
 from .config import CURRENCY
@@ -237,9 +237,15 @@ class Warehouse:
         search: str = "",
         limit: int | None = None,
         warehouse_id: int | None = None,
+        returns: bool | None = None,
     ) -> list[MovementDetails]:
-        """Yozuvlarni eng yangisidan boshlab qaytaradi; `kind` berilmasa — kirim ham, chiqim ham."""
+        """Yozuvlarni eng yangisidan boshlab qaytaradi; `kind` berilmasa — kirim ham, chiqim ham.
+
+        `returns`: True — faqat qaytarishlar, False — qaytarishlarsiz, None — hammasi.
+        """
         where, params = period_filter(period)
+        if returns is not None:
+            where += " AND is_return" if returns else " AND NOT is_return"
         if kind is not None:
             where += " AND kind = ?"
             params.append(kind.value)
@@ -294,9 +300,34 @@ class Warehouse:
         faqat kirimda, `movement.sale_price` faqat chiqimda ishlatiladi.
         `require_group=False` — guruhini dastur o'zi to'ldiradigan yozuvlar uchun (obyektdan qaytish).
         """
-        if require_group and self.group_required and not movement.category.strip():
-            raise WarehouseError(tr("Guruhni tanlang."))
+        self._check_group(movement, require_group)
         return self._store(movement)
+
+    def save_document(self, movements: Sequence[Movement]) -> list[int]:
+        """Bitta hujjatdagi (nakladnoydagi) bir nechta yozuvni birga saqlaydi: yo hammasi, yo hech biri.
+
+        Xato qaysi qatorda ekani xabarda ko'rsatiladi.
+        """
+        if not movements:
+            raise WarehouseError(tr("Kamida bitta mahsulot kiriting."))
+        with self._conn:
+            saved = []
+            for number, movement in enumerate(movements, start=1):
+                try:
+                    self._check_group(movement)
+                    saved.append(self._write(movement))
+                except WarehouseError as error:
+                    raise WarehouseError(tr("{0}-qator: {1}").format(number, error)) from error
+        return saved
+
+    def customers(self) -> list[str]:
+        """Avval sotuv qilingan xaridorlar — sotuvda qayta yozmaslik uchun."""
+        rows = self._conn.execute(
+            "SELECT DISTINCT counterparty FROM movements"
+            " WHERE kind = 'OUT' AND NOT is_return AND sale_price > 0 AND counterparty <> '' AND deleted_at IS NULL"
+            " ORDER BY counterparty"
+        )
+        return [row[0] for row in rows]
 
     def delete_movement(self, movement_id: int) -> None:
         """Yozuvni hisobdan chiqaradi; u «O'chirilgan yozuvlar»da qoladi va tiklanishi mumkin."""
@@ -573,8 +604,17 @@ class Warehouse:
 
     # --- Ichki yordamchilar ------------------------------------------------
 
+    def _check_group(self, movement: Movement, required: bool = True) -> None:
+        if required and self.group_required and not movement.category.strip():
+            raise WarehouseError(tr("Guruhni tanlang."))
+
     def _store(self, movement: Movement) -> int:
-        """Yozuvni tekshiradi va saqlaydi; dastur o'zi yaratadigan yozuvlar ham shu yerdan o'tadi."""
+        """Yozuvni o'z tranzaksiyasida saqlaydi; dastur o'zi yaratadigan yozuvlar ham shu yerdan o'tadi."""
+        with self._conn:
+            return self._write(movement)
+
+    def _write(self, movement: Movement) -> int:
+        """Yozuvni tekshiradi va yozadi. Tranzaksiya ichida chaqiriladi: xato bo'lsa, hammasi bekor bo'ladi."""
         if movement.quantity <= 0:
             raise WarehouseError(tr("Miqdor noldan katta bo'lishi kerak."))
         if movement.price < 0 or movement.sale_price < 0:
@@ -601,44 +641,43 @@ class Warehouse:
             int(movement.on_credit),
             movement.warehouse_id,
         )
-        with self._conn:
-            previous = self.movement(movement.id) if movement.id is not None else None
-            # Eski yozuvning sanasi o'zgarmasa, uni tahrirlashga to'sqinlik qilinmaydi.
-            if movement.date > self._today() and (previous is None or previous.date != movement.date):
-                raise WarehouseError(tr("Sana bugundan keyin bo'lishi mumkin emas."))
-            affected_products = {movement.product_id}
-            if previous is None:
-                cursor = self._conn.execute(
-                    "INSERT INTO movements (kind, date, product_id, quantity, price, sale_price,"
-                    " category, subcategory, person, counterparty, note, doc_number, is_return, on_credit,"
-                    " warehouse_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (*values, movement.created_by),
-                )
-                movement_id = cursor.lastrowid
-            else:
-                affected_products.add(previous.product_id)
-                self._conn.execute(
-                    "UPDATE movements SET kind = ?, date = ?, product_id = ?, quantity = ?, price = ?, sale_price = ?,"
-                    " category = ?, subcategory = ?, person = ?, counterparty = ?, note = ?, doc_number = ?,"
-                    " is_return = ?, on_credit = ?, warehouse_id = ? WHERE id = ?",
-                    (*values, movement.id),
-                )
-                movement_id = movement.id
-            self._recalculate(affected_products)
-            self._remember_site(movement)
-            self._log(
-                HistoryAction.ADD if previous is None else HistoryAction.EDIT,
-                movement.kind.value,
-                movement_id,
-                _describe_movement(self.movement(movement_id)),
-                _describe_movement(previous) if previous else "",
+        previous = self.movement(movement.id) if movement.id is not None else None
+        # Eski yozuvning sanasi o'zgarmasa, uni tahrirlashga to'sqinlik qilinmaydi.
+        if movement.date > self._today() and (previous is None or previous.date != movement.date):
+            raise WarehouseError(tr("Sana bugundan keyin bo'lishi mumkin emas."))
+        affected_products = {movement.product_id}
+        if previous is None:
+            cursor = self._conn.execute(
+                "INSERT INTO movements (kind, date, product_id, quantity, price, sale_price,"
+                " category, subcategory, person, counterparty, note, doc_number, is_return, on_credit,"
+                " warehouse_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (*values, movement.created_by),
             )
+            movement_id = cursor.lastrowid
+        else:
+            affected_products.add(previous.product_id)
+            self._conn.execute(
+                "UPDATE movements SET kind = ?, date = ?, product_id = ?, quantity = ?, price = ?, sale_price = ?,"
+                " category = ?, subcategory = ?, person = ?, counterparty = ?, note = ?, doc_number = ?,"
+                " is_return = ?, on_credit = ?, warehouse_id = ? WHERE id = ?",
+                (*values, movement.id),
+            )
+            movement_id = movement.id
+        self._recalculate(affected_products)
+        self._remember_site(movement)
+        self._log(
+            HistoryAction.ADD if previous is None else HistoryAction.EDIT,
+            movement.kind.value,
+            movement_id,
+            _describe_movement(self.movement(movement_id)),
+            _describe_movement(previous) if previous else "",
+        )
         return movement_id
 
     def _remember_site(self, movement: Movement) -> None:
-        """Chiqimda yozilgan yangi obyekt «Obyektlar» ro'yxatiga o'zi qo'shiladi."""
+        """Chiqimda yozilgan yangi obyekt «Obyektlar» ro'yxatiga o'zi qo'shiladi (sotuvdagi xaridor — yo'q)."""
         name = movement.counterparty.strip()
-        is_issue = movement.kind is MovementKind.OUT and not movement.is_return
+        is_issue = movement.kind is MovementKind.OUT and not movement.is_return and not movement.sale_price
         if is_issue and name and name not in _SYSTEM_COUNTERPARTIES:
             self._conn.execute("INSERT OR IGNORE INTO sites (name) VALUES (?)", (name,))
 
