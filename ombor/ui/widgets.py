@@ -623,6 +623,17 @@ class DataTable(QTableWidget):
         item = self.currentItem()
         return item.data(Qt.ItemDataRole.UserRole) if item and item.isSelected() else None
 
+    def select_id(self, item_id: int) -> None:
+        """Shu id li qatorni tanlaydi; u boshqa sahifada bo'lsa, o'sha sahifani ochadi."""
+        ids = [record[1] for record in self._records]
+        if item_id not in ids:
+            return
+        index = ids.index(item_id)
+        if self._page_size:
+            self.set_page(index // self._page_size)
+            index %= self._page_size
+        self.selectRow(index)
+
     def export_data(self) -> tuple[list[str], list[Sequence]]:
         """Ustun nomlari va formatlanmagan qiymatlar — Excelga chiqarish uchun."""
         return [column.title for column in self._columns], self._rows

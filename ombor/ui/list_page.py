@@ -100,7 +100,10 @@ class ListPage(QWidget):
         self.summary.setSpacing(14)
         layout.addLayout(self.summary)
         layout.addLayout(toolbar)
-        layout.addWidget(table_card(self.table), stretch=1)
+        self.body = QHBoxLayout()  # jadval; voris sinf uning yoniga qo'shimcha panel qo'yishi mumkin
+        self.body.setSpacing(14)
+        self.body.addWidget(table_card(self.table), stretch=3)
+        layout.addLayout(self.body, stretch=1)
         layout.addWidget(self.footer)
 
     def add_recent_cards(self, period: PeriodFilter) -> dict[StatCard, Callable[[date], Period]]:

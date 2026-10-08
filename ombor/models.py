@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import Enum
 
+from .geo import Location
 from .i18n import tr
 
 
@@ -305,6 +306,14 @@ class Site:
     manager: str = ""  # mas'ul shaxs (masalan, prorab)
     note: str = ""
     id: int | None = None
+    latitude: float | None = None  # xaritadagi joyi; kiritilmagan bo'lsa — None
+    longitude: float | None = None
+
+    @property
+    def location(self) -> Location | None:
+        if self.latitude is None or self.longitude is None:
+            return None
+        return Location(self.latitude, self.longitude)
 
 
 @dataclass(frozen=True)

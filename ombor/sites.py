@@ -23,6 +23,7 @@ from .models import (
 from .warehouse import Warehouse
 
 SITE_ENTITY = "site"
+_SITE_COLUMNS = "id, name, address, manager, note, latitude, longitude"
 
 _IS_ISSUE = "(m.kind = 'OUT' AND NOT m.is_return AND m.sale_price = 0)"  # sotuv — obyektga berish emas
 _IS_RETURN = "(m.kind = 'IN' AND m.is_return)"
@@ -47,7 +48,7 @@ class Sites:
         in_period, params = period_filter(period, "m.date")
         rows = self._conn.execute(
             f"""
-            SELECT s.id, s.name, s.address, s.manager, s.note,
+            SELECT s.id, s.name, s.address, s.manager, s.note, s.latitude, s.longitude,
                    COALESCE(SUM(CASE WHEN {_IS_ISSUE} THEN m.quantity * m.price END), 0) AS issued,
                    COALESCE(SUM(CASE WHEN {_IS_RETURN} THEN m.quantity * m.price END), 0) AS returned
             FROM sites s
@@ -65,18 +66,14 @@ class Sites:
         ]
 
     def get(self, site_id: int) -> Site:
-        row = self._conn.execute(
-            "SELECT id, name, address, manager, note FROM sites WHERE id = ?", (site_id,)
-        ).fetchone()
+        row = self._conn.execute(f"SELECT {_SITE_COLUMNS} FROM sites WHERE id = ?", (site_id,)).fetchone()
         if row is None:
             raise WarehouseError(tr("Obyekt topilmadi."))
         return Site(**dict(row))
 
     def find(self, name: str) -> Site | None:
         """Shu nomli obyekt (katta-kichik harf farqsiz); bo'lmasa — None."""
-        row = self._conn.execute(
-            "SELECT id, name, address, manager, note FROM sites WHERE name = ?", (name.strip(),)
-        ).fetchone()
+        row = self._conn.execute(f"SELECT {_SITE_COLUMNS} FROM sites WHERE name = ?", (name.strip(),)).fetchone()
         return Site(**dict(row)) if row else None
 
     def save(self, site: Site) -> int:
@@ -84,19 +81,23 @@ class Sites:
         name = " ".join(site.name.split())
         if not name:
             raise WarehouseError(tr("Obyekt nomini kiriting."))
-        values = (name, site.address.strip(), site.manager.strip(), site.note.strip())
-        saved = Site(*values)
+        values = (name, site.address.strip(), site.manager.strip(), site.note.strip(), site.latitude, site.longitude)
+        saved = Site(name, site.address.strip(), site.manager.strip())
         try:
             with self._conn:
                 if site.id is None:
                     cursor = self._conn.execute(
-                        "INSERT INTO sites (name, address, manager, note) VALUES (?, ?, ?, ?)", values
+                        "INSERT INTO sites (name, address, manager, note, latitude, longitude)"
+                        " VALUES (?, ?, ?, ?, ?, ?)",
+                        values,
                     )
                     self._log(HistoryAction.ADD, cursor.lastrowid, _describe(saved))
                     return cursor.lastrowid
                 previous = self.get(site.id)
                 self._conn.execute(
-                    "UPDATE sites SET name = ?, address = ?, manager = ?, note = ? WHERE id = ?", (*values, site.id)
+                    "UPDATE sites SET name = ?, address = ?, manager = ?, note = ?, latitude = ?, longitude = ?"
+                    " WHERE id = ?",
+                    (*values, site.id),
                 )
                 if previous.name != name:
                     self._rename_in_records(previous.name, name)

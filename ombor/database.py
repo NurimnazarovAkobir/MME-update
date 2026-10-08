@@ -59,7 +59,9 @@ CREATE TABLE IF NOT EXISTS sites (
     name    TEXT NOT NULL UNIQUE COLLATE NOCASE,
     address TEXT NOT NULL DEFAULT '',
     manager TEXT NOT NULL DEFAULT '',  -- mas'ul shaxs
-    note    TEXT NOT NULL DEFAULT ''
+    note    TEXT NOT NULL DEFAULT '',
+    latitude  REAL,  -- xaritadagi joyi (daraja); kiritilmagan bo'lsa — bo'sh
+    longitude REAL
 );
 
 -- Mahsulotni bir ombordan boshqasiga ko'chirish: umumiy qoldiq va tannarx o'zgarmaydi.
@@ -139,6 +141,7 @@ ADDED_COLUMNS = {
         "warehouse_id": "INTEGER NOT NULL DEFAULT 1",
     },
     "history": {"actor_role": "TEXT NOT NULL DEFAULT ''"},
+    "sites": {"latitude": "REAL", "longitude": "REAL"},
     "products": {
         "is_service": "INTEGER NOT NULL DEFAULT 0",
         "barcode": "TEXT NOT NULL DEFAULT ''",

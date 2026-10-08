@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 
 from ..errors import WarehouseError
 from ..formatting import fmt_qty
+from ..geo import parse_location
 from ..i18n import tr
 from ..models import MovementDetails, MovementKind, ProductStock, Site, SiteProduct, SiteReturn
 from ..sites import Sites
@@ -55,15 +56,36 @@ class SiteDialog(FormDialog):
         self._manager = QLineEdit(site.manager if site else "")
         self._manager.setPlaceholderText(tr("Masalan: prorab ismi va telefoni"))
         self._note = QLineEdit(site.note if site else "")
+        self._location = QLineEdit(str(site.location) if site and site.location else "")
+        self._location.setPlaceholderText(tr("41.2856, 69.2034 yoki xarita havolasi (ixtiyoriy)"))
+        location_hint = label(
+            tr(
+                "Google Maps'da joyni sichqonchaning o'ng tugmasi bilan bosing va birinchi qatorni "
+                "(koordinatani) nusxalab, shu yerga qo'ying. Obyekt dasturdagi xaritada ko'rinadi."
+            ),
+            "muted",
+        )
+        location_hint.setWordWrap(True)
 
         self.form.addRow(tr("Nomi *"), self._name)
         self.form.addRow(tr("Manzil"), self._address)
+        self.form.addRow(tr("Joylashuv"), self._location)
+        self.form.addRow("", location_hint)
         self.form.addRow(tr("Mas'ul shaxs"), self._manager)
         self.form.addRow(tr("Izoh"), self._note)
 
     def save(self) -> None:
+        location = parse_location(self._location.text())
         self.saved_id = self._sites.save(
-            Site(self._name.text(), self._address.text(), self._manager.text(), self._note.text(), self._site_id)
+            Site(
+                name=self._name.text(),
+                address=self._address.text(),
+                manager=self._manager.text(),
+                note=self._note.text(),
+                id=self._site_id,
+                latitude=location.latitude if location else None,
+                longitude=location.longitude if location else None,
+            )
         )
 
 
