@@ -77,9 +77,10 @@ class ListPage(QWidget):
             add.clicked.connect(lambda: self._open(None))
             toolbar.addWidget(add)
         toolbar.addLayout(self.toolbar_tools)
+        self._has_actions = has_actions
+        self.table.row_activated.connect(self.activate)
         if has_actions:
             self.table.edit_requested.connect(self._open)
-            self.table.row_activated.connect(self._open)
             self.table.delete_requested.connect(self._delete)
 
         print_button = button(tr("Chop etish"), "print", Glyph.PRINT)
@@ -170,13 +171,25 @@ class ListPage(QWidget):
         self.edit_dialog(item_id).exec()
         self.refresh()  # oyna «Bekor qilish» bilan yopilsa ham, undan oldin saqlangan yozuvlar bo'lishi mumkin
 
+    def activate(self, item_id: int) -> None:
+        """Qatorni ikki marta bosish: odatda — tahrirlash (qator tugmalari bo'lsa)."""
+        if self._has_actions:
+            self._open(item_id)
+
+    def ask_delete(self, item_id: int) -> Callable[[], None] | None:
+        """O'chirishni so'raydi; rozi bo'linsa — bajariladigan amal, aks holda None."""
+        if confirm(self, tr("O'chirish"), self.delete_question, tr("Ha, o'chirish")):
+            return lambda: self.delete_item(item_id)
+        return None
+
     def _delete(self, item_id: int) -> None:
         if not self._is_allowed(item_id):
             return
-        if not confirm(self, tr("O'chirish"), self.delete_question, tr("Ha, o'chirish")):
+        delete = self.ask_delete(item_id)
+        if delete is None:
             return
         try:
-            self.delete_item(item_id)
+            delete()
         except WarehouseError as error:
             QMessageBox.warning(self, tr("O'chirib bo'lmadi"), str(error))
         self.refresh()

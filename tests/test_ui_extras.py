@@ -130,7 +130,7 @@ class StoreUiTests(UiTestCase):
         self.assertIn("100", dialog._stock_hint.text())
         dialog._quantity.setValue(30)
         dialog.save()
-        page = ProductsPage(self.warehouse, Session(self.admin))
+        page = ProductsPage(self.warehouse, self.services.sites, Session(self.admin))
         page.refresh()
         self.assertEqual(page._store.count(), 3)  # «Barcha omborlar» + ikkita ombor
         page._store.setCurrentIndex(page._store.findData(self.site))
@@ -141,7 +141,7 @@ class StoreUiTests(UiTestCase):
         self.assertEqual(stocks["List 2mm"], "0")
 
     def test_inventory_needs_a_store_to_be_chosen(self):
-        page = ProductsPage(self.warehouse, Session(self.admin))
+        page = ProductsPage(self.warehouse, self.services.sites, Session(self.admin))
         page.refresh()
         with mock.patch.object(QMessageBox, "information") as information:
             page._take_inventory()

@@ -51,6 +51,8 @@ class Glyph:
     INFO = "\ue946"
     CHECK = "\ue73e"
     CHEVRON = "\ue76c"
+    FIT = "\ue9a6"  # hammasini ko'rsatish (xaritada)
+    SEARCH = "\ue721"
 
 
 def icon_label(glyph: str, object_name: str = "icon") -> QLabel:

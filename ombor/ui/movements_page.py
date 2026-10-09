@@ -1,8 +1,9 @@
 """Kirim va chiqim sahifasi (ikkalasi uchun bitta sinf)."""
 
 from datetime import date
+from typing import Callable
 
-from PySide6.QtWidgets import QDialog
+from PySide6.QtWidgets import QDialog, QMessageBox
 
 from ..catalog import display_name
 from ..config import CURRENCY
@@ -13,7 +14,7 @@ from ..session import Session
 from ..sites import Sites
 from ..warehouse import Warehouse, display_counterparty, store_name
 from .dialogs import MovementDialog
-from .document_dialog import DocumentDialog
+from .document_dialog import DocumentDialog, can_edit_as_document
 from .icons import Glyph
 from .labels import KindLabels
 from .list_page import ListPage
@@ -138,11 +139,42 @@ class MovementsPage(ListPage):
             stat.set_value(fmt_compact(amount), tr("{0}  ·  {1} ta yozuv").format(CURRENCY, len(found)))
 
     def edit_dialog(self, item_id: int | None) -> QDialog:
-        """Yangi yozuv — bir nechta mahsulotli hujjat; mavjudini tahrirlash — bitta yozuvning to'liq shakli."""
+        """Yangi yozuv va bir nechta mahsulotli hujjat — nakladnoy oynasida; qolgani — bitta yozuvning to'liq shakli."""
         if item_id is None:
             return DocumentDialog(self._warehouse, self._sites, self._labels, self.session.author, self)
+        document = self._changeable_document(item_id)
+        if document:
+            return DocumentDialog(self._warehouse, self._sites, self._labels, self.session.author, self, document)
         movement = self._warehouse.movement(item_id)
         return MovementDialog(self._warehouse, self._labels, self.session.author, movement, self)
+
+    def ask_delete(self, item_id: int) -> Callable[[], None] | None:
+        """Yozuv bir nechta mahsulotli nakladnoyga tegishli bo'lsa, butun nakladnoyni ham o'chirishni taklif qiladi."""
+        document = self._changeable_document(item_id)
+        if not document:
+            return super().ask_delete(item_id)
+        box = QMessageBox(
+            QMessageBox.Icon.Question,
+            tr("O'chirish"),
+            tr("Bu yozuv {0} ta mahsulotli nakladnoyga tegishli. Nimani o'chiramiz?").format(len(document)),
+            parent=self,
+        )
+        whole = box.addButton(tr("Butun nakladnoyni"), QMessageBox.ButtonRole.AcceptRole)
+        single = box.addButton(tr("Faqat shu qatorni"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(tr("Bekor qilish"), QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is whole:
+            return lambda: self._warehouse.delete_document([movement.id for movement in document])
+        if box.clickedButton() is single:
+            return lambda: self.delete_item(item_id)
+        return None
+
+    def _changeable_document(self, item_id: int) -> list[MovementDetails]:
+        """Yozuv tegishli nakladnoy — uni butunligicha tahrirlash yoki o'chirish mumkin bo'lsa; aks holda bo'sh."""
+        document = self._warehouse.document(item_id)
+        if can_edit_as_document(document) and all(self.session.can_change(m) for m in document):
+            return document
+        return []
 
     def delete_item(self, item_id: int) -> None:
         self._warehouse.delete_movement(item_id)

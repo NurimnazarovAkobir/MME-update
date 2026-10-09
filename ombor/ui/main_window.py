@@ -124,7 +124,7 @@ class MainWindow(QMainWindow):
         dashboard.return_requested.connect(self._new_return)
         dashboard.product_requested.connect(self._new_product)
         dashboard.page_requested.connect(self._open_destination)
-        self._products_page = ProductsPage(self._warehouse, session)
+        self._products_page = ProductsPage(self._warehouse, services.sites, session)
         self._products_title = tr("Mahsulotlar")
         # (menyu nomi, belgi, sahifa, bosh sahifadan shu bo'limga o'tish kaliti)
         pages = [

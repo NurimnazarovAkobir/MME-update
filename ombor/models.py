@@ -415,6 +415,21 @@ class Balance:
 
 
 @dataclass(frozen=True)
+class PurchaseLine:
+    """Xarid ro'yxatining qatori: kam qolgan mahsulot, qancha olish kerakligi va oxirgi xaridi."""
+
+    product: ProductStock
+    quantity: float  # olish tavsiya qilinadigan miqdor
+    last_price: float  # oxirgi kirim narxi (1 birlik); xarid bo'lmagan bo'lsa — 0
+    last_supplier: str
+
+    @property
+    def amount(self) -> float:
+        """Taxminiy summa: oxirgi narx bo'yicha."""
+        return self.quantity * self.last_price
+
+
+@dataclass(frozen=True)
 class ImportedProduct:
     """Excel faylidan o'qilgan mahsulot qatori; `stock` > 0 bo'lsa, boshlang'ich kirim yaratiladi."""
 

@@ -18,12 +18,13 @@ from ..config import CURRENCY
 from ..errors import WarehouseError
 from ..formatting import fmt_money, fmt_qty
 from ..i18n import tr
-from ..models import Movement, MovementKind, ProductStock
+from ..models import Movement, MovementDetails, MovementKind, ProductStock
 from ..sites import Sites
 from ..warehouse import Warehouse
 from .dialogs import FormDialog, GroupFields, MovementDialog, product_box
 from .icons import Glyph
 from .labels import KindLabels
+from .printing import print_waybill
 from .site_dialogs import SitePicker
 from .widgets import button, date_input, label, number_input, suggestion_box
 
@@ -43,14 +44,32 @@ class IssueTarget(Enum):
     OTHER = tr("Boshqa rasxod (obyektsiz)")
 
 
+def can_edit_as_document(movements: Sequence[MovementDetails]) -> bool:
+    """Yozuvlarni bitta nakladnoy oynasida tahrirlash mumkinmi.
+
+    Bir nechta mahsulotli, qaytarishsiz va umumiy maydonlari (ombor, kimdan/kimga, kim, izoh,
+    qarzga, sotuv yoki sotuv emasligi) bir xil hujjat — mumkin. Qolgani bittalab to'liq shaklda.
+    """
+    if len(movements) < 2 or any(movement.is_return for movement in movements):
+        return False
+    shared = {
+        (m.warehouse_id, m.counterparty, m.person, m.note, m.on_credit, m.sale_price > 0) for m in movements
+    }
+    return len(shared) == 1
+
+
 class DocumentLine(QObject):
     """Hujjatning bitta qatori: mahsulot, miqdor, birlik va narx maydonlari."""
 
     changed = Signal()
 
-    def __init__(self, products: Sequence[ProductStock], suggests_price: bool):
-        """`suggests_price` — kirimda: mahsulot tanlanganda uning oldingi o'rtacha narxi taklif qilinadi."""
+    def __init__(self, products: Sequence[ProductStock], suggests_price: bool, movement: MovementDetails | None = None):
+        """`suggests_price` — kirimda: mahsulot tanlanganda uning oldingi o'rtacha narxi taklif qilinadi.
+
+        `movement` — tahrirlanayotgan hujjatning shu qatordagi yozuvi (yangi qatorda — None).
+        """
         super().__init__()
+        self.movement = movement
         self._suggests_price = suggests_price
         self._suggested_price = 0.0
         self.product = product_box()
@@ -64,6 +83,12 @@ class DocumentLine(QObject):
         self.remove.setToolTip(tr("Qatorni olib tashlash"))
         self.remove.setAutoDefault(False)
         self.set_products(products)
+        if movement is not None:
+            self.select(movement.product_name)
+            self._show_product()
+            self.quantity.setValue(movement.quantity)
+            self.price.setValue(movement.sale_price if movement.kind is MovementKind.OUT else movement.price)
+            self._on_numbers_changed()
         self.product.currentTextChanged.connect(self._on_product_changed)
         self.unit.currentIndexChanged.connect(self._on_unit_changed)
         self.quantity.valueChanged.connect(self._on_numbers_changed)
@@ -141,11 +166,12 @@ class DocumentLine(QObject):
 
 
 class DocumentDialog(FormDialog):
-    """Yangi kirim yoki chiqim: sana va kimdan/kimga bir marta, mahsulotlar jadvalda qator-qator kiritiladi.
+    """Kirim yoki chiqim hujjati: sana va kimdan/kimga bir marta, mahsulotlar jadvalda qator-qator kiritiladi.
 
     Hammasi birga saqlanadi: biror qatorda xato bo'lsa, hech biri yozilmaydi. Mahsulot tanlangan
     zahoti ostidan yangi bo'sh qator ochiladi. Chiqimda obyekt ro'yxatdan tanlanadi; sotuv va
     obyektsiz rasxod — «Chiqim turi»da. Kam uchraydigan hollar (qaytarish) uchun — «To'liq shakl».
+    `document` berilsa — o'sha hujjat tahrirlanadi (`can_edit_as_document` ga qarang).
     """
 
     def __init__(
@@ -155,17 +181,24 @@ class DocumentDialog(FormDialog):
         labels: KindLabels,
         author: str,
         parent: QWidget | None = None,
+        document: Sequence[MovementDetails] = (),
     ):
-        super().__init__(tr("Yangi {0}").format(labels.title.lower()), parent)
+        super().__init__(
+            tr("{0}ni tahrirlash").format(labels.title) if document else tr("Yangi {0}").format(labels.title.lower()),
+            parent,
+        )
         self.setMinimumWidth(DIALOG_WIDTH)
         self._warehouse = warehouse
+        self._sites = sites
         self._labels = labels
         self._author = author
         self._is_receipt = labels.kind is MovementKind.IN
         self._lines: list[DocumentLine] = []
+        self._removed_ids: list[int] = []  # tahrirlashda olib tashlangan qatorlar yozuvlari
+        self._prints = False  # «Saqlash va chop etish» bosilgan
         self.saved_ids: list[int] = []
 
-        self._date = date_input(allow_future=False)
+        self._date = date_input(document[0].date if document else None, allow_future=False)
         self._store = QComboBox()
         for store in warehouse.stores():
             self._store.addItem(store.name, store.id)
@@ -204,14 +237,26 @@ class DocumentDialog(FormDialog):
         self.add_extra_row(tr("Izoh"), self._note)
         self._groups.group.setToolTip(tr("Tanlanmasa, har bir mahsulotning oxirgi yozuvidagi guruhi olinadi."))
 
-        full_form = button(tr("To'liq shakl"), "link")
-        full_form.setToolTip(tr("Bitta mahsulot uchun barcha maydonlar: qaytarish va boshqa kam uchraydigan hollar"))
-        full_form.setAutoDefault(False)
-        full_form.clicked.connect(self._open_full_form)
-        self.extra_buttons.addWidget(full_form)
+        if not document:
+            full_form = button(tr("To'liq shakl"), "link")
+            full_form.setToolTip(
+                tr("Bitta mahsulot uchun barcha maydonlar: qaytarish va boshqa kam uchraydigan hollar")
+            )
+            full_form.setAutoDefault(False)
+            full_form.clicked.connect(self._open_full_form)
+            self.extra_buttons.addWidget(full_form)
+        save_and_print = button(tr("Saqlash va chop etish"), "print", Glyph.PRINT)
+        save_and_print.setToolTip(tr("Saqlaydi va nakladnoyni chop etish oynasini ochadi"))
+        save_and_print.setAutoDefault(False)
+        save_and_print.clicked.connect(self._save_and_print)
+        self.extra_buttons.addWidget(save_and_print)
 
+        if document:
+            self._fill(document)
         self._add_line()
-        self.show_extras(warehouse.group_required)  # guruh majburiy bo'lsa, u darhol ko'rinib turadi
+        has_extras = any((self._doc_number.text(), self._person.currentText(), self._note.text()))
+        # Guruh majburiy bo'lsa yoki tahrirlanayotgan hujjatda qo'shimcha maydonlar to'ldirilgan bo'lsa — ochiq.
+        self.show_extras(warehouse.group_required or (bool(document) and has_extras))
         self._store.currentIndexChanged.connect(self._reload_products)
         self._target.currentIndexChanged.connect(self._show_target)
         self._show_target()
@@ -224,13 +269,42 @@ class DocumentDialog(FormDialog):
     def save(self) -> None:
         counterparty = self._counterparty()
         self.saved_ids = self._warehouse.save_document(
-            [self._movement(line, counterparty) for line in self._lines if not line.is_blank()]
+            [self._movement(line, counterparty) for line in self._lines if not line.is_blank()], self._removed_ids
         )
+        if self._prints:
+            print_waybill(self, self._warehouse.document(self.saved_ids[0]), self._labels)
+
+    def _save_and_print(self) -> None:
+        self._prints = True
+        try:
+            self.accept()
+        finally:
+            self._prints = False
 
     def line(self, index: int) -> DocumentLine:
         return self._lines[index]
 
     # --- Hujjat maydonlari ---------------------------------------------------
+
+    def _fill(self, document: Sequence[MovementDetails]) -> None:
+        """Tahrirlanadigan hujjatning umumiy maydonlari va qatorlari."""
+        first = document[0]
+        self._store.setCurrentIndex(max(self._store.findData(first.warehouse_id), 0))
+        if self._is_receipt:
+            self._supplier.setCurrentText(first.counterparty)
+        else:
+            site = self._sites.find(first.counterparty) if first.counterparty else None
+            target = IssueTarget.SALE if first.sale_price > 0 else IssueTarget.SITE if site else IssueTarget.OTHER
+            self._target.setCurrentIndex(self._target.findData(target))
+            if site is not None:
+                self._site.select(site.id)
+            self._customer.setCurrentText(first.counterparty if target is IssueTarget.SALE else "")
+        self._doc_number.setText(first.doc_number)
+        self._person.setCurrentText(first.person)
+        self._on_credit.setChecked(first.on_credit)
+        self._note.setText(first.note)
+        for movement in document:
+            self._add_line(movement)
 
     def _target_kind(self) -> IssueTarget | None:
         """Chiqim kimga; kirimda — None."""
@@ -260,7 +334,10 @@ class DocumentDialog(FormDialog):
         price = line.price.value() / line.factor() if self._has_prices() else 0.0
         if self._target_kind() is IssueTarget.SALE and not price:
             raise WarehouseError(tr("«{0}»: sotuv narxini kiriting.").format(product.name))
+        # Guruh: oynada tanlangani; tanlanmagan bo'lsa — qatorning o'z guruhi yoki mahsulotning oxirgi guruhi.
         category, subcategory = self._groups.category(), self._groups.subcategory()
+        if not category and line.movement is not None:
+            category, subcategory = line.movement.category, line.movement.subcategory
         if not category:
             category, subcategory = self._warehouse.last_group(product.id)
         return Movement(
@@ -279,6 +356,7 @@ class DocumentDialog(FormDialog):
             doc_number=self._doc_number.text(),
             on_credit=self._on_credit.isChecked(),
             warehouse_id=self._store.currentData(),
+            id=line.movement.id if line.movement is not None else None,
         )
 
     def _show_target(self) -> None:
@@ -325,8 +403,8 @@ class DocumentDialog(FormDialog):
     def _products(self) -> list[ProductStock]:
         return self._warehouse.products(warehouse_id=self._store.currentData())
 
-    def _add_line(self) -> DocumentLine:
-        line = DocumentLine(self._products(), suggests_price=self._is_receipt)
+    def _add_line(self, movement: MovementDetails | None = None) -> DocumentLine:
+        line = DocumentLine(self._products(), self._is_receipt, movement)
         row = self._table.rowCount()
         self._table.insertRow(row)
         for column, widget in enumerate(line.widgets):
@@ -337,6 +415,8 @@ class DocumentDialog(FormDialog):
         return line
 
     def _remove_line(self, line: DocumentLine) -> None:
+        if line.movement is not None:
+            self._removed_ids.append(line.movement.id)
         row = self._lines.index(line)
         self._lines.pop(row)
         self._table.removeRow(row)

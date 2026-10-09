@@ -13,22 +13,35 @@ from ..formatting import fmt_money
 from ..i18n import tr
 from ..models import StockStatus
 from ..session import Session
+from ..sites import Sites
 from ..warehouse import Warehouse
 from .dialogs import InventoryDialog, ProductDialog
 from .extra_dialogs import TransferDialog
 from .icons import Glyph
 from .list_page import ListPage
+from .product_card import ProductCardDialog
+from .site_dialogs import TableDialog
 from .widgets import Column, ColumnKind, button
 
 EXCEL_FILTER = tr("Excel fayli (*.xlsx)")
 MAX_SKIPPED_SHOWN = 10
 STATUS_COLUMN = 6
+_PURCHASE_COLUMNS = (
+    Column(tr("Mahsulot"), style="strong"),
+    Column(tr("Birlik")),
+    Column(tr("Qoldiq"), ColumnKind.QUANTITY),
+    Column(tr("Minimal qoldiq"), ColumnKind.QUANTITY),
+    Column(tr("Olish kerak"), ColumnKind.QUANTITY, "strong"),
+    Column(tr("Oxirgi narx"), ColumnKind.MONEY),
+    Column(tr("Taxminiy summa"), ColumnKind.MONEY),
+    Column(tr("Oxirgi yetkazib beruvchi")),
+)
 
 
 class ProductsPage(ListPage):
     delete_question = tr("Bu mahsulot ro'yxatdan o'chirilsinmi?")
 
-    def __init__(self, warehouse: Warehouse, session: Session):
+    def __init__(self, warehouse: Warehouse, sites: Sites, session: Session):
         columns = (
             Column(tr("Mahsulot"), style="strong"),
             Column(tr("Qoldiq"), ColumnKind.QUANTITY, "strong"),
@@ -47,6 +60,7 @@ class ProductsPage(ListPage):
             subtitle=tr("Mahsulotlar ro'yxati va ombordagi qoldiq"),
         )
         self._warehouse = warehouse
+        self._sites = sites
         self.empty_hint = tr("Ish mahsulot qo'shishdan boshlanadi: «Yangi mahsulot» tugmasini bosing.")
         # «Holati» — rangli yorliq: yetarli yashil, kam qolgan sariq, tugagan qizil.
         self.table.set_badges(
@@ -63,7 +77,8 @@ class ProductsPage(ListPage):
         self._store = QComboBox()
         self._store.currentIndexChanged.connect(self.refresh)
         self.header_tools.addWidget(self._store)
-        self._only_low = QCheckBox(tr("Faqat kam qolgan va tugaganlar"))
+        self._only_low = QCheckBox(tr("Kam qolganlar"))
+        self._only_low.setToolTip(tr("Faqat kam qolgan va tugagan mahsulotlarni ko'rsatish"))
         self._only_low.toggled.connect(self.refresh)
         self.header_tools.addWidget(self._only_low)
         self._transfer = button(tr("Ko'chirish"), glyph=Glyph.SWITCH)
@@ -71,6 +86,11 @@ class ProductsPage(ListPage):
         self._transfer.clicked.connect(self._move_between_stores)
         if session.can_add:
             self.toolbar_tools.addWidget(self._transfer)
+        purchases = button(tr("Xarid ro'yxati"), glyph=Glyph.SHOP)
+        purchases.setToolTip(tr("Kam qolgan va tugagan mahsulotlar: nimani, qancha va qanchadan olish kerak"))
+        purchases.clicked.connect(self._show_purchase_list)
+        self.toolbar_tools.addWidget(purchases)
+        self.table.setToolTip(tr("Mahsulot kartochkasi — qatorni ikki marta bosing"))
         if session.can_add:
             import_button = button(tr("Exceldan yuklash"), glyph=Glyph.IMPORT)
             import_button.setToolTip(tr("Mahsulotlar ro'yxatini Excel faylidan qo'shish"))
@@ -101,6 +121,36 @@ class ProductsPage(ListPage):
 
     def delete_item(self, item_id: int) -> None:
         self._warehouse.delete_product(item_id)
+
+    def activate(self, item_id: int) -> None:
+        """Qatorni ikki marta bosish — mahsulot kartochkasi (tahrirlash — qatordagi qalam tugmasi)."""
+        ProductCardDialog(self._warehouse, self._sites, item_id, self).exec()
+
+    def _show_purchase_list(self) -> None:
+        lines = self._warehouse.purchase_list()
+        total = sum(line.amount for line in lines)
+        TableDialog(
+            tr("Xarid ro'yxati"),
+            tr(
+                "Kam qolgan va tugagan mahsulotlar. «Olish kerak» — qoldiqni minimal qoldiqning ikki "
+                "barobarigacha to'ldirish uchun. Taxminiy jami: {0} {1}"
+            ).format(fmt_money(total), CURRENCY),
+            _PURCHASE_COLUMNS,
+            [
+                (
+                    line.product.name,
+                    line.product.unit,
+                    line.product.stock,
+                    line.product.min_stock,
+                    line.quantity,
+                    line.last_price,
+                    line.amount,
+                    line.last_supplier,
+                )
+                for line in lines
+            ],
+            self,
+        ).exec()
 
     def _fill_stores(self) -> None:
         """Omborlar ro'yxatini yangilaydi (sozlamalarda yangi ombor qo'shilgan bo'lishi mumkin)."""

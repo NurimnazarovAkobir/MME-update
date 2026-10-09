@@ -218,6 +218,9 @@ class SitePicker(QWidget):
     def site_name(self) -> str:
         return self.combo.currentText() if self.site_id() is not None else ""
 
+    def select(self, site_id: int) -> None:
+        self.combo.setCurrentIndex(self.combo.findData(site_id))
+
     def add_site(self) -> None:
         dialog = SiteDialog(self._sites, parent=self)
         if dialog.exec():

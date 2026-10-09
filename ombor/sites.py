@@ -122,15 +122,20 @@ class Sites:
 
     # --- Berilgan va qaytgan mahsulotlar -------------------------------------
 
-    def products(self, site_id: int | None = None, period: Period = Period()) -> list[SiteProduct]:
+    def products(
+        self, site_id: int | None = None, period: Period = Period(), product_id: int | None = None
+    ) -> list[SiteProduct]:
         """Obyektlar kesimida mahsulotlar: `period` ichida qancha berilgan va qancha qaytgan.
 
-        `site_id` berilmasa — barcha obyektlar bo'yicha.
+        `site_id` berilmasa — barcha obyektlar bo'yicha; `product_id` berilsa — faqat shu mahsulot.
         """
         where, params = period_filter(period, "m.date")
         if site_id is not None:
             where += " AND s.id = ?"
             params.append(site_id)
+        if product_id is not None:
+            where += " AND m.product_id = ?"
+            params.append(product_id)
         rows = self._conn.execute(
             f"""
             SELECT s.name AS site, m.product_id, m.product_name, m.unit,

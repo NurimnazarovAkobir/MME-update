@@ -212,7 +212,7 @@ class DialogTests(UiTestCase):
 
 class OtherPagesTests(UiTestCase):
     def test_products_page_filter_shows_only_products_needing_attention(self):
-        page = ProductsPage(self.warehouse, Session(self.admin))
+        page = ProductsPage(self.warehouse, self.services.sites, Session(self.admin))
         page.refresh()
         self.assertEqual(page.table.rowCount(), 2)
         self.warehouse.save_movement(Movement(MovementKind.OUT, TODAY, self.pipe, 60))  # 40 qoldi, minimal 50

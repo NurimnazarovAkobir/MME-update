@@ -86,6 +86,11 @@ class SiteMap(QWidget):
         self._selected_id = point_id
         self.update()
 
+    def show_all(self) -> None:
+        """Surilgan yoki kattalashtirilgan xaritani yana hamma belgi ko'rinadigan holatga qaytaradi."""
+        self._fitted = False
+        self.update()
+
     def position_of(self, point_id: int) -> QPointF | None:
         """Obyekt belgisining uchi ekranda qayerda; bunday obyekt xaritada bo'lmasa — None."""
         self._fit_if_needed()

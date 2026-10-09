@@ -1,6 +1,6 @@
 """Omborning asosiy amallari: mahsulotlar, kirim va chiqim, o'zgarishlar tarixi."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Callable, Iterable, Sequence
 
@@ -22,12 +22,16 @@ from .models import (
     Period,
     Product,
     ProductStock,
+    PurchaseLine,
     Store,
     Transfer,
 )
 from .settings import Settings
 
 SUGGESTION_FIELDS = ("person", "counterparty")
+# Raqamsiz kiritilgan hujjatga dastur o'zi raqam beradi: K-1, K-2… (kirim), CH-1, CH-2… (chiqim).
+DOC_NUMBER_PREFIXES = {MovementKind.IN: "K-", MovementKind.OUT: "CH-"}
+PURCHASE_TARGET = 2  # xarid ro'yxati: qoldiq minimal qoldiqning shuncha barobarigacha to'ldiriladi
 GROUP_REQUIRED_KEY = "group_required"
 PRODUCT_ENTITY = "product"
 TRANSFER_ENTITY = "transfer"
@@ -238,12 +242,17 @@ class Warehouse:
         limit: int | None = None,
         warehouse_id: int | None = None,
         returns: bool | None = None,
+        product_id: int | None = None,
     ) -> list[MovementDetails]:
         """Yozuvlarni eng yangisidan boshlab qaytaradi; `kind` berilmasa — kirim ham, chiqim ham.
 
         `returns`: True — faqat qaytarishlar, False — qaytarishlarsiz, None — hammasi.
+        `product_id` berilsa — faqat shu mahsulot yozuvlari.
         """
         where, params = period_filter(period)
+        if product_id is not None:
+            where += " AND product_id = ?"
+            params.append(product_id)
         if returns is not None:
             where += " AND is_return" if returns else " AND NOT is_return"
         if kind is not None:
@@ -303,14 +312,21 @@ class Warehouse:
         self._check_group(movement, require_group)
         return self._store(movement)
 
-    def save_document(self, movements: Sequence[Movement]) -> list[int]:
+    def save_document(self, movements: Sequence[Movement], removed_ids: Sequence[int] = ()) -> list[int]:
         """Bitta hujjatdagi (nakladnoydagi) bir nechta yozuvni birga saqlaydi: yo hammasi, yo hech biri.
 
+        `id` si bor yozuvlar yangilanadi, yo'qlari qo'shiladi; `removed_ids` — hujjatdan olib tashlangan
+        yozuvlar (o'chiriladi). Hujjat raqami yozilmagan bo'lsa, dastur o'zi beradi (K-1, CH-1…).
         Xato qaysi qatorda ekani xabarda ko'rsatiladi.
         """
         if not movements:
             raise WarehouseError(tr("Kamida bitta mahsulot kiriting."))
+        if not movements[0].doc_number.strip():
+            number = self._next_doc_number(movements[0].kind)
+            movements = [replace(movement, doc_number=number) for movement in movements]
         with self._conn:
+            for movement_id in removed_ids:
+                self._delete(movement_id)
             saved = []
             for number, movement in enumerate(movements, start=1):
                 try:
@@ -319,6 +335,26 @@ class Warehouse:
                 except WarehouseError as error:
                     raise WarehouseError(tr("{0}-qator: {1}").format(number, error)) from error
         return saved
+
+    def purchase_list(self) -> list[PurchaseLine]:
+        """Kam qolgan va tugagan mahsulotlar: qancha olish kerakligi, oxirgi narxi va kimdan olingani.
+
+        Tavsiya: qoldiqni minimal qoldiqning `PURCHASE_TARGET` barobarigacha to'ldirish
+        (minimal qoldig'i belgilanmagan, tugagan mahsulot uchun — miqdor ko'rsatilmaydi).
+        """
+        lines = []
+        for product in self.products():
+            if not product.needs_attention:
+                continue
+            last = self._conn.execute(
+                "SELECT price, counterparty FROM movements"
+                " WHERE product_id = ? AND kind = 'IN' AND NOT is_return AND deleted_at IS NULL"
+                " AND counterparty NOT IN (?, ?) ORDER BY date DESC, id DESC LIMIT 1",
+                (product.id, INVENTORY_SURPLUS, OPENING_BALANCE),
+            ).fetchone()
+            quantity = max(product.min_stock * PURCHASE_TARGET - product.stock, 0.0)
+            lines.append(PurchaseLine(product, round(quantity, 6), *(tuple(last) if last else (0.0, ""))))
+        return lines
 
     def customers(self) -> list[str]:
         """Avval sotuv qilingan xaridorlar — sotuvda qayta yozmaslik uchun."""
@@ -332,13 +368,13 @@ class Warehouse:
     def delete_movement(self, movement_id: int) -> None:
         """Yozuvni hisobdan chiqaradi; u «O'chirilgan yozuvlar»da qoladi va tiklanishi mumkin."""
         with self._conn:
-            movement = self.movement(movement_id)
-            self._conn.execute(
-                "UPDATE movements SET deleted_at = ?, deleted_by = ? WHERE id = ?",
-                (datetime.now().isoformat(sep=" ", timespec="seconds"), self.actor, movement_id),
-            )
-            self._recalculate({movement.product_id})
-            self._log(HistoryAction.DELETE, movement.kind.value, movement_id, _describe_movement(movement))
+            self._delete(movement_id)
+
+    def delete_document(self, movement_ids: Sequence[int]) -> None:
+        """Hujjatning hamma yozuvini birga o'chiradi (tiklash mumkin); biri o'chmasa, hech biri o'chmaydi."""
+        with self._conn:
+            for movement_id in movement_ids:
+                self._delete(movement_id)
 
     def deleted_movements(self) -> list[MovementDetails]:
         """O'chirilgan yozuvlar, eng oxirgi o'chirilganidan boshlab."""
@@ -603,6 +639,24 @@ class Warehouse:
         return found[:limit] if limit else found
 
     # --- Ichki yordamchilar ------------------------------------------------
+
+    def _next_doc_number(self, kind: MovementKind) -> str:
+        prefix = DOC_NUMBER_PREFIXES[kind]
+        rows = self._conn.execute(
+            "SELECT doc_number FROM movements WHERE kind = ? AND doc_number LIKE ?", (kind.value, f"{prefix}%")
+        )
+        numbers = [int(row[0][len(prefix):]) for row in rows if row[0][len(prefix):].isdigit()]
+        return f"{prefix}{max(numbers, default=0) + 1}"
+
+    def _delete(self, movement_id: int) -> None:
+        """Yozuvni o'chirilganlar qatoriga o'tkazadi. Tranzaksiya ichida chaqiriladi."""
+        movement = self.movement(movement_id)
+        self._conn.execute(
+            "UPDATE movements SET deleted_at = ?, deleted_by = ? WHERE id = ?",
+            (datetime.now().isoformat(sep=" ", timespec="seconds"), self.actor, movement_id),
+        )
+        self._recalculate({movement.product_id})
+        self._log(HistoryAction.DELETE, movement.kind.value, movement_id, _describe_movement(movement))
 
     def _check_group(self, movement: Movement, required: bool = True) -> None:
         if required and self.group_required and not movement.category.strip():

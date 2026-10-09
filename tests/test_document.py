@@ -252,7 +252,7 @@ class PagesTests(DocumentTestCase):
         self.assertIn("120 000", page.footer.text())
 
     def test_empty_table_tells_what_to_do(self):
-        page = ProductsPage(self.warehouse, Session(self.admin))
+        page = ProductsPage(self.warehouse, self.services.sites, Session(self.admin))
         page.show()
         self.assertIn("Yangi mahsulot", page.table.empty_text)
         page.search.setText("yo'q narsa")
