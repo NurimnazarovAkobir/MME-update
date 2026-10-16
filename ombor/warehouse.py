@@ -105,7 +105,13 @@ def _describe_movement(movement: MovementDetails) -> str:
 
 
 def _describe_product(product: Product) -> str:
-    return " · ".join(part for part in (product.name, product.unit, tr("Xizmat") if product.is_service else "") if part)
+    parts = (
+        product.name,
+        product.unit,
+        tr("Xizmat") if product.is_service else "",
+        " / ".join(display_name(name) for name in (product.category, product.subcategory) if name),
+    )
+    return " · ".join(part for part in parts if part)
 
 
 class Warehouse:
@@ -118,10 +124,21 @@ class Warehouse:
 
     # --- Mahsulotlar -------------------------------------------------------
 
-    def products(self, search: str = "", warehouse_id: int | None = None) -> list[ProductStock]:
-        """Mahsulotlar; `warehouse_id` berilsa, qoldiq faqat shu ombor bo'yicha ko'rsatiladi."""
+    def products(
+        self, search: str = "", warehouse_id: int | None = None, category: str = "", subcategory: str = ""
+    ) -> list[ProductStock]:
+        """Mahsulotlar; `warehouse_id` berilsa, qoldiq faqat shu ombor bo'yicha ko'rsatiladi.
+
+        `category` / `subcategory` berilsa — faqat shu guruh (va uning shu kategoriyasi) mahsulotlari.
+        """
         rows = self._conn.execute("SELECT * FROM product_stock ORDER BY name")
-        found = [p for p in map(_to_product, rows) if _matches(search, p.name, p.note, p.barcode)]
+        found = [
+            p
+            for p in map(_to_product, rows)
+            if (not category or p.category == category)
+            and (not subcategory or p.subcategory == subcategory)
+            and _matches(search, p.name, p.note, p.barcode, display_name(p.category), display_name(p.subcategory))
+        ]
         if warehouse_id is not None:
             stocks = warehouse_stocks(self._conn, warehouse_id)
             for product in found:
@@ -174,14 +191,16 @@ class Warehouse:
             barcode,
             alt_unit,
             product.alt_factor if alt_unit else 0,
+            product.category.strip(),
+            product.subcategory.strip() if product.category.strip() else "",
         )
-        saved = Product(name, product.unit.strip(), is_service=product.is_service)
+        saved = replace(product, name=name, unit=product.unit.strip())
         try:
             with self._conn:
                 if product.id is None:
                     cursor = self._conn.execute(
-                        "INSERT INTO products (name, unit, min_stock, note, is_service, barcode, alt_unit, alt_factor)"
-                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO products (name, unit, min_stock, note, is_service, barcode, alt_unit, alt_factor,"
+                        " category, subcategory) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         values,
                     )
                     self._log(HistoryAction.ADD, PRODUCT_ENTITY, cursor.lastrowid, _describe_product(saved))
@@ -193,7 +212,7 @@ class Warehouse:
                     )
                 self._conn.execute(
                     "UPDATE products SET name = ?, unit = ?, min_stock = ?, note = ?, is_service = ?,"
-                    " barcode = ?, alt_unit = ?, alt_factor = ? WHERE id = ?",
+                    " barcode = ?, alt_unit = ?, alt_factor = ?, category = ?, subcategory = ? WHERE id = ?",
                     (*values, product.id),
                 )
                 self._log(
@@ -578,8 +597,12 @@ class Warehouse:
                 )
         return ImportResult(added, skipped)
 
-    def last_group(self, product_id: int) -> tuple[str, str]:
-        """Mahsulotning eng oxirgi yozuvidagi guruh va kichik guruh — yangi yozuvda qayta tanlamaslik uchun."""
+    def default_group(self, product_id: int) -> tuple[str, str]:
+        """Yangi yozuvda taklif qilinadigan guruh va kategoriya: mahsulotning o'z guruhi,
+        u berilmagan bo'lsa — mahsulotning eng oxirgi yozuvidagisi."""
+        own = self._conn.execute("SELECT category, subcategory FROM products WHERE id = ?", (product_id,)).fetchone()
+        if own is not None and own["category"]:
+            return own["category"], own["subcategory"]
         row = self._conn.execute(
             "SELECT category, subcategory FROM movements"
             " WHERE product_id = ? AND category <> '' AND deleted_at IS NULL ORDER BY id DESC LIMIT 1",

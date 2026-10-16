@@ -130,7 +130,7 @@ class FormDialog(QDialog):
 
 
 class GroupFields:
-    """Guruh va kichik guruh tanlash maydonlari: ikkinchisining ro'yxati birinchisiga bog'liq."""
+    """Guruh va kategoriya tanlash maydonlari: ikkinchisining ro'yxati birinchisiga bog'liq."""
 
     def __init__(self):
         self.group = QComboBox()
@@ -155,7 +155,7 @@ class GroupFields:
         return self.subgroup.currentData() or ""
 
     def _fill_subgroups(self, selected: str) -> None:
-        """Tanlangan guruhning kichik guruhlari; guruh tanlanmagan bo'lsa, ro'yxat o'chiq turadi."""
+        """Tanlangan guruhning kategoriyalari; guruh tanlanmagan bo'lsa, ro'yxat o'chiq turadi."""
         group = find_group(self.group.currentData())
         self.subgroup.clear()
         for subgroup in group.subgroups if group else ():
@@ -200,8 +200,14 @@ class ProductDialog(FormDialog):
         self._is_service.setChecked(bool(product and product.is_service))
         self._is_service.toggled.connect(lambda checked: self._min_stock.setEnabled(not checked))
         self._min_stock.setEnabled(not self._is_service.isChecked())
+        self._groups = GroupFields()
+        if product:
+            self._groups.select(product.category, product.subcategory)
+        self._groups.group.setToolTip(tr("Kirim va chiqimda shu guruh o'zi taklif qilinadi."))
 
         self.form.addRow(tr("Nomi *"), self._name)
+        self.form.addRow(tr("Guruh"), self._groups.group)
+        self.form.addRow(tr("Kategoriya"), self._groups.subgroup)
         self.form.addRow(tr("O'lchov birligi *"), self._unit)
         self.form.addRow(tr("Qo'shimcha birlik"), alt_row)
         self.form.addRow(tr("Minimal qoldiq"), self._min_stock)
@@ -228,6 +234,8 @@ class ProductDialog(FormDialog):
                 barcode=self._barcode.text(),
                 alt_unit=self._alt_unit.currentText(),
                 alt_factor=self._alt_factor.value(),
+                category=self._groups.category(),
+                subcategory=self._groups.subcategory(),
             )
         )
 
@@ -314,7 +322,7 @@ class MovementDialog(FormDialog):
         self.form.addRow(labels.counterparty, self._counterparty)
         if warehouse.group_required:
             self.form.addRow(tr("Guruh *"), self._groups.group)
-            self.form.addRow(tr("Kichik guruh"), self._groups.subgroup)
+            self.form.addRow(tr("Kategoriya"), self._groups.subgroup)
 
         self.add_extra_row(tr("Hujjat №"), self._doc_number)
         if not self._has_price:
@@ -326,7 +334,7 @@ class MovementDialog(FormDialog):
         self.add_extra_row("", self._on_credit)
         if not warehouse.group_required:
             self.add_extra_row(tr("Guruh"), self._groups.group)
-            self.add_extra_row(tr("Kichik guruh"), self._groups.subgroup)
+            self.add_extra_row(tr("Kategoriya"), self._groups.subgroup)
         self.add_extra_row(labels.person, self._person)
         self.add_extra_row(tr("Izoh"), self._note)
 
@@ -472,8 +480,8 @@ class MovementDialog(FormDialog):
         self._quantity.setSuffix(f" {product.unit}" if product and self._unit.count() == 1 else "")
         if product is not None:
             self._suggest_price(product)
-            if self._movement_id is None:  # yangi yozuvda shu mahsulotning oxirgi guruhi taklif qilinadi
-                self._groups.select(*self._warehouse.last_group(product.id))
+            if self._movement_id is None:  # yangi yozuvda shu mahsulotning guruhi taklif qilinadi
+                self._groups.select(*self._warehouse.default_group(product.id))
         self._update_amount()
 
     def _suggest_price(self, product: ProductStock) -> None:

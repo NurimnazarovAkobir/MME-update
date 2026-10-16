@@ -10,7 +10,7 @@ from . import i18n, update
 from .auth import Auth, LockedAuth
 from .backup import copy_before_upgrade
 from .config import APP_NAME, BACKUP_DIR, DB_PATH
-from .database import NewerDatabaseError, connect
+from .database import NewerDatabaseError, connect, reopen
 from .driver import sqlite3
 from .errors import WarehouseError
 from .i18n import tr
@@ -152,7 +152,8 @@ def run() -> int:
 
     conn, user = opened
     try:
-        services = Services.create(conn, BACKUP_DIR, prefs, vault)
+        key = vault.key if vault.unlocked else None
+        services = Services.create(conn, BACKUP_DIR, prefs, vault, reconnect=lambda: reopen(DB_PATH, key))
         services.backup.run_automatic()
         window = MainWindow(services, Session(user), DB_PATH)
         window.showMaximized()

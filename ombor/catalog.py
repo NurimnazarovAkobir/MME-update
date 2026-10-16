@@ -1,4 +1,4 @@
-"""Tovar va xizmatlar guruhlari hamda kichik guruhlari (ikki tilda).
+"""Tovar va xizmatlar guruhlari hamda ularning kategoriyalari (ikki tilda): guruh → kategoriya.
 
 Yozuvlarda ruscha nom saqlanadi (asl ro'yxat rus tilida berilgan); ekranda tanlangan
 tilga qarab ko'rsatiladi. Ro'yxatda yo'q qiymat (eski versiyadan qolgan yoki
@@ -163,7 +163,7 @@ def find_group(stored: str) -> Group | None:
 
 
 def display_name(stored: str) -> str:
-    """Guruh yoki kichik guruhning tanlangan tildagi nomi; ro'yxatda yo'q qiymat o'zgarishsiz qaytadi."""
+    """Guruh yoki kategoriyaning tanlangan tildagi nomi; ro'yxatda yo'q qiymat o'zgarishsiz qaytadi."""
     name = _display.get(stored)
     return name.display if name else stored
 
@@ -203,7 +203,7 @@ class GroupCatalog:
         self._conn = conn
 
     def add(self, uz: str, ru: str = "", parent_id: int | None = None) -> int:
-        """Guruh (yoki `parent_id` berilsa, kichik guruh) qo'shadi; ruscha nom bo'sh bo'lsa, o'zbekchasi olinadi."""
+        """Guruh (yoki `parent_id` berilsa, kategoriya) qo'shadi; ruscha nom bo'sh bo'lsa, o'zbekchasi olinadi."""
         uz, ru = self._names(uz, ru)
         self._check_unique(ru, parent_id)
         with self._conn:
@@ -212,24 +212,25 @@ class GroupCatalog:
         return cursor.lastrowid
 
     def rename(self, group_id: int, uz: str, ru: str = "") -> None:
-        """Nomini o'zgartiradi; shu guruh yozilgan kirim va chiqimlar ham yangi nomga o'tadi."""
+        """Nomini o'zgartiradi; shu guruh yozilgan mahsulotlar, kirim va chiqimlar ham yangi nomga o'tadi."""
         uz, ru = self._names(uz, ru)
         row = self._row(group_id)
         self._check_unique(ru, row["parent_id"], except_id=group_id)
         with self._conn:
             self._conn.execute("UPDATE groups SET ru = ?, uz = ? WHERE id = ?", (ru, uz, group_id))
-            if row["parent_id"] is None:
-                self._conn.execute("UPDATE movements SET category = ? WHERE category = ?", (ru, row["ru"]))
-            else:
-                parent = self._row(row["parent_id"])
-                self._conn.execute(
-                    "UPDATE movements SET subcategory = ? WHERE category = ? AND subcategory = ?",
-                    (ru, parent["ru"], row["ru"]),
-                )
+            for table in ("movements", "products"):
+                if row["parent_id"] is None:
+                    self._conn.execute(f"UPDATE {table} SET category = ? WHERE category = ?", (ru, row["ru"]))
+                else:
+                    parent = self._row(row["parent_id"])
+                    self._conn.execute(
+                        f"UPDATE {table} SET subcategory = ? WHERE category = ? AND subcategory = ?",
+                        (ru, parent["ru"], row["ru"]),
+                    )
         load(self._conn)
 
     def delete(self, group_id: int) -> None:
-        """Ro'yxatdan olib tashlaydi (kichik guruhlari bilan); eski yozuvlardagi nomi o'z holicha qoladi."""
+        """Ro'yxatdan olib tashlaydi (kategoriyalari bilan); eski yozuvlardagi nomi o'z holicha qoladi."""
         with self._conn:
             self._conn.execute("DELETE FROM groups WHERE parent_id = ?", (group_id,))
             self._conn.execute("DELETE FROM groups WHERE id = ?", (group_id,))

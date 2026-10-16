@@ -46,7 +46,7 @@ def _columns(labels: KindLabels) -> tuple[Column, ...]:
         )
     end = (
         Column(tr("Guruh")),
-        Column(tr("Kichik guruh")),
+        Column(tr("Kategoriya")),
         Column(labels.person),
         Column(labels.counterparty),
         Column(tr("Belgi")),
@@ -103,7 +103,7 @@ class MovementsPage(ListPage):
         # Hech bir yozuvda to'ldirilmagan bo'lsa, yashiriladigan ustunlar: jadval oynaga sig'ishi uchun.
         titles = [column.title for column in _columns(labels)]
         self._optional_columns = [
-            titles.index(title) for title in (tr("Hujjat №"), tr("Guruh"), tr("Kichik guruh"), tr("Belgi"), tr("Izoh"))
+            titles.index(title) for title in (tr("Hujjat №"), tr("Guruh"), tr("Kategoriya"), tr("Belgi"), tr("Izoh"))
         ]
         self._period = PeriodFilter()
         self._period.changed.connect(self.refresh)

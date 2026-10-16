@@ -6,12 +6,13 @@ from pathlib import Path
 from PySide6.QtCore import QStandardPaths
 from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QFileDialog, QMessageBox
 
+from ..catalog import display_name, find_group, groups
 from ..config import CURRENCY
 from ..errors import WarehouseError
 from ..excel_import import COLUMNS, read_products, write_template
 from ..formatting import fmt_money
 from ..i18n import tr
-from ..models import StockStatus
+from ..models import ProductStock, StockStatus
 from ..session import Session
 from ..sites import Sites
 from ..warehouse import Warehouse
@@ -25,7 +26,7 @@ from .widgets import Column, ColumnKind, button
 
 EXCEL_FILTER = tr("Excel fayli (*.xlsx)")
 MAX_SKIPPED_SHOWN = 10
-STATUS_COLUMN = 6
+STATUS_COLUMN = 7
 _PURCHASE_COLUMNS = (
     Column(tr("Mahsulot"), style="strong"),
     Column(tr("Birlik")),
@@ -38,12 +39,17 @@ _PURCHASE_COLUMNS = (
 )
 
 
+def _group_title(product: ProductStock) -> str:
+    return " / ".join(display_name(name) for name in (product.category, product.subcategory) if name)
+
+
 class ProductsPage(ListPage):
     delete_question = tr("Bu mahsulot ro'yxatdan o'chirilsinmi?")
 
     def __init__(self, warehouse: Warehouse, sites: Sites, session: Session):
         columns = (
             Column(tr("Mahsulot"), style="strong"),
+            Column(tr("Guruh / kategoriya")),
             Column(tr("Qoldiq"), ColumnKind.QUANTITY, "strong"),
             Column(tr("Birlik")),
             Column(tr("Minimal qoldiq"), ColumnKind.QUANTITY),
@@ -77,6 +83,14 @@ class ProductsPage(ListPage):
         self._store = QComboBox()
         self._store.currentIndexChanged.connect(self.refresh)
         self.header_tools.addWidget(self._store)
+        self._group = QComboBox()
+        self._group.setToolTip(tr("Faqat shu guruh mahsulotlari"))
+        self._category = QComboBox()
+        self._category.setToolTip(tr("Faqat guruhning shu kategoriyasi"))
+        self._group.currentIndexChanged.connect(self._fill_categories)
+        self._category.currentIndexChanged.connect(self.refresh)
+        self.header_tools.addWidget(self._group)
+        self.header_tools.addWidget(self._category)
         self._only_low = QCheckBox(tr("Kam qolganlar"))
         self._only_low.setToolTip(tr("Faqat kam qolgan va tugagan mahsulotlarni ko'rsatish"))
         self._only_low.toggled.connect(self.refresh)
@@ -104,9 +118,13 @@ class ProductsPage(ListPage):
 
     def refresh(self) -> None:
         self._fill_stores()
+        self._fill_groups()
         products = self._shown_products()
         self.table.set_rows(
-            [(p.name, p.stock, p.unit, p.min_stock, p.average_price, p.value, p.status.value) for p in products],
+            [
+                (p.name, _group_title(p), p.stock, p.unit, p.min_stock, p.average_price, p.value, p.status.value)
+                for p in products
+            ],
             ids=[p.id for p in products],
             flagged=[index for index, p in enumerate(products) if p.needs_attention],
         )
@@ -166,8 +184,37 @@ class ProductsPage(ListPage):
         self._store.setVisible(len(stores) > 1)
         self._transfer.setVisible(len(stores) > 1)
 
+    def _fill_groups(self) -> None:
+        """Guruhlar ro'yxati (sozlamalarda o'zgargan bo'lishi mumkin); tanlov saqlanadi."""
+        selected = self._group.currentData()
+        self._group.blockSignals(True)
+        self._group.clear()
+        self._group.addItem(tr("Barcha guruhlar"), "")
+        for group in groups():
+            self._group.addItem(group.name.display, group.name.ru)
+        self._group.setCurrentIndex(max(self._group.findData(selected), 0))
+        self._group.blockSignals(False)
+        self._fill_categories(refresh=False)
+
+    def _fill_categories(self, _index: int = 0, refresh: bool = True) -> None:
+        """Tanlangan guruhning kategoriyalari; guruh tanlanmagan bo'lsa, ro'yxat yashirin."""
+        group = find_group(self._group.currentData())
+        selected = self._category.currentData()
+        self._category.blockSignals(True)
+        self._category.clear()
+        self._category.addItem(tr("Barcha kategoriyalar"), "")
+        for category in group.subgroups if group else ():
+            self._category.addItem(category.display, category.ru)
+        self._category.setCurrentIndex(max(self._category.findData(selected), 0))
+        self._category.blockSignals(False)
+        self._category.setVisible(self._category.count() > 1)
+        if refresh:
+            self.refresh()
+
     def _shown_products(self) -> list:
-        products = self._warehouse.products(self.search.text(), self._store.currentData())
+        products = self._warehouse.products(
+            self.search.text(), self._store.currentData(), self._group.currentData(), self._category.currentData()
+        )
         return [p for p in products if p.needs_attention] if self._only_low.isChecked() else products
 
     def _move_between_stores(self) -> None:
@@ -186,7 +233,9 @@ class ProductsPage(ListPage):
             )
             return
         store = store or stores[0]
-        products = self._warehouse.products(self.search.text(), store.id)
+        products = self._warehouse.products(
+            self.search.text(), store.id, self._group.currentData(), self._category.currentData()
+        )
         dialog = InventoryDialog(
             self._warehouse, products, self.session.author, self, store if len(stores) > 1 else None
         )

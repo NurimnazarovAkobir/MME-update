@@ -126,6 +126,8 @@ class Product:
     barcode: str = ""
     alt_unit: str = ""  # qo'shimcha o'lchov birligi (masalan, asosiysi kg bo'lsa — tonna)
     alt_factor: float = 0.0  # 1 qo'shimcha birlik = shuncha asosiy birlik
+    category: str = ""  # mahsulot guruhi (catalog.py; ruscha nomi saqlanadi)
+    subcategory: str = ""  # guruh ichidagi kategoriya
 
     @property
     def has_alt_unit(self) -> bool:
@@ -192,7 +194,7 @@ class Movement:
 
     `price` — kirimda sotib olish narxi; chiqimda tannarx (dastur o'zi hisoblaydi).
     `sale_price` — chiqim sotuv bo'lsa, sotuv narxi; 0 — ichki rasxod.
-    `category`, `subcategory` — tovar va xizmatlar guruhi va kichik guruhi (catalog.py).
+    `category`, `subcategory` — tovar va xizmatlar guruhi va kategoriyasi (catalog.py).
     `person` — kirimda kim olib kelgani, chiqimda kim olgani.
     `counterparty` — kirimda yetkazib beruvchi, chiqimda obyekt.
     `created_by` — yozuvni kiritgan foydalanuvchi; keyin o'zgarmaydi.
@@ -438,3 +440,92 @@ class ImportedProduct:
     min_stock: float = 0.0
     stock: float = 0.0
     price: float = 0.0
+
+
+class PaymentMethod(Enum):
+    """Oylik qanday berilgani."""
+
+    TRANSFER = "transfer"  # bankka perechisleniye
+    CARD = "card"
+    CASH = "cash"
+
+    @property
+    def title(self) -> str:
+        return {
+            PaymentMethod.TRANSFER: tr("Perechisleniye"),
+            PaymentMethod.CARD: tr("Karta"),
+            PaymentMethod.CASH: tr("Naqd"),
+        }[self]
+
+
+@dataclass(frozen=True)
+class Employee:
+    """Xodim: oylik maoshi bilan. Ishdan ketgani (`active` = False) ro'yxatda yashiriladi, to'lovlari qoladi."""
+
+    name: str
+    position: str = ""
+    salary: float = 0.0
+    note: str = ""
+    active: bool = True
+    id: int | None = None
+
+
+@dataclass(frozen=True)
+class SalaryPayment:
+    """Oylik to'lovi. `month` — qaysi oy uchun (oyning birinchi kuni), `date` — to'langan kun."""
+
+    employee_id: int
+    date: date
+    month: date
+    amount: float
+    method: PaymentMethod
+    note: str = ""
+    created_by: str = ""
+    id: int | None = None
+    employee_name: str = ""
+
+
+@dataclass(frozen=True)
+class SalaryLine:
+    """Bitta xodimning bir oydagi hisob-kitobi: hisoblangan oylik va qanday usulda qancha to'langani."""
+
+    employee_id: int
+    name: str
+    position: str
+    salary: float
+    paid: dict[PaymentMethod, float]
+
+    @property
+    def total_paid(self) -> float:
+        return sum(self.paid.values())
+
+    @property
+    def remaining(self) -> float:
+        """Qolgan qarz; manfiy bo'lsa — ortiqcha (avans) to'langan."""
+        return self.salary - self.total_paid
+
+
+@dataclass(frozen=True)
+class PriceChange:
+    """Mahsulotning tanlangan davrdagi xarid narxi: birinchi va oxirgi xarid, eng past va eng yuqori narx."""
+
+    product_id: int
+    name: str
+    unit: str
+    first_date: date
+    first_price: float
+    last_date: date
+    last_price: float
+    min_price: float
+    max_price: float
+    purchases: int
+    last_supplier: str = ""
+
+    @property
+    def difference(self) -> float:
+        return self.last_price - self.first_price
+
+    @property
+    def percent(self) -> float:
+        """Narx necha foizga o'zgargan (birinchi xaridga nisbatan)."""
+        return self.difference / self.first_price * 100 if self.first_price else 0.0

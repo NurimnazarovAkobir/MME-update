@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .analytics import Analytics
 from .auth import Auth
@@ -10,6 +11,8 @@ from .catalog import GroupCatalog
 from .debts import Debts
 from .driver import sqlite3
 from .local import LocalPrefs
+from .payroll import Payroll
+from .pricing import PriceControl
 from .reports import Reports
 from .settings import Settings
 from .sites import Sites
@@ -28,9 +31,13 @@ class Services:
     debts: Debts
     sites: Sites
     groups: GroupCatalog
+    payroll: Payroll
+    prices: PriceControl
     prefs: LocalPrefs  # shu kompyuterning shaxsiy sozlamalari
     vault: Vault | None  # baza shifrlangan bo'lsa — uning kaliti
     conn: sqlite3.Connection
+    # Shu bazaga yangi ulanish ochadi (fonda sinxronlash uchun); xotiradagi bazada — None.
+    reconnect: Callable[[], sqlite3.Connection] | None = None
 
     @classmethod
     def create(
@@ -39,6 +46,7 @@ class Services:
         backup_folder: Path,
         prefs: LocalPrefs | None = None,
         vault: Vault | None = None,
+        reconnect: Callable[[], sqlite3.Connection] | None = None,
     ) -> "Services":
         """`prefs` berilmasa — faqat xotirada turadigan sozlamalar; `vault` — baza shifrlangan bo'lsa."""
         warehouse = Warehouse(conn)
@@ -52,7 +60,10 @@ class Services:
             debts=Debts(conn),
             sites=Sites(conn, warehouse),
             groups=GroupCatalog(conn),
+            payroll=Payroll(conn),
+            prices=PriceControl(conn),
             prefs=prefs or LocalPrefs(),
             vault=vault,
             conn=conn,
+            reconnect=reconnect,
         )

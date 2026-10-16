@@ -163,7 +163,7 @@ class Sites:
         o'sha qiymatda qaytadi. Guruhi mahsulotning oxirgi yozuvidan olinadi.
         """
         site = self.get(site_return.site_id)
-        category, subcategory = self._warehouse.last_group(site_return.product_id)
+        category, subcategory = self._warehouse.default_group(site_return.product_id)
         return self._warehouse.save_movement(
             Movement(
                 kind=MovementKind.IN,

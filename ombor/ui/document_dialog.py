@@ -232,7 +232,7 @@ class DocumentDialog(FormDialog):
         self.add_extra_row(tr("Hujjat №"), self._doc_number)
         self.add_extra_row(labels.person, self._person)
         self.add_extra_row(tr("Guruh *") if warehouse.group_required else tr("Guruh"), self._groups.group)
-        self.add_extra_row(tr("Kichik guruh"), self._groups.subgroup)
+        self.add_extra_row(tr("Kategoriya"), self._groups.subgroup)
         self.add_extra_row("", self._on_credit)
         self.add_extra_row(tr("Izoh"), self._note)
         self._groups.group.setToolTip(tr("Tanlanmasa, har bir mahsulotning oxirgi yozuvidagi guruhi olinadi."))
@@ -339,7 +339,7 @@ class DocumentDialog(FormDialog):
         if not category and line.movement is not None:
             category, subcategory = line.movement.category, line.movement.subcategory
         if not category:
-            category, subcategory = self._warehouse.last_group(product.id)
+            category, subcategory = self._warehouse.default_group(product.id)
         return Movement(
             kind=self._labels.kind,
             date=self._date.date().toPython(),

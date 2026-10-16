@@ -10,6 +10,7 @@ from .driver import sqlite3
 from .errors import WarehouseError
 from .i18n import tr
 from .migrations import SCHEMA_VERSION
+from .replication import Replica
 from .settings import Settings
 from .vault import KEY_SUFFIX, Vault
 
@@ -78,8 +79,13 @@ class Backup:
             self._vault.copy_key_file(Path(path).with_suffix(KEY_SUFFIX))
 
     def restore_from(self, path: Path | str) -> None:
-        """Mahsulot va yozuvlarni zaxira fayldagilar bilan almashtiradi; foydalanuvchilar va sozlamalar qoladi."""
+        """Mahsulot va yozuvlarni zaxira fayldagilar bilan almashtiradi; foydalanuvchilar va sozlamalar qoladi.
+
+        Markaziy server bilan sinxronlash yoqilgan bo'lsa, tiklangan holat serverga ham yuboriladi
+        (boshqa kompyuterlarda ham shunday bo'ladi).
+        """
         preserved = {table: self._dump(table) for table in PRESERVED_TABLES}
+        was_synced = Replica(self._conn).enabled
         converted = Path(str(path) + ".shifrlangan")  # ochiq nusxani shifrlangan bazaga tiklashda kerak bo'ladi
         try:
             source = self._open_source(Path(path), converted)
@@ -101,6 +107,8 @@ class Backup:
                     self._conn.execute(
                         f"INSERT INTO {table} ({', '.join(row.keys())}) VALUES ({placeholders})", tuple(row)
                     )
+        if was_synced:
+            Replica(self._conn).mark_restored()
 
     def _open_source(self, path: Path, converted: Path) -> sqlite3.Connection:
         """Zaxira faylni joriy baza bilan bir xil kalitda ochadi.

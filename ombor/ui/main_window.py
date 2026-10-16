@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import catalog
 from ..config import APP_NAME, APP_VERSION
 from ..driver import sqlite3
 from ..i18n import tr
@@ -28,6 +29,7 @@ from ..services import Services
 from ..session import Session
 from ..tiles import TileStore
 from . import theme
+from .accounting_page import AccountingPage
 from .dashboard_page import DashboardPage, Destination
 from .debts_page import DebtsPage
 from .dialogs import ProductDialog
@@ -37,7 +39,9 @@ from .icon import app_icon, icon_pixmap
 from .icons import Glyph, icon_label, menu_icon
 from .labels import LABELS
 from .language import sign_out
+from .lock_screen import AutoLock, lock_minutes
 from .movements_page import MovementsPage
+from .prices_page import PricesPage
 from .printing import set_firm_name
 from .products_page import ProductsPage
 from .reports_page import ReportsPage
@@ -45,6 +49,7 @@ from .returns_page import ReturnsPage
 from .settings_page import SettingsPage
 from .site_dialogs import ReturnDialog
 from .sites_page import SitesPage
+from .sync_controller import SyncController, describe
 from .tile_loader import TileLoader
 from .update_page import UpdatePage
 from .widgets import button, label
@@ -55,6 +60,7 @@ LOGO_SIZE = 48
 MENU_ICON_SIZE = 20
 # Istalgan sahifadan yangi yozuv ochadigan tugmalar (bosh sahifadagi katta tugmalar yordam yozuvida ham bor).
 NEW_RECEIPT_KEY, NEW_ISSUE_KEY, NEW_PRODUCT_KEY, NEW_RETURN_KEY = "F2", "F3", "F4", "F5"
+LOCK_KEY = "Ctrl+L"
 REFRESH_INTERVAL_MS = 10_000
 MAP_FOLDER = "xarita"  # yuklab olingan xarita rasmlari (shu kompyuterning shaxsiy papkasida)
 NOTIFICATION_MS = 15_000
@@ -113,7 +119,7 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self.setMinimumSize(1100, 680)
         self._warehouse = services.warehouse
-        for service in (self._warehouse, services.debts, services.sites):
+        for service in (self._warehouse, services.debts, services.sites, services.payroll):
             service.actor = session.author  # o'zgarishlar tarixiga shu ism va lavozim yoziladi
             service.actor_role = session.user.role.value
         self._session = session
@@ -126,6 +132,11 @@ class MainWindow(QMainWindow):
         dashboard.page_requested.connect(self._open_destination)
         self._products_page = ProductsPage(self._warehouse, services.sites, session)
         self._products_title = tr("Mahsulotlar")
+        self._prices = services.prices
+        self._prices_page = PricesPage(services.prices, session)
+        self._prices_page.review_changed.connect(self._update_price_badge)
+        self._sync = SyncController(services.prefs, services.reconnect, self)
+        self._sync.finished.connect(self._show_sync_result)
         # (menyu nomi, belgi, sahifa, bosh sahifadan shu bo'limga o'tish kaliti)
         pages = [
             (tr("Bosh sahifa"), Glyph.HOME, dashboard, None),
@@ -150,8 +161,11 @@ class MainWindow(QMainWindow):
                 ReportsPage(services.reports, services.analytics, self._warehouse, services.sites),
                 Destination.REPORTS,
             ),
+            (tr("Narx nazorati"), Glyph.TAG, self._prices_page, None),
             (tr("Qarzlar"), Glyph.MONEY, DebtsPage(services.debts, session), None),
+            (tr("Buxgalteriya"), Glyph.PEOPLE, AccountingPage(services.payroll, services.auth, session), None),
         ]
+        self._prices_row = next(row for row, page in enumerate(pages) if page[2] is self._prices_page)
         service_row = len(pages)  # shu qatordan boshlab — kam ishlatiladigan bo'limlar (chiziq bilan ajratiladi)
         pages.append((tr("Tarix"), Glyph.CLOCK, HistoryPage(self._warehouse, session), None))
         self._update_title = tr("Yangilash")
@@ -162,8 +176,9 @@ class MainWindow(QMainWindow):
         self._tray: QSystemTrayIcon | None = None
         self._update_row = len(pages)
         pages.append((self._update_title, Glyph.SYNC, update_page, None))
-        settings_page = SettingsPage(services, session, db_path)
+        settings_page = SettingsPage(services, session, db_path, self._sync)
         settings_page.firm_name_changed.connect(self._show_firm_name)
+        settings_page.lock_minutes_changed.connect(lambda minutes: self._auto_lock.set_minutes(minutes))
         self._settings_page = settings_page
         pages.append((tr("Sozlamalar"), Glyph.SETTINGS, settings_page, None))
 
@@ -193,10 +208,17 @@ class MainWindow(QMainWindow):
         sidebar.setSpacing(12)
         sidebar.addLayout(self._brand(session))
         sidebar.addWidget(self._menu, stretch=1)
+        self._sync_status = label("", "syncStatus")
+        self._sync_status.setVisible(self._sync.configured)
+        sidebar.addWidget(self._sync_status)
         sidebar.addWidget(version)
         sign_out_button = button(tr("Chiqish"), "danger", Glyph.SIGN_OUT)
         sign_out_button.setToolTip(tr("Hisobdan chiqish va boshqa foydalanuvchi bilan kirish"))
         sign_out_button.clicked.connect(lambda: sign_out(self))
+        lock_button = button(tr("Qulflash"), glyph=Glyph.LOCK)
+        lock_button.setToolTip(tr("Dasturni qulflash: davom etish uchun parol so'raladi ({0})").format(LOCK_KEY))
+        lock_button.clicked.connect(lambda: self._auto_lock.lock())
+        sidebar.addWidget(lock_button)
         sidebar.addWidget(sign_out_button)
 
         central = QWidget()
@@ -217,6 +239,8 @@ class MainWindow(QMainWindow):
             QShortcut(QKeySequence(NEW_ISSUE_KEY), self, lambda: self._new_movement(MovementKind.OUT))
             QShortcut(QKeySequence(NEW_PRODUCT_KEY), self, self._new_product)
             QShortcut(QKeySequence(NEW_RETURN_KEY), self, self._new_return)
+        QShortcut(QKeySequence(LOCK_KEY), self, lambda: self._auto_lock.lock())
+        self._auto_lock = AutoLock(self, services.auth, session.user, lock_minutes(services.prefs, session.user))
         self._menu.setCurrentRow(0)
         self._show_firm_name(self._settings.firm_name(APP_NAME))
 
@@ -226,6 +250,24 @@ class MainWindow(QMainWindow):
         self._watcher = QTimer(self)
         self._watcher.timeout.connect(self._refresh_if_changed_elsewhere)
         self._watcher.start(REFRESH_INTERVAL_MS)
+        self._update_price_badge()
+        if self._sync.configured:
+            self._sync_status.setText(describe(None)[0])
+            self._sync.start()
+
+    def closeEvent(self, event) -> None:
+        """Boshlangan sinxronlash tugashi kutiladi: baza yopilayotganda u yarim qolmasligi kerak."""
+        self._sync.stop()
+        super().closeEvent(event)
+
+    def _show_sync_result(self, result) -> None:
+        """Yon menyudagi holat; boshqa kompyuterlardan o'zgarish kelgan bo'lsa — ochiq sahifa darhol yangilanadi."""
+        text, details = describe(result)
+        self._sync_status.setVisible(self._sync.configured)
+        self._sync_status.setText(text)
+        self._sync_status.setToolTip(details)
+        if result.received:
+            self._refresh_if_changed_elsewhere()
 
     def changeEvent(self, event) -> None:
         """Foydalanuvchi dastur oynasiga qaytganda yangi versiya chiqqan-chiqmagani tekshiriladi."""
@@ -246,7 +288,9 @@ class MainWindow(QMainWindow):
             return  # tarmoq vaqtincha uzilgan yoki baza band — keyingi safar
         if version != self._data_version:
             self._data_version = version
+            catalog.load(self._conn)  # guruhlar boshqa kompyuterda o'zgargan bo'lishi mumkin
             self._refresh_current()
+            self._update_price_badge()
 
     def _map_tiles(self, services: Services) -> TileLoader | None:
         """Xarita rasmlarini yuklovchi; ular shu kompyuterdagi «xarita» papkasida saqlanadi.
@@ -338,6 +382,14 @@ class MainWindow(QMainWindow):
                 name_label.setText(name_label.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, BRAND_WIDTH))
         self.setWindowTitle(f"{name} — {self._title_suffix}")
         set_firm_name(name)  # chop etiladigan varaqlarda ham shu nom chiqadi
+
+    def _update_price_badge(self) -> None:
+        """Narxlarni ko'rib chiqish vaqti kelganda (har 6 oyda) «Narx nazorati» yonida belgi."""
+        due = self._prices.is_due()
+        item = self._menu.item(self._prices_row)
+        item.setData(BADGE_ROLE, 1 if due else None)
+        item.setToolTip(tr("Narxlarni ko'rib chiqish vaqti keldi") if due else "")
+        self._menu.viewport().update()
 
     def _show_update_badge(self, available: bool) -> None:
         """Yangi versiya chiqqanda «Yangilash» yonida belgi — oyna chiqarib ishni to'xtatmaydi."""

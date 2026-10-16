@@ -1,6 +1,7 @@
 """Ombor mantiqi testlari: `python -m unittest` bilan ishga tushiriladi."""
 
 import unittest
+from dataclasses import replace
 from datetime import date
 
 from ombor.database import connect
@@ -169,12 +170,34 @@ class MovementTests(WarehouseTestCase):
         self.assertEqual(len(self.warehouse.movements(search="стройматериал")), 1)
 
     def test_last_group_of_a_product_is_remembered(self):
-        self.assertEqual(self.warehouse.last_group(self.pipe), ("", ""))
+        self.assertEqual(self.warehouse.default_group(self.pipe), ("", ""))
         self.warehouse.save_movement(
             Movement(MovementKind.IN, TODAY, self.pipe, 10, 1000, category="Стройматериал", subcategory="Метал")
         )
         self.receive(5, 1000)  # guruhsiz yozuv oxirgi tanlovni o'chirmaydi
-        self.assertEqual(self.warehouse.last_group(self.pipe), ("Стройматериал", "Метал"))
+        self.assertEqual(self.warehouse.default_group(self.pipe), ("Стройматериал", "Метал"))
+
+    def test_product_own_group_is_offered_first(self):
+        self.warehouse.save_movement(
+            Movement(MovementKind.IN, TODAY, self.pipe, 10, 1000, category="Стройматериал", subcategory="Метал")
+        )
+        product = self.warehouse.product(self.pipe)
+        self.warehouse.save_product(replace(product, category="ГСМ", subcategory="ГСМ/бензин"))
+        self.assertEqual(self.warehouse.default_group(self.pipe), ("ГСМ", "ГСМ/бензин"))
+
+    def test_products_are_filtered_by_group_and_category(self):
+        product = self.warehouse.product(self.pipe)
+        self.warehouse.save_product(replace(product, category="Стройматериал", subcategory="Метал"))
+        self.warehouse.save_product(Product("Sement M400", "kg", category="Стройматериал", subcategory="Цемент"))
+        self.warehouse.save_product(Product("Benzin", "litr", category="ГСМ"))
+        names = lambda **filters: [p.name for p in self.warehouse.products(**filters)]  # noqa: E731
+        self.assertEqual(names(category="Стройматериал"), ["Sement M400", "Truba 40x40"])
+        self.assertEqual(names(category="Стройматериал", subcategory="Цемент"), ["Sement M400"])
+        self.assertEqual(names(search="qurilish materiallari"), ["Sement M400", "Truba 40x40"])
+
+    def test_category_is_dropped_without_a_group(self):
+        product_id = self.warehouse.save_product(Product("Mix", "kg", subcategory="Цемент"))
+        self.assertEqual(self.warehouse.product(product_id).subcategory, "")
 
     def test_report_by_group(self):
         self.warehouse.save_movement(

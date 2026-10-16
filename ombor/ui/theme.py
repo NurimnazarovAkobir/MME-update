@@ -287,6 +287,16 @@ QProgressBar::chunk {{ background: {accent}; border-radius: 3px; }}
 #pageTitle {{ font-size: 18pt; font-weight: 600; }}
 #sectionTitle {{ font-size: 12pt; font-weight: 600; }}
 #muted {{ color: {muted}; }}
+#error {{ color: {danger}; font-weight: 600; }}
+#syncStatus {{ color: {sidebar_text}; font-size: 9pt; }}
+QDialog#lockScreen {{ background: {page}; }}
+#lockTitle {{ font-size: 16pt; }}
+#lockFieldTitle {{ color: {accent}; font-weight: 600; }}
+QLineEdit#lockInput, QLineEdit#lockInput:focus {{
+    background: transparent; border: none; border-bottom: 2px solid {accent}; border-radius: 0;
+    padding: 6px 2px; font-size: 13pt;
+}}
+QPushButton#lockSubmit {{ font-size: 11pt; }}
 #total {{ font-size: 12pt; font-weight: 600; }}
 
 #card {{ background: {surface}; border: 1px solid {border}; border-radius: 10px; }}

@@ -1,13 +1,13 @@
-"""Sozlamalar: ko'rinish, til, parol, foydalanuvchilar va zaxira nusxa.
+"""Sozlamalar: ko'rinish, til, parol, foydalanuvchilar, zaxira nusxa va markaziy server.
 
-Foydalanuvchilar va zaxira nusxa faqat rahbarga ko'rinadi.
+Foydalanuvchilar, zaxira nusxa va server faqat rahbarga ko'rinadi.
 """
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from PySide6.QtCore import QStandardPaths, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QCursor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -31,10 +31,13 @@ from ..driver import sqlite3
 from ..errors import WarehouseError
 from ..i18n import tr
 from ..models import User
+from ..replication import Replica
 from ..services import Services
 from ..session import Session
 from ..settings import MAX_FIRM_NAME
+from ..sync import SyncClient, SyncConfig, SyncError, Synchronizer, device_name, normalize_url
 from . import theme
+from .accounting_page import AccountingPasswordDialog
 from .auth_dialogs import (
     ROLES_HINT,
     ChangePasswordDialog,
@@ -47,6 +50,8 @@ from .auth_dialogs import (
 from .extra_dialogs import GroupsDialog, NameDialog
 from .icons import Glyph, icon_label
 from .language import language_box, restart_application, sign_out
+from .lock_screen import LOCK_MINUTES, lock_minutes, lock_title, set_lock_minutes
+from .sync_controller import SyncController, describe
 from .widgets import Column, DataTable, button, card, confirm, label, page_header
 
 THEME_KEY = "theme"
@@ -55,6 +60,7 @@ FILE_FILTER = tr("Zaxira nusxa (*.db)")
 USERS_TABLE_HEIGHT = 170
 SECTION_BADGE_SIZE = 36
 FIELD_WIDTH = 320
+SERVER_FIELD_WIDTH = 480
 
 
 def _button_row(*buttons: QPushButton) -> QWidget:
@@ -93,6 +99,16 @@ def _section(glyph: str, tone: str, title: str, *widgets: QWidget) -> QFrame:
     return card(header, *widgets)
 
 
+class _busy:
+    """Uzoq amal (internet orqali) davomida sichqoncha «kutish» ko'rinishida."""
+
+    def __enter__(self) -> None:
+        QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
+
+    def __exit__(self, *_exc) -> None:
+        QApplication.restoreOverrideCursor()
+
+
 def _panel(widget: QWidget) -> QFrame:
     """Ma'lumot matni uchun ichki ramka (masalan, zaxira papkalari holati)."""
     frame = QFrame()
@@ -105,8 +121,9 @@ def _panel(widget: QWidget) -> QFrame:
 
 class SettingsPage(QWidget):
     firm_name_changed = Signal(str)  # rahbar ombor nomini o'zgartirdi — sarlavhalar yangilanadi
+    lock_minutes_changed = Signal(int)  # avtomatik qulflash vaqti o'zgardi (0 — o'chirilgan)
 
-    def __init__(self, services: Services, session: Session, db_path: Path):
+    def __init__(self, services: Services, session: Session, db_path: Path, sync: SyncController | None = None):
         super().__init__()
         self.setObjectName("page")
         self._auth = services.auth
@@ -124,7 +141,11 @@ class SettingsPage(QWidget):
         self._prefs = services.prefs
         self._vault = services.vault
         self._conn = services.conn
+        self._sync = sync
         self._backup_status = _text("", "muted")
+        self._sync_status = _text("", "muted")
+        if sync is not None and session.is_admin:
+            sync.finished.connect(lambda _result: self._show_sync_status())
 
         content = QWidget()
         content.setObjectName("page")
@@ -141,7 +162,10 @@ class SettingsPage(QWidget):
             cards.addWidget(self._rules_card())
             cards.addWidget(self._stores_card())
             cards.addWidget(self._users_card())
+            cards.addWidget(self._accounting_card())
             cards.addWidget(self._backup_card())
+            if sync is not None and sync.available:
+                cards.addWidget(self._server_card())
             cards.addWidget(self._network_card())
             if self._vault is not None:
                 cards.addWidget(self._encryption_card())
@@ -164,6 +188,7 @@ class SettingsPage(QWidget):
             self._backup_status.setText(self._describe_backups())
         if not self._user.is_admin:
             return
+        self._show_sync_status()
         users = self._auth.users()
         self._users.set_rows([(user.name, user.role.title) for user in users], ids=[user.id for user in users])
         self._fill_stores()
@@ -253,7 +278,31 @@ class SettingsPage(QWidget):
             tr("Mening hisobim"),
             _text(tr("Siz {0} ({1}) sifatida kirgansiz.").format(self._user.name, self._user.role.title)),
             _button_row(*buttons),
+            self._lock_row(),
         )
+
+    def _lock_row(self) -> QWidget:
+        """Avtomatik qulflash vaqti: shu foydalanuvchi uchun, shu kompyuterda."""
+        minutes = QComboBox()
+        for value in LOCK_MINUTES:
+            minutes.addItem(lock_title(value), value)
+        minutes.setCurrentIndex(max(minutes.findData(lock_minutes(self._prefs, self._user)), 0))
+        minutes.setFixedWidth(FIELD_WIDTH)
+        minutes.currentIndexChanged.connect(lambda: self._change_lock_minutes(minutes.currentData()))
+        row = QWidget()
+        column = QVBoxLayout(row)
+        column.setContentsMargins(0, 8, 0, 0)
+        column.setSpacing(4)
+        column.addWidget(label(tr("Avtomatik qulflash"), "fieldTitle"))
+        column.addWidget(
+            label(tr("Dastur shuncha vaqt ishlatilmasa, qulflanadi va parolingiz so'raladi (Ctrl+L — darhol)."), "muted")
+        )
+        column.addWidget(minutes)
+        return row
+
+    def _change_lock_minutes(self, minutes: int) -> None:
+        set_lock_minutes(self._prefs, self._user, minutes)
+        self.lock_minutes_changed.emit(minutes)
 
     def _sign_out(self) -> None:
         """Hisobdan chiqish: dastur kirish oynasi bilan qayta ochiladi."""
@@ -408,6 +457,181 @@ class SettingsPage(QWidget):
             _button_row(*buttons),
         )
 
+    # --- Buxgalteriya paroli -----------------------------------------------
+
+    def _accounting_card(self) -> QFrame:
+        return _section(
+            Glyph.WALLET,
+            "Good",
+            tr("Buxgalteriya paroli"),
+            _text(
+                tr(
+                    "«Buxgalteriya» bo'limi (xodimlar va oyliklar) alohida parol bilan ochiladi. Parolni bilgan "
+                    "har qanday foydalanuvchi oyliklarni ko'radi va kiritadi."
+                )
+            ),
+            _button_row(_action(tr("Parolni o'rnatish yoki almashtirish"), self._set_accounting_password, "primary")),
+        )
+
+    def _set_accounting_password(self) -> None:
+        if AccountingPasswordDialog(self._auth, self).exec():
+            QMessageBox.information(self, tr("Buxgalteriya paroli"), tr("Buxgalteriya paroli saqlandi."))
+
+    # --- Markaziy server (internet orqali) ------------------------------------
+
+    def _server_card(self) -> QFrame:
+        config = SyncConfig.load(self._prefs)
+        self._server_url = QLineEdit(config.url if config else "")
+        self._server_url.setPlaceholderText(tr("Masalan: https://ombor.example.uz yoki 192.168.1.10:8765"))
+        self._server_token = QLineEdit(config.token if config else "")
+        self._server_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self._server_token.setPlaceholderText(tr("Server ishga tushirilganda berilgan kalit"))
+        fields = QWidget()
+        form = QVBoxLayout(fields)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(4)
+        for title, field in ((tr("Server manzili"), self._server_url), (tr("Kirish kaliti"), self._server_token)):
+            field.setFixedWidth(SERVER_FIELD_WIDTH)
+            form.addWidget(label(title, "fieldTitle"))
+            form.addWidget(field)
+        buttons = [_action(tr("Ulanish"), self._connect_server, "primary")]
+        if config:
+            buttons += [
+                _action(tr("Hozir sinxronlash"), self._sync_now),
+                _action(tr("Uzish"), self._disconnect_server, "danger"),
+            ]
+        actions = _button_row(*buttons)
+        blocker = self._sync_blocker()
+        actions.setEnabled(not blocker)
+        return _section(
+            Glyph.SYNC,
+            "Violet",
+            tr("Markaziy server (internet orqali yagona baza)"),
+            _text(
+                tr(
+                    "Har bir kompyuter o'z bazasida ishlaydi — internet bo'lmasa ham. Internet paydo bo'lishi bilan "
+                    "o'zgarishlar serverga o'zi yuboriladi va boshqa kompyuterlardagi o'zgarishlar shu yerga keladi "
+                    "(har 30 soniyada). Birinchi ulangan kompyuterning bazasi asosiy bo'ladi; keyingilari ulanganda "
+                    "ularning ma'lumotlari serverdagi bilan almashtiriladi (avval zaxira nusxa olinadi)."
+                )
+            ),
+            fields,
+            _panel(self._sync_status),
+            *([_text(blocker, "error")] if blocker else []),
+            actions,
+        )
+
+    def _sync_blocker(self) -> str:
+        """Server bilan ishlashga nima xalaqit beradi (hech narsa bo'lmasa — bo'sh)."""
+        if self._vault is not None and self._vault.enabled:
+            return tr("Shifrlangan baza bilan sinxronlab bo'lmaydi: avval «Bazani shifrlash»ni o'chiring.")
+        if self._prefs.uses_shared_folder:
+            return tr("Baza tarmoqdagi umumiy papkada: server bilan ishlash uchun shu kompyuterdagi bazaga qayting.")
+        return ""
+
+    def _show_sync_status(self) -> None:
+        if self._sync is None or not self._sync.available:
+            return
+        config = SyncConfig.load(self._prefs)
+        if config is None:
+            self._sync_status.setText(tr("Server ulanmagan: ma'lumotlar faqat shu kompyuterda."))
+            return
+        text, details = describe(self._sync.last_result)
+        lines = (
+            tr("Server: {0}").format(config.url),
+            tr("Shu kompyuter nomi: {0}").format(config.device),
+            f"{text}  {details}".strip(),
+            tr("Yuborilishini kutayotgan o'zgarishlar: {0}").format(Replica(self._conn).pending_count()),
+        )
+        self._sync_status.setText("\n".join(lines))
+
+    def _connect_server(self) -> None:
+        try:
+            url = normalize_url(self._server_url.text())
+        except SyncError as error:
+            QMessageBox.warning(self, tr("Markaziy server"), str(error))
+            return
+        token = self._server_token.text().strip()
+        if not token:
+            QMessageBox.warning(self, tr("Markaziy server"), tr("Kirish kalitini kiriting."))
+            return
+        config = SyncConfig(url, token, device_name(self._prefs))
+        client = SyncClient(config)
+        self._sync.stop()  # fondagi sinxronlash shu ulanishga xalaqit bermasin
+        try:
+            with _busy():
+                rows = client.status()["rows"]
+        except SyncError as error:
+            QMessageBox.warning(self, tr("Markaziy server"), str(error))
+            self._sync.start()
+            return
+        if rows == 0:
+            self._publish(config, client)
+        else:
+            self._join(config, client, rows)
+
+    def _publish(self, config: SyncConfig, client: SyncClient) -> None:
+        """Bo'sh server: shu kompyuterdagi baza markaziy bazaga aylanadi."""
+        question = tr(
+            "Server bo'sh. Shu kompyuterdagi barcha ma'lumotlar markaziy baza sifatida serverga yuboriladi; "
+            "boshqa kompyuterlar keyin shu bazaga ulanadi.\n\nDavom etilsinmi?"
+        )
+        if not confirm(self, tr("Markaziy server"), question, tr("Ha, yuborish")):
+            self._sync.start()
+            return
+        with _busy():
+            result = Synchronizer(self._conn, client).publish()
+        config.save(self._prefs)
+        if result.ok:
+            message = tr("Ulandi. {0} ta yozuv serverga yuborildi.").format(result.sent)
+        else:
+            message = tr(
+                "Ulanish saqlandi, lekin hammasi yuborilmadi: {0}\nInternet bo'lganda dastur o'zi davom ettiradi."
+            ).format(result.error)
+        QMessageBox.information(self, tr("Markaziy server"), message)
+        self._sync.start()
+        self.refresh()
+
+    def _join(self, config: SyncConfig, client: SyncClient, rows: int) -> None:
+        """Ma'lumoti bor server: shu yerdagi ma'lumotlar serverdagilari bilan almashtiriladi."""
+        question = tr(
+            "Serverda {0} ta yozuv bor. Shu kompyuterdagi ma'lumotlar serverdagi ma'lumotlar bilan ALMASHTIRILADI "
+            "(avval zaxira nusxa olinadi). Keyin dastur qayta ochiladi — serverdagi foydalanuvchi va parol bilan "
+            "kirasiz.\n\nDavom etilsinmi?"
+        ).format(rows)
+        if not confirm(self, tr("Markaziy server"), question, tr("Ha, ulanish")):
+            self._sync.start()
+            return
+        try:
+            self._backup.auto_folder.mkdir(parents=True, exist_ok=True)
+            copy = self._backup.auto_folder / f"serverga-ulanishdan-oldin-{datetime.now():%Y-%m-%d-%H%M}.db"
+            self._backup.save_to(copy)
+            with _busy():
+                Synchronizer(self._conn, client).join()
+        except (SyncError, OSError, sqlite3.Error) as error:
+            QMessageBox.warning(self, tr("Markaziy server"), tr("Ulanib bo'lmadi: {0}").format(error))
+            self._sync.start()
+            return
+        config.save(self._prefs)
+        QMessageBox.information(self, tr("Markaziy server"), tr("Ma'lumotlar serverdan olindi. Dastur qayta ochiladi."))
+        restart_application()
+
+    def _sync_now(self) -> None:
+        self._sync.sync_now()
+        self._sync_status.setText(tr("Sinxronlanmoqda…"))
+
+    def _disconnect_server(self) -> None:
+        question = tr(
+            "Shu kompyuter serverdan uziladi: ma'lumotlar shu yerda qoladi, lekin boshqa kompyuterlar bilan "
+            "almashilmaydi. Hali yuborilmagan o'zgarishlar serverga bormaydi.\n\nDavom etilsinmi?"
+        )
+        if not confirm(self, tr("Markaziy server"), question, tr("Ha, uzish")):
+            return
+        self._sync.stop()
+        Replica(self._conn).disable()
+        SyncConfig.forget(self._prefs)
+        restart_application()
+
     # --- Tarmoqda ishlash --------------------------------------------------
 
     def _network_card(self) -> QFrame:
@@ -442,7 +666,20 @@ class SettingsPage(QWidget):
         QMessageBox.information(self, tr("Tarmoqda ishlash"), message)
         restart_application()
 
+    def _uses_server(self) -> bool:
+        """Markaziy server ulangan bo'lsa, umumiy papka va shifrlash ishlatilmaydi (ogohlantiriladi)."""
+        if SyncConfig.load(self._prefs) is None:
+            return False
+        QMessageBox.warning(
+            self,
+            tr("Markaziy server"),
+            tr("Shu kompyuter markaziy serverga ulangan. Bu amal uchun avval serverdan uzing."),
+        )
+        return True
+
     def _share_database(self) -> None:
+        if self._uses_server():
+            return
         folder = self._choose_shared_folder()
         if folder is None:
             return
@@ -466,6 +703,8 @@ class SettingsPage(QWidget):
         )
 
     def _join_database(self) -> None:
+        if self._uses_server():
+            return
         folder = self._choose_shared_folder()
         if folder is None:
             return
@@ -514,6 +753,8 @@ class SettingsPage(QWidget):
         )
 
     def _enable_encryption(self) -> None:
+        if self._uses_server():
+            return
         question = tr(
             "Baza shifrlanadi va dastur qayta ochiladi.\n\n"
             "• Boshqa kompyuterlarda dastur yopiq bo'lishi kerak.\n"

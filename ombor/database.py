@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from . import catalog
+from . import catalog, replication
 from .driver import sqlite3
 from .migrations import SCHEMA_VERSION, migrate
 from .models import Period
@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS products (
     is_service INTEGER NOT NULL DEFAULT 0,  -- xizmat yoki xarajat: omborda qoldig'i yuritilmaydi
     barcode    TEXT NOT NULL DEFAULT '',
     alt_unit   TEXT NOT NULL DEFAULT '',    -- qo'shimcha o'lchov birligi (masalan, tonna)
-    alt_factor REAL NOT NULL DEFAULT 0      -- 1 qo'shimcha birlik = shuncha asosiy birlik
+    alt_factor REAL NOT NULL DEFAULT 0,     -- 1 qo'shimcha birlik = shuncha asosiy birlik
+    category    TEXT NOT NULL DEFAULT '',   -- mahsulot guruhi (catalog.py); ruscha nomi saqlanadi
+    subcategory TEXT NOT NULL DEFAULT ''    -- guruh ichidagi kategoriya
 );
 
 CREATE TABLE IF NOT EXISTS warehouses (
@@ -38,7 +40,7 @@ CREATE TABLE IF NOT EXISTS movements (
     price        REAL NOT NULL DEFAULT 0 CHECK (price >= 0),
     sale_price   REAL NOT NULL DEFAULT 0 CHECK (sale_price >= 0),
     category     TEXT NOT NULL DEFAULT '',  -- guruh (catalog.py); ruscha nomi saqlanadi
-    subcategory  TEXT NOT NULL DEFAULT '',  -- kichik guruh
+    subcategory  TEXT NOT NULL DEFAULT '',  -- kategoriya
     person       TEXT NOT NULL DEFAULT '',
     counterparty TEXT NOT NULL DEFAULT '',
     note         TEXT NOT NULL DEFAULT '',
@@ -89,7 +91,7 @@ CREATE TABLE IF NOT EXISTS payments (
     created_at   TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
--- Tovar guruhlari (parent_id bo'sh) va kichik guruhlari. `ru` — yozuvlarda saqlanadigan nom.
+-- Tovar guruhlari (parent_id bo'sh) va kategoriyalari. `ru` — yozuvlarda saqlanadigan nom.
 CREATE TABLE IF NOT EXISTS groups (
     id        INTEGER PRIMARY KEY,
     parent_id INTEGER REFERENCES groups(id) ON DELETE CASCADE,
@@ -122,7 +124,31 @@ CREATE TABLE IF NOT EXISTS history (
     previous  TEXT NOT NULL DEFAULT ''   -- tahrirlashda: oldingi holat
 );
 
+-- Buxgalteriya: xodimlar va ularga to'langan oyliklar.
+CREATE TABLE IF NOT EXISTS employees (
+    id       INTEGER PRIMARY KEY,
+    name     TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    position TEXT NOT NULL DEFAULT '',
+    salary   REAL NOT NULL DEFAULT 0 CHECK (salary >= 0),  -- oylik maoshi
+    note     TEXT NOT NULL DEFAULT '',
+    active   INTEGER NOT NULL DEFAULT 1                    -- ishdan ketgan xodim ro'yxatda yashiriladi
+);
+
+-- `month` — qaysi oy uchun ('YYYY-MM'); `method` — models.PaymentMethod (perechisleniye, karta, naqd).
+CREATE TABLE IF NOT EXISTS salary_payments (
+    id          INTEGER PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id),
+    date        TEXT NOT NULL,
+    month       TEXT NOT NULL,
+    amount      REAL NOT NULL CHECK (amount > 0),
+    method      TEXT NOT NULL,
+    note        TEXT NOT NULL DEFAULT '',
+    created_by  TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_movements_product ON movements(product_id);
+CREATE INDEX IF NOT EXISTS idx_salary_payments_month ON salary_payments(month);
 CREATE INDEX IF NOT EXISTS idx_movements_date ON movements(date);
 """
 
@@ -147,6 +173,8 @@ ADDED_COLUMNS = {
         "barcode": "TEXT NOT NULL DEFAULT ''",
         "alt_unit": "TEXT NOT NULL DEFAULT ''",
         "alt_factor": "REAL NOT NULL DEFAULT 0",
+        "category": "TEXT NOT NULL DEFAULT ''",
+        "subcategory": "TEXT NOT NULL DEFAULT ''",
     },
 }
 
@@ -179,6 +207,7 @@ DROP VIEW IF EXISTS product_stock;
 
 CREATE VIEW product_stock AS
 SELECT p.id, p.name, p.unit, p.min_stock, p.note, p.is_service, p.barcode, p.alt_unit, p.alt_factor,
+       p.category, p.subcategory,
        COALESCE(SUM(CASE WHEN m.kind = 'IN' THEN m.quantity END), 0) AS qty_in,
        COALESCE(SUM(CASE WHEN m.kind = 'OUT' THEN m.quantity END), 0) AS qty_out,
        COALESCE(SUM(CASE WHEN m.kind = 'IN' THEN m.quantity * m.price END), 0) AS amount_in,
@@ -220,6 +249,13 @@ def connect(path: Path | str, key: str | None = None) -> sqlite3.Connection:
     return conn
 
 
+def reopen(path: Path | str, key: str | None = None) -> sqlite3.Connection:
+    """Allaqachon tayyor bazaga qo'shimcha ulanish (masalan, fonda sinxronlash uchun); sxemaga tegmaydi."""
+    conn = open_raw(path, key)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
 def open_raw(path: Path | str, key: str | None = None) -> sqlite3.Connection:
     """Sxemaga tegmasdan ulanadi (zaxira nusxa va tekshiruvlar uchun)."""
     conn = sqlite3.connect(path, timeout=BUSY_TIMEOUT_SECONDS)
@@ -252,6 +288,7 @@ def prepare(conn: sqlite3.Connection) -> None:
             if column not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
     conn.execute("INSERT OR IGNORE INTO warehouses (id, name) VALUES (?, ?)", (MAIN_WAREHOUSE_ID, MAIN_WAREHOUSE_NAME))
+    replication.install(conn, main_warehouse_id=MAIN_WAREHOUSE_ID)
     conn.commit()
     conn.executescript(f"BEGIN IMMEDIATE;{VIEWS}COMMIT;")
     migrate(conn)

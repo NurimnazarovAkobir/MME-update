@@ -154,7 +154,7 @@ class PaymentDialog(FormDialog):
 
 
 class GroupsDialog(FormDialog):
-    """Guruh va kichik guruhlarni qo'shish, nomini o'zgartirish va o'chirish. O'zgarish darhol saqlanadi."""
+    """Guruh va kategoriyalarni qo'shish, nomini o'zgartirish va o'chirish. O'zgarish darhol saqlanadi."""
 
     def __init__(self, groups: GroupCatalog, parent: QWidget | None = None):
         super().__init__(tr("Guruhlar"), parent, save_text=tr("Yopish"), cancel_text=tr("Bekor qilish"))
@@ -166,7 +166,7 @@ class GroupsDialog(FormDialog):
 
         actions = (
             (tr("+ Guruh"), self._add_group, "primary"),
-            (tr("+ Kichik guruh"), self._add_subgroup, ""),
+            (tr("+ Kategoriya"), self._add_subgroup, ""),
             (tr("Nomini o'zgartirish"), self._rename, ""),
             (tr("O'chirish"), self._delete, "danger"),
         )
@@ -233,7 +233,7 @@ class GroupsDialog(FormDialog):
         if item is None:
             return
         parent = item.parent() or item
-        names = self._ask_names(tr("Yangi kichik guruh — {0}").format(parent.text(0)))
+        names = self._ask_names(tr("Yangi kategoriya — {0}").format(parent.text(0)))
         if names:
             self._apply(lambda: self._groups.add(*names, parent_id=parent.data(0, Qt.ItemDataRole.UserRole)))
 

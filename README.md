@@ -1,6 +1,8 @@
 # MME Ombor
 
 Windows uchun ombor hisobi dasturi. Internet kerak emas: barcha ma'lumotlar shu kompyuterda saqlanadi.
+Xohlasangiz, bir nechta kompyuter internet orqali **yagona bazada** ishlaydi — internetsiz qilingan
+o'zgarishlar ulanish tiklanganda o'zi yuboriladi (pastda: «Markaziy server»).
 
 ## Ishga tushirish
 
@@ -13,13 +15,15 @@ kodini** ko'rsatadi — uni qog'ozga yozib qo'ying.
 | Bo'lim | Nima qiladi |
 |---|---|
 | **Bosh sahifa** | Uchta katta tugma (Kirim, Chiqim, Yangi mahsulot), asosiy raqamlar, diagramma, so'nggi amallar |
-| **Kirim** | Mahsulot kelishi: sana, hujjat raqami, miqdor, narx, guruh va kichik guruh, **kim olib keldi**, yetkazib beruvchi, izoh; nakladnoy chop etish |
-| **Chiqim** | Mahsulot chiqishi: sana, miqdor, **sotuv narxi** (bo'sh bo'lsa — ichki rasxod), guruh va kichik guruh, kim oldi, xaridor yoki obyekt |
-| **Mahsulotlar** | Mahsulot yoki xizmat qo'shish, joriy qoldiq, o'rtacha narx, qiymati, holati; «faqat kam qolganlar» filtri; inventarizatsiya varag'i; Exceldan yuklash. Menyuda kam qolgan mahsulotlar soni ko'rinadi |
+| **Kirim** | Mahsulot kelishi: sana, hujjat raqami, miqdor, narx, guruh va kategoriya, **kim olib keldi**, yetkazib beruvchi, izoh; nakladnoy chop etish |
+| **Chiqim** | Mahsulot chiqishi: sana, miqdor, **sotuv narxi** (bo'sh bo'lsa — ichki rasxod), guruh va kategoriya, kim oldi, xaridor yoki obyekt |
+| **Mahsulotlar** | Mahsulot yoki xizmat qo'shish, **guruh → kategoriya**, joriy qoldiq, o'rtacha narx, qiymati, holati; guruh, kategoriya va «faqat kam qolganlar» filtri; inventarizatsiya varag'i; Exceldan yuklash. Menyuda kam qolgan mahsulotlar soni ko'rinadi |
 | **Hisobotlar** | Kunlik, haftalik, oylik, yillik yoki ixtiyoriy davr bo'yicha hisobotlar |
+| **Narx nazorati** | 6 oy ichida xarid narxi o'zgargan mahsulotlar (masalan, sentabrda 100 000, oktyabrda 120 000 — +20 %); har 6 oyda menyuda eslatma chiqadi |
 | **Qarzlar** | Yetkazib beruvchilarga qarzimiz, xaridorlarning qarzi, to'lovlar («Qarzga» belgili yozuvlardan) |
+| **Buxgalteriya** | Alohida parol bilan: xodimlar, oylik vedomosti, oyliklar — **perechisleniye, karta yoki naqd** |
 | **Tarix** | Faqat rahbarga: kim, qachon, nimani qo'shgan, o'zgartirgan, o'chirgan; o'chirilgan yozuvni tiklash |
-| **Sozlamalar** | Fon, til, parol, hisob qoidalari, foydalanuvchilar, zaxira nusxa, qisqa yo'riqnoma |
+| **Sozlamalar** | Fon, til, parol, hisob qoidalari, foydalanuvchilar, buxgalteriya paroli, zaxira nusxa, markaziy server, qisqa yo'riqnoma |
 
 Tahrirlash va o'chirish har bir qatorning boshida: **✎** — tahrirlash (yoki qatorni ikki marta bosish), **✕** — o'chirish (yoki Delete tugmasi; avval tasdiq so'raladi).
 
@@ -37,6 +41,15 @@ saralash. Har bir kirim/chiqim yonida uni **kim kiritgani** yoziladi.
 Omborchi parolini unutsa, rahbar «Sozlamalar»da yangisini o'rnatadi. Rahbar unutsa — kirish oynasidagi
 «Parolni unutdim» tugmasi va tiklash kodi orqali. Kod yo'qolgan bo'lsa, «Sozlamalar → Yangi tiklash kodi».
 Parol dasturga kirishni cheklaydi; ma'lumotlar fayli shifrlanmaydi.
+
+**Avtomatik qulflash** (Telegram'dagi kabi): dastur belgilangan vaqt ishlatilmasa, ochiq oynalari bilan birga
+yashiriladi va «Parolingizni kiriting» ekrani chiqadi — har kim (rahbar, omborchi…) o'z paroli bilan ochadi, yozilgan
+ma'lumot yo'qolmaydi. Vaqtni har bir foydalanuvchi «Sozlamalar → Mening hisobim»da tanlaydi: o'chirilgan, 1, 5, 15
+daqiqa yoki 1 soat (odatda 15 daqiqa). Darhol qulflash — yon menyudagi «Qulflash» tugmasi yoki **Ctrl+L**.
+
+**Buxgalteriya paroli** — foydalanuvchilar parolidan alohida. Uni rahbar «Sozlamalar → Buxgalteriya paroli»da
+o'rnatadi. Parolni bilgan har qanday foydalanuvchi (lavozimidan qat'i nazar) «Buxgalteriya» bo'limini ochadi;
+boshqa bo'limga o'tilganda yoki «Qulflash» bosilganda bo'lim yana qulflanadi.
 
 ## Hisobotlar
 
@@ -110,6 +123,48 @@ keyingi davrga o'tkazadi.
 - **O'rnatish**: `Ornatish.bat` dasturni ko'chiradi, ish stoli va «Pusk»ga yorliq qo'yadi va Windows ning
   «O'rnatilgan ilovalar» ro'yxatiga yozadi; u yerdan (yoki `Ochirish.bat` bilan) o'chiriladi, ma'lumotlar qoladi.
 
+## Markaziy server: yagona baza va internetsiz ishlash (1.25)
+
+Har bir kompyuter **o'z bazasida** ishlaydi — internet bo'lmasa ham hamma narsa odatdagidek. Server ulangach:
+
+- har bir qo'shish, o'zgartirish va o'chirish navbatga yoziladi; internet bo'lishi bilan (har 30 soniyada va dastur
+  ochilganda) serverga o'zi yuboriladi, boshqa kompyuterlardagi o'zgarishlar esa shu yerga keladi. Omborchi internetsiz
+  kiritgan kirim-chiqim ulanish tiklanganda rahbarning kompyuterida ham paydo bo'ladi;
+- yon menyuning pastida holat ko'rinadi: «☁ Sinxronlandi 14:32», «☁ Internet yo'q» (nechta o'zgarish kutayotgani bilan);
+- tarix (kim, qachon, nimani o'zgartirgani) ham umumiy: rahbar boshqa kompyuterdagi amallarni «Tarix»da ko'radi.
+
+**Serverni ishga tushirish** (doim yoqiq, internetdan ko'rinadigan kompyuter yoki VPS; faqat Python 3.10+ kerak):
+
+```bat
+sinxron_server.bat                                         :: Windows: kalitni so'raydi, 8765-portda ishlaydi
+python -m ombor.sync_server --token MAXFIY-KALIT --port 8765 --data ombor-server.db
+python -m ombor.sync_server --token ... --cert cert.pem --key key.pem   :: HTTPS
+```
+
+Internet orqali ishlaganda HTTPS ishlating (`--cert/--key` yoki server nginx/Caddy ortida). Kirish kaliti uzun va
+tasodifiy bo'lsin: u bazaga kirish kaliti hisoblanadi. Server bazasi (`ombor-server.db`) — barcha kompyuterlarning
+umumiy nusxasi; uni ham zaxiralang.
+
+**Ulash** («Sozlamalar → Markaziy server», rahbar): server manzili va kalitni kiritib «Ulanish».
+
+1. Birinchi kompyuter (odatda rahbarniki): server bo'sh — shu kompyuterdagi baza serverga yuboriladi va asosiy bo'ladi.
+2. Qolgan kompyuterlar: serverda ma'lumot bor — shu kompyuterdagi ma'lumotlar serverdagilari bilan **almashtiriladi**
+   (avval zaxira nusxa `zaxira\serverga-ulanishdan-oldin-….db` saqlanadi), dastur qayta ochiladi va serverdagi
+   foydalanuvchi bilan kiriladi.
+
+**Qoidalar:**
+
+- Ikki kompyuter bitta yozuvni internetsiz o'zgartirsa, serverga **oxirgi yetib borgani** qoladi.
+- Ikki kompyuter internetsiz bir xil nomli mahsulot (ombor, obyekt, xodim, foydalanuvchi) qo'shsa, ikkinchisining
+  nomiga « (2)» qo'shiladi — keyin birlashtirish yoki nomini o'zgartirish mumkin.
+- Bir kompyuterda o'chirilgan mahsulot boshqasida internetsiz ishlatilgan bo'lsa, u o'chmaydi va qaytib keladi.
+- Ikki kompyuterda internetsiz bir vaqtda chiqim qilinsa, umumiy qoldiq minusga tushishi mumkin: sinxronlangach
+  «Mahsulotlar»da ko'rinadi, inventarizatsiya yoki tuzatish bilan to'g'rilanadi.
+- Har bir kompyuterning shaxsiy sozlamalari (til, fon, qo'shimcha zaxira papkasi, server manzili) almashilmaydi.
+- «Zaxiradan tiklash» server ulangan kompyuterda bajarilsa, tiklangan holat hamma kompyuterlarga tarqaladi.
+- Server bilan **shifrlangan baza** va **umumiy tarmoq papkasi** ishlatilmaydi (ular bir-birini istisno qiladi).
+- Dastur va server versiyasi mos kelmasa (protokol), server rad etadi — dasturni yangilang.
+
 ## Mahsulotlarni Exceldan yuklash
 
 «Mahsulotlar → Exceldan yuklash → Namuna faylni saqlash», namunani to'ldirib, shu yerdan yuklang.
@@ -134,11 +189,17 @@ ombor/
   paths.py           ma'lumotlar fayllarining joyi
   i18n.py            til: tr() funksiyasi
   translations_ru.py ruscha tarjimalar
-  catalog.py         tovar guruhlari va kichik guruhlari (ikki tilda)
+  catalog.py         tovar guruhlari va kategoriyalari (ikki tilda)
   models.py          ma'lumot tuzilmalari (Product, Movement, Period, User…)
   database.py        SQLite sxemasi
   migrations.py      eski bazani yangi versiyaga o'tkazish
   costing.py         chiqim tannarxi (sirpanuvchi o'rtacha narx)
+  payroll.py         buxgalteriya: xodimlar va oyliklar (perechisleniye, karta, naqd)
+  pricing.py         narx nazorati va 6 oylik eslatma
+  sync_protocol.py   sinxronlash protokoli (mijoz va server uchun umumiy, faqat standart kutubxona)
+  replication.py     o'zgarishlarni kuzatish (triggerlar, navbat) va serverdagilarni qo'llash
+  sync.py            server bilan HTTP orqali almashish (mijoz)
+  sync_server.py     markaziy server: python -m ombor.sync_server
   warehouse.py       mahsulot, kirim, chiqim, inventarizatsiya, o'zgarishlar tarixi
   reports.py         statistika so'rovlari
   auth.py            foydalanuvchilar, parollar, tiklash kodi
@@ -170,15 +231,17 @@ build.bat                                                :: dist\MME-Ombor.exe n
   bosh sahifadagi «Yangi mahsulot», F4 yoki «Mahsulotlar» bo'limi.
 - Foyda: «Hisobotlar → Foyda». Foyda faqat sotuv narxi kiritilgan chiqimlardan hisoblanadi.
 
-## Guruhlar
+## Guruhlar va kategoriyalar
 
-Har bir **kirim va chiqim yozuvida** guruh va kichik guruh tanlanadi (mahsulotda emas): bitta mahsulot bir
-safar «Qurilish materiallari», boshqa safar «Ishlab chiqarish xarajatlari» sifatida yozilishi mumkin.
-12 ta guruh va ularning kichik guruhlari `ombor/catalog.py` da.
+Tuzilma ikki pog'onali: **guruh → kategoriya** (masalan, «Qurilish materiallari → Sement»).
+12 ta boshlang'ich guruh va ularning kategoriyalari `ombor/catalog.py` da; «Sozlamalar → Guruhlarni tahrirlash»da o'zgartiriladi.
 
-- Kirim/chiqim oynasida avval guruh, keyin shu guruhning kichik guruhi tanlanadi. Tanlash ixtiyoriy.
-- Mahsulot tanlanganda uning oldingi yozuvidagi guruh o'zi taklif qilinadi.
-- «Hisobotlar → Guruhlar bo'yicha» — tanlangan davrda har bir guruh va kichik guruh bo'yicha kirim va chiqim summasi.
+- **Mahsulotning o'z guruhi**: mahsulot oynasida guruh va kategoriya tanlanadi. «Mahsulotlar» bo'limida avval guruh,
+  keyin uning kategoriyasi bo'yicha filtrlanadi; inventarizatsiya varag'i ham shu filtrga bo'ysunadi.
+- Har bir **kirim va chiqim yozuvida** ham guruh saqlanadi: kirim/chiqim oynasida mahsulot tanlanganda mahsulotning
+  guruhi o'zi taklif qilinadi (berilmagan bo'lsa — oldingi yozuvdagisi), kerak bo'lsa o'zgartiriladi.
+- 1.25 ga yangilanganda har bir mahsulotga oxirgi yozuvidagi guruh o'zi beriladi.
+- «Hisobotlar → Guruhlar bo'yicha» — tanlangan davrda har bir guruh va kategoriya bo'yicha kirim va chiqim summasi.
 - Bazada guruhning ruscha nomi saqlanadi, ekranda tanlangan tilda ko'rsatiladi.
 
 ## Tillar

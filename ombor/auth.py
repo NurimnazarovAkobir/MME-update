@@ -21,6 +21,7 @@ HASH_ITERATIONS = 200_000
 SALT_BYTES = 16
 
 RECOVERY_KEY = "recovery_code"
+ACCOUNTING_KEY = "accounting_password"  # «Buxgalteriya» bo'limi paroli (xeshi); hamma kompyuterlar uchun bitta
 # Bir-biriga o'xshash belgilarsiz (0/O, 1/I/L), qog'ozdan ko'chirish oson bo'lishi uchun.
 RECOVERY_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 RECOVERY_GROUPS, RECOVERY_GROUP_SIZE = 3, 4
@@ -112,6 +113,23 @@ class Auth:
             self._conn.execute("UPDATE users SET password = ? WHERE id = ?", (_make_hash(new), user_id))
         if self._vault:
             self._vault.set_user(next(user for user in self.users() if user.id == user_id), new)
+
+    # --- Buxgalteriya paroli -----------------------------------------------
+
+    def has_accounting_password(self) -> bool:
+        return bool(self._settings.get(ACCOUNTING_KEY))
+
+    def set_accounting_password(self, new: str) -> None:
+        """«Buxgalteriya» bo'limi parolini o'rnatadi (rahbar); foydalanuvchilar parolidan alohida."""
+        _check_new_password(new)
+        self._settings.set(ACCOUNTING_KEY, _make_hash(new))
+
+    def check_accounting_password(self, password: str) -> None:
+        stored = self._settings.get(ACCOUNTING_KEY)
+        if not stored:
+            raise WarehouseError(tr("Buxgalteriya paroli hali o'rnatilmagan. Uni rahbar «Sozlamalar»da o'rnatadi."))
+        if not _matches(password, stored):
+            raise WarehouseError(tr("Buxgalteriya paroli noto'g'ri."))
 
     # --- Tiklash kodi ------------------------------------------------------
 

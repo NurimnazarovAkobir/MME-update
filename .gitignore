@@ -10,3 +10,6 @@ __pycache__/
 # MAXFIY: litsenziya imzolash kaliti hech qachon tarixga tushmasligi kerak
 arxiv/litsenziya/maxfiy_kalit.pem
 chiqarish.json
+
+# Markaziy sinxronlash serverining bazasi (ma'lumotlar — repozitoriyga tushmaydi)
+ombor-server.db*

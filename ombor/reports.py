@@ -62,7 +62,7 @@ class ProductTurnover:
 
 @dataclass(frozen=True)
 class CategoryTotal:
-    """Tovar guruhi va kichik guruhi bo'yicha jami."""
+    """Tovar guruhi va kategoriyasi bo'yicha jami."""
 
     category: str
     subcategory: str
@@ -158,7 +158,7 @@ class Reports:
         ]
 
     def by_category(self, period: Period = Period()) -> list[CategoryTotal]:
-        """Kirim va chiqim summalari tovar guruhlari va kichik guruhlari kesimida."""
+        """Kirim va chiqim summalari tovar guruhlari va kategoriyalari kesimida."""
         where, params = period_filter(period)
         rows = self._conn.execute(
             f"""

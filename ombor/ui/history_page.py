@@ -7,6 +7,7 @@ from ..debts import PAYMENT_ENTITY
 from ..errors import WarehouseError
 from ..i18n import tr
 from ..models import HistoryEntry, MovementKind
+from ..payroll import EMPLOYEE_ENTITY, SALARY_ENTITY
 from ..session import Session
 from ..sites import SITE_ENTITY
 from ..warehouse import HISTORY_ENTITY, PRODUCT_ENTITY, TRANSFER_ENTITY, Warehouse
@@ -37,6 +38,8 @@ _ENTITY_TITLES = {
     TRANSFER_ENTITY: tr("Ko'chirish"),
     HISTORY_ENTITY: tr("Tarix"),
     SITE_ENTITY: tr("Obyekt"),
+    EMPLOYEE_ENTITY: tr("Xodim"),
+    SALARY_ENTITY: tr("Oylik"),
     f"{PAYMENT_ENTITY}:IN": tr("Biz to'ladik"),
     f"{PAYMENT_ENTITY}:OUT": tr("Bizga to'landi"),
 }

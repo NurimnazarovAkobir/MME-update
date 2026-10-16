@@ -5,7 +5,7 @@ from .costing import recalculate_costs
 from .driver import sqlite3
 from .models import Role
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 LEGACY_PASSWORD_KEY = "password"
 LEGACY_ADMIN_NAME = "Rahbar"
 # 3-versiyagacha «boshlang'ich qoldiq» belgisi o'sha paytdagi tilda yozilgan; endi bitta ko'rinishda saqlanadi.
@@ -27,10 +27,24 @@ def migrate(conn: sqlite3.Connection) -> None:
         catalog.seed(conn)
         _collect_sites(conn)
         _drop_customer_sites(conn)
+        _give_products_groups(conn)
         conn.execute(
             "UPDATE movements SET counterparty = ? WHERE counterparty = ?", (OPENING_BALANCE, LEGACY_OPENING_BALANCE)
         )
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+
+def _give_products_groups(conn: sqlite3.Connection) -> None:
+    """10-versiyagacha mahsulotning o'z guruhi bo'lmagan: oxirgi yozuvidagi guruh va kategoriya olinadi."""
+    conn.execute("""
+        UPDATE products SET
+            category = (SELECT m.category FROM movements m WHERE m.product_id = products.id
+                        AND m.category <> '' AND m.deleted_at IS NULL ORDER BY m.id DESC LIMIT 1),
+            subcategory = (SELECT m.subcategory FROM movements m WHERE m.product_id = products.id
+                           AND m.category <> '' AND m.deleted_at IS NULL ORDER BY m.id DESC LIMIT 1)
+        WHERE category = '' AND EXISTS (SELECT 1 FROM movements m WHERE m.product_id = products.id
+                                        AND m.category <> '' AND m.deleted_at IS NULL)
+        """)
 
 
 def _collect_sites(conn: sqlite3.Connection) -> None:

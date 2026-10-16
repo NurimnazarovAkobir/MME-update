@@ -53,6 +53,7 @@ class Glyph:
     CHEVRON = "\ue76c"
     FIT = "\ue9a6"  # hammasini ko'rsatish (xaritada)
     SEARCH = "\ue721"
+    LOCK = "\ue72e"
 
 
 def icon_label(glyph: str, object_name: str = "icon") -> QLabel:

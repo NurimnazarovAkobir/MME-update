@@ -199,7 +199,7 @@ class ReportsPage(QWidget):
                 tr("Guruhlar bo'yicha"),
                 (
                     Column(tr("Guruh")),
-                    Column(tr("Kichik guruh")),
+                    Column(tr("Kategoriya")),
                     Column(tr("Kirim summasi, {0}").format(CURRENCY), ColumnKind.MONEY),
                     Column(tr("Chiqim summasi, {0}").format(CURRENCY), ColumnKind.MONEY),
                 ),
