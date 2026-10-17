@@ -29,11 +29,14 @@ from ..formatting import fmt_money, fmt_qty
 from ..i18n import tr
 from ..models import Movement, MovementKind, Product, ProductStock, Store
 from ..warehouse import Warehouse
+from .icons import Glyph, icon_label
 from .labels import KindLabels
 from .widgets import NumberInput, button, date_input, label, number_input, suggestion_box
 
 NO_GROUP = tr("Tanlanmagan")
 DIALOG_MIN_WIDTH = 520  # pastdagi uchta tugma kesilmasdan sig'adi
+PRODUCT_DIALOG_WIDTH = 620
+HEADER_BADGE_SIZE = 44
 
 
 def product_box(placeholder: str = tr("Tanlang, nomini yozing yoki shtrix-kodni o'qiting")) -> QComboBox:
@@ -44,6 +47,49 @@ def product_box(placeholder: str = tr("Tanlang, nomini yozing yoki shtrix-kodni 
     box.completer().setFilterMode(Qt.MatchFlag.MatchContains)
     box.completer().setCompletionMode(box.completer().CompletionMode.PopupCompletion)
     box.lineEdit().setPlaceholderText(placeholder)
+    return box
+
+
+def dialog_header(glyph: str, tone: str, title: str, subtitle: str) -> QWidget:
+    header = QWidget()
+    row = QHBoxLayout(header)
+    row.setContentsMargins(0, 0, 0, 4)
+    row.setSpacing(14)
+    badge = icon_label(glyph, f"badge{tone}")
+    badge.setFixedSize(HEADER_BADGE_SIZE, HEADER_BADGE_SIZE)
+    titles = QVBoxLayout()
+    titles.setSpacing(0)
+    titles.addWidget(label(title, "dialogTitle"))
+    titles.addWidget(label(subtitle, "muted"))
+    row.addWidget(badge)
+    row.addLayout(titles, stretch=1)
+    return header
+
+
+def captioned(caption: str, field: QWidget, hint: str = "") -> QWidget:
+    """Maydon va uning nomi tepasida (ixtiyoriy izoh — ostida): yonma-yon maydonlar uchun qulay."""
+    box = QWidget()
+    column = QVBoxLayout(box)
+    column.setContentsMargins(0, 0, 0, 0)
+    column.setSpacing(6)
+    column.addWidget(label(caption, "fieldCaption"))
+    column.addWidget(field)
+    if hint:
+        note = label(hint, "muted")
+        note.setWordWrap(True)
+        column.addWidget(note)
+    return box
+
+
+def side_by_side(*widgets: QWidget, stretches: Sequence[int] = ()) -> QWidget:
+    """Bir nechta maydon bitta qatorda."""
+    box = QWidget()
+    row = QHBoxLayout(box)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(14)
+    for index, widget in enumerate(widgets):
+        # Tepadan tekislanadi: biri ostida izoh bo'lsa ham, maydonlar bir chiziqda turadi.
+        row.addWidget(widget, stretches[index] if index < len(stretches) else 1, Qt.AlignmentFlag.AlignTop)
     return box
 
 
@@ -85,11 +131,15 @@ class FormDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(save)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(20)
-        layout.addLayout(self.form)
-        layout.addLayout(buttons)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(24, 20, 24, 20)
+        self._layout.setSpacing(20)
+        self._layout.addLayout(self.form)
+        self._layout.addLayout(buttons)
+
+    def set_header(self, glyph: str, tone: str, title: str, subtitle: str) -> None:
+        """Oyna tepasidagi sarlavha: rangli belgi, nomi va bir qatorli izoh (nima kiritilishini aytadi)."""
+        self._layout.insertWidget(0, dialog_header(glyph, tone, title, subtitle))
 
     def save(self) -> None:
         raise NotImplementedError
@@ -168,31 +218,28 @@ class GroupFields:
 
 class ProductDialog(FormDialog):
     def __init__(self, warehouse: Warehouse, product: Product | None = None, parent: QWidget | None = None):
-        super().__init__(tr("Mahsulotni tahrirlash") if product else tr("Yangi mahsulot"), parent)
+        title = tr("Mahsulotni tahrirlash") if product else tr("Yangi mahsulot")
+        super().__init__(title, parent)
+        self.setMinimumWidth(PRODUCT_DIALOG_WIDTH)
+        self.set_header(Glyph.PRODUCTS, "Accent", title, tr("Asosiysi — nomi va o'lchov birligi; qolgani ixtiyoriy."))
         self._warehouse = warehouse
         self._product_id = product.id if product else None
         self.saved_id: int | None = None
 
         self._name = QLineEdit(product.name if product else "")
         self._name.setPlaceholderText(tr("Masalan: Truba 40x40x2"))
+        self._name.setObjectName("bigInput")
         self._unit = suggestion_box(UNITS, product.unit if product else UNITS[0])
         self._min_stock = number_input(3, product.min_stock if product else 0)
         self._min_stock.setToolTip(tr("Qoldiq shu miqdorga tushganda mahsulot «Kam qoldi» deb belgilanadi."))
         self._note = QLineEdit(product.note if product else "")
         self._barcode = QLineEdit(product.barcode if product else "")
-        self._barcode.setPlaceholderText(tr("Skaner bilan o'qiting yoki yozing (ixtiyoriy)"))
+        self._barcode.setPlaceholderText(tr("Skaner bilan o'qiting yoki yozing"))
         self._alt_unit = suggestion_box(("", *UNITS), product.alt_unit if product else "")
         self._alt_factor = number_input(4, product.alt_factor if product else 0)
-        self._alt_factor.setToolTip(
-            tr(
-                "Masalan: asosiy birlik kg, qo'shimcha birlik tonna bo'lsa — 1000. Kirim-chiqimda ikkalasida ham kiritish mumkin."
-            )
-        )
-        alt_row = QHBoxLayout()
-        alt_row.addWidget(self._alt_unit, stretch=1)
-        alt_row.addWidget(label(tr("1 tasi =")))
-        alt_row.addWidget(self._alt_factor, stretch=1)
-        alt_row.addWidget(label(tr("asosiy birlik")))
+        self._base_unit = label("", "muted")  # «1 tonna = [1000] kg» — asosiy birlik nomi
+        self._unit.currentTextChanged.connect(self._base_unit.setText)
+        self._base_unit.setText(self._unit.currentText())
         self._is_service = QCheckBox(tr("Bu xizmat yoki xarajat (omborda qoldig'i yuritilmaydi)"))
         self._is_service.setToolTip(
             tr("Masalan: yuk tashish, kommunal to'lov, ijara. Kirimi xarajat sifatida hisobotga tushadi.")
@@ -203,17 +250,42 @@ class ProductDialog(FormDialog):
         self._groups = GroupFields()
         if product:
             self._groups.select(product.category, product.subcategory)
-        self._groups.group.setToolTip(tr("Kirim va chiqimda shu guruh o'zi taklif qilinadi."))
 
-        self.form.addRow(tr("Nomi *"), self._name)
-        self.form.addRow(tr("Guruh"), self._groups.group)
-        self.form.addRow(tr("Kategoriya"), self._groups.subgroup)
-        self.form.addRow(tr("O'lchov birligi *"), self._unit)
-        self.form.addRow(tr("Qo'shimcha birlik"), alt_row)
-        self.form.addRow(tr("Minimal qoldiq"), self._min_stock)
-        self.form.addRow(tr("Shtrix-kod"), self._barcode)
-        self.form.addRow(tr("Izoh"), self._note)
-        self.form.addRow("", self._is_service)
+        # Asosiy maydonlar: nomi; birlik va minimal qoldiq; guruh va kategoriya — yonma-yon.
+        self.form.addRow(captioned(tr("Nomi *"), self._name))
+        self.form.addRow(
+            side_by_side(
+                captioned(tr("O'lchov birligi *"), self._unit),
+                captioned(tr("Minimal qoldiq"), self._min_stock, tr("Shundan kam qolsa — «Kam qoldi» belgisi")),
+            )
+        )
+        self.form.addRow(
+            side_by_side(
+                captioned(tr("Guruh"), self._groups.group),
+                captioned(tr("Kategoriya"), self._groups.subgroup),
+            )
+        )
+        # Kam ishlatiladiganlar — «Qo'shimcha maydonlar» ostida.
+        alt = side_by_side(
+            label("1"), self._alt_unit, label("="), self._alt_factor, self._base_unit, stretches=(0, 2, 0, 2, 1)
+        )
+        self.add_extra_row(
+            "",
+            captioned(
+                tr("Qo'shimcha birlik"),
+                alt,
+                tr("Masalan: 1 tonna = 1000 kg. Kirim-chiqimda ikkalasida ham kiritish mumkin."),
+            ),
+        )
+        self.add_extra_row(
+            "", side_by_side(captioned(tr("Shtrix-kod"), self._barcode), captioned(tr("Izoh"), self._note))
+        )
+        self.add_extra_row("", self._is_service)
+        # Tahrirlashda to'ldirilgan qo'shimcha maydonlar yashirin qolmasin.
+        self.show_extras(
+            bool(product and (product.has_alt_unit or product.barcode or product.note or product.is_service))
+        )
+        self._name.setFocus()
 
     def keyPressEvent(self, event) -> None:
         # Skaner koddan keyin Enter yuboradi: u oynani saqlab yubormasligi kerak.

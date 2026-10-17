@@ -1,21 +1,16 @@
-"""Interfeys: mahsulot guruhlari va markaziy server sozlamalari."""
+"""Interfeys: mahsulot guruhlari, soddalashtirilgan mahsulot va kirim/chiqim oynalari, sozlamalar."""
 
-import threading
 from dataclasses import replace
 from unittest import mock
 
-from ombor.models import Product
-from ombor.replication import Replica
+from ombor.models import MovementKind, Product
 from ombor.session import Session
-from ombor.sync import SyncConfig
-from ombor.sync_server import ServerStore, make_server
 from ombor.ui.dialogs import ProductDialog
+from ombor.ui.document_dialog import DocumentDialog, IssueTarget
+from ombor.ui.labels import LABELS
 from ombor.ui.products_page import ProductsPage
 from ombor.ui.settings_page import SettingsPage
-from ombor.ui.sync_controller import SyncController
 from tests.test_ui import UiTestCase
-
-TOKEN = "maxfiy-kalit-123"
 
 
 class ProductGroupUiTests(UiTestCase):
@@ -41,50 +36,52 @@ class ProductGroupUiTests(UiTestCase):
         self.assertEqual(page.table.item(0, 2).text(), "Qurilish materiallari / Sement")
 
 
-class ServerSettingsTests(UiTestCase):
-    def setUp(self):
-        super().setUp()
-        self.store = ServerStore(self.folder / "server.db")
-        self.server = make_server(self.store, TOKEN, "127.0.0.1", 0, log=False)
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        self.addCleanup(self.store.close)
-        self.addCleanup(self.server.server_close)
-        self.addCleanup(self.server.shutdown)
-        self.sync = SyncController(self.services.prefs, lambda: None, None)
+class SimpleProductDialogTests(UiTestCase):
+    def test_rare_fields_are_folded_for_a_new_product(self):
+        dialog = ProductDialog(self.warehouse)
+        self.assertFalse(dialog.extras_shown)
+        dialog._name.setText("Sement M400")
+        dialog._unit.setCurrentText("kg")
+        dialog.save()
+        self.assertEqual(self.warehouse.product(dialog.saved_id).unit, "kg")
 
-    def settings_page(self) -> SettingsPage:
-        page = SettingsPage(self.services, Session(self.admin), self.folder / "ombor.db", self.sync)
-        page.refresh()
-        return page
+    def test_filled_rare_fields_are_open_when_editing(self):
+        product = self.warehouse.product(self.pipe)
+        self.warehouse.save_product(replace(product, barcode="4780001"))
+        dialog = ProductDialog(self.warehouse, self.warehouse.product(self.pipe))
+        self.assertTrue(dialog.extras_shown)
 
-    def test_first_computer_publishes_its_database(self):
-        page = self.settings_page()
-        page._server_url.setText(f"127.0.0.1:{self.server.server_address[1]}")
-        page._server_token.setText(TOKEN)
-        with (
-            mock.patch("ombor.ui.settings_page.confirm", return_value=True),
-            mock.patch("ombor.ui.settings_page.QMessageBox.information") as information,
-            mock.patch.object(SyncController, "start"),
-        ):
-            page._connect_server()
-        self.assertIn("serverga yuborildi", information.call_args.args[2])
-        self.assertIsNotNone(SyncConfig.load(self.services.prefs))
-        self.assertTrue(Replica(self.conn).enabled)
-        self.assertGreater(self.store.status()["rows"], 0)
-        self.assertIn("Server:", page._sync_status.text())
+    def test_alt_unit_shows_the_base_unit(self):
+        dialog = ProductDialog(self.warehouse)
+        dialog._unit.setCurrentText("kg")
+        self.assertEqual(dialog._base_unit.text(), "kg")
 
-    def test_wrong_token_is_reported(self):
-        page = self.settings_page()
-        page._server_url.setText(f"127.0.0.1:{self.server.server_address[1]}")
-        page._server_token.setText("boshqa-kalit")
-        with (
-            mock.patch("ombor.ui.settings_page.QMessageBox.warning") as warning,
-            mock.patch.object(SyncController, "start"),
-        ):
-            page._connect_server()
-        self.assertIn("kalit", warning.call_args.args[2])
-        self.assertIsNone(SyncConfig.load(self.services.prefs))
 
-    def test_server_card_is_hidden_without_a_database_file(self):
+class SimpleDocumentDialogTests(UiTestCase):
+    def test_issue_target_buttons_switch_fields(self):
+        dialog = DocumentDialog(self.warehouse, self.services.sites, LABELS[MovementKind.OUT], "Rahbar")
+        dialog.show()
+        dialog._target_choices[IssueTarget.SALE].click()
+        self.assertIs(dialog._target.currentData(), IssueTarget.SALE)
+        self.assertFalse(dialog._customer_field.isHidden())
+        self.assertTrue(dialog._site_field.isHidden())
+        self.assertTrue(dialog._target_choices[IssueTarget.SALE].isChecked())
+
+    def test_numbers_start_empty(self):
+        dialog = DocumentDialog(self.warehouse, self.services.sites, LABELS[MovementKind.IN], "Rahbar")
+        self.assertEqual(dialog.line(0).quantity.text().strip(), "")
+
+    def test_missing_product_is_added_from_the_document(self):
+        dialog = DocumentDialog(self.warehouse, self.services.sites, LABELS[MovementKind.IN], "Rahbar")
+        new_id = self.warehouse.save_product(Product("Yangi bolt", "dona"))  # mahsulot oynasida saqlangandek
+        with mock.patch("ombor.ui.document_dialog.ProductDialog") as product_dialog:
+            product_dialog.return_value.exec.return_value = True
+            product_dialog.return_value.saved_id = new_id
+            dialog._add_product()
+        self.assertEqual(dialog.line(0).selected().name, "Yangi bolt")
+
+
+class SettingsWithoutServerTests(UiTestCase):
+    def test_server_section_is_gone(self):
         page = SettingsPage(self.services, Session(self.admin), self.folder / "ombor.db")
         self.assertFalse(hasattr(page, "_server_url"))

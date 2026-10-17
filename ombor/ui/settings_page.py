@@ -5,7 +5,7 @@ Dastur haqida. Lavozimga qarab faqat keraklilari ko'rinadi: foydalanuvchilar, um
 sozlamalari — faqat rahbarga.
 """
 
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import QSize, QStandardPaths, Qt, QUrl, Signal
@@ -41,7 +41,7 @@ from ..services import Services
 from ..session import Session
 from ..folder_sync import remember_folder, shared_folder
 from ..settings import MAX_FIRM_NAME
-from ..sync import SyncClient, SyncConfig, SyncError, Synchronizer, device_name, normalize_url
+from ..sync import SyncConfig
 from . import theme
 from .auth_dialogs import (
     ROLES_HINT,
@@ -214,7 +214,6 @@ class SettingsPage(QWidget):
         self._conn = services.conn
         self._sync = sync
         self._backup_status = _text("", "muted")
-        self._sync_status = _text("", "muted")
         self._drive_status = _text("", "muted")
         if sync is not None and session.is_admin:
             sync.finished.connect(lambda _result: self._show_sync_status())
@@ -263,13 +262,13 @@ class SettingsPage(QWidget):
                     [self._users_card()],
                 )
             )
-            shared = [self._drive_card(), self._server_card()] if sync is not None and sync.available else []
+            shared = [self._drive_card()] if sync is not None and sync.available else []
             sections.append(
                 (
                     SHARED,
                     Glyph.SYNC,
                     tr("Umumiy baza"),
-                    tr("Bir nechta kompyuterda bitta baza: Google Drive, server yoki tarmoq"),
+                    tr("Bir nechta kompyuterda bitta baza: Google Drive yoki tarmoq papkasi"),
                     [*shared, self._network_card()],
                 )
             )
@@ -689,7 +688,7 @@ class SettingsPage(QWidget):
                 _action(tr("Uzish"), self._disconnect_drive, "danger"),
             ]
         actions = _button_row(*buttons)
-        blocker = self._sync_blocker(server=False)
+        blocker = self._sync_blocker()
         actions.setEnabled(not blocker)
         return _section(
             Glyph.SYNC,
@@ -730,59 +729,13 @@ class SettingsPage(QWidget):
         remember_folder(self._prefs, None)
         restart_application()
 
-    # --- Markaziy server (internet orqali) ------------------------------------
-
-    def _server_card(self) -> QFrame:
-        config = SyncConfig.load(self._prefs)
-        self._server_url = QLineEdit(config.url if config else "")
-        self._server_url.setPlaceholderText(tr("Masalan: https://ombor.example.uz yoki 192.168.1.10:8765"))
-        self._server_token = QLineEdit(config.token if config else "")
-        self._server_token.setEchoMode(QLineEdit.EchoMode.Password)
-        self._server_token.setPlaceholderText(tr("Server ishga tushirilganda berilgan kalit"))
-        fields = QWidget()
-        form = QVBoxLayout(fields)
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setSpacing(4)
-        for title, field in ((tr("Server manzili"), self._server_url), (tr("Kirish kaliti"), self._server_token)):
-            field.setFixedWidth(SERVER_FIELD_WIDTH)
-            form.addWidget(label(title, "fieldTitle"))
-            form.addWidget(field)
-        buttons = [_action(tr("Ulanish"), self._connect_server, "primary")]
-        if config:
-            buttons += [
-                _action(tr("Hozir sinxronlash"), self._sync_now),
-                _action(tr("Uzish"), self._disconnect_server, "danger"),
-            ]
-        actions = _button_row(*buttons)
-        blocker = self._sync_blocker()
-        actions.setEnabled(not blocker)
-        return _section(
-            Glyph.SYNC,
-            "Violet",
-            tr("Markaziy server (internet orqali yagona baza)"),
-            _text(
-                tr(
-                    "Har bir kompyuter o'z bazasida ishlaydi — internet bo'lmasa ham. Internet paydo bo'lishi bilan "
-                    "o'zgarishlar serverga o'zi yuboriladi va boshqa kompyuterlardagi o'zgarishlar shu yerga keladi "
-                    "(har 30 soniyada). Birinchi ulangan kompyuterning bazasi asosiy bo'ladi; keyingilari ulanganda "
-                    "ularning ma'lumotlari serverdagi bilan almashtiriladi (avval zaxira nusxa olinadi)."
-                )
-            ),
-            fields,
-            _panel(self._sync_status),
-            *([_text(blocker, "error")] if blocker else []),
-            actions,
-        )
-
-    def _sync_blocker(self, server: bool = True) -> str:
-        """Server yoki umumiy papka bilan ishlashga nima xalaqit beradi (hech narsa bo'lmasa — bo'sh)."""
+    def _sync_blocker(self) -> str:
+        """Google Drive bilan ishlashga nima xalaqit beradi (hech narsa bo'lmasa — bo'sh)."""
         if self._vault is not None and self._vault.enabled:
             return tr("Shifrlangan baza bilan sinxronlab bo'lmaydi: avval «Bazani shifrlash»ni o'chiring.")
         if self._prefs.uses_shared_folder:
             return tr("Baza tarmoqdagi umumiy papkada: sinxronlash uchun shu kompyuterdagi bazaga qayting.")
-        if server and shared_folder(self._prefs) is not None:
-            return tr("Shu kompyuter Google Drive papkasi orqali ulangan: server uchun avval undan uzing.")
-        if not server and SyncConfig.load(self._prefs) is not None:
+        if SyncConfig.load(self._prefs) is not None:
             return tr("Shu kompyuter markaziy serverga ulangan: Google Drive uchun avval serverdan uzing.")
         return ""
 
@@ -800,99 +753,10 @@ class SettingsPage(QWidget):
         else:
             place = (tr("Papka: {0}").format(folder.root), tr("Shu kompyuter nomi: {0}").format(folder.device))
             self._drive_status.setText("\n".join((*place, *state)))
-        config = SyncConfig.load(self._prefs)
-        if config is None:
-            self._sync_status.setText(tr("Server ulanmagan: ma'lumotlar faqat shu kompyuterda."))
-            return
-        place = (tr("Server: {0}").format(config.url), tr("Shu kompyuter nomi: {0}").format(config.device))
-        self._sync_status.setText("\n".join((*place, *state)))
-
-    def _connect_server(self) -> None:
-        try:
-            url = normalize_url(self._server_url.text())
-        except SyncError as error:
-            QMessageBox.warning(self, tr("Markaziy server"), str(error))
-            return
-        token = self._server_token.text().strip()
-        if not token:
-            QMessageBox.warning(self, tr("Markaziy server"), tr("Kirish kalitini kiriting."))
-            return
-        config = SyncConfig(url, token, device_name(self._prefs))
-        client = SyncClient(config)
-        self._sync.stop()  # fondagi sinxronlash shu ulanishga xalaqit bermasin
-        try:
-            with _busy():
-                rows = client.status()["rows"]
-        except SyncError as error:
-            QMessageBox.warning(self, tr("Markaziy server"), str(error))
-            self._sync.start()
-            return
-        if rows == 0:
-            self._publish(config, client)
-        else:
-            self._join(config, client, rows)
-
-    def _publish(self, config: SyncConfig, client: SyncClient) -> None:
-        """Bo'sh server: shu kompyuterdagi baza markaziy bazaga aylanadi."""
-        question = tr(
-            "Server bo'sh. Shu kompyuterdagi barcha ma'lumotlar markaziy baza sifatida serverga yuboriladi; "
-            "boshqa kompyuterlar keyin shu bazaga ulanadi.\n\nDavom etilsinmi?"
-        )
-        if not confirm(self, tr("Markaziy server"), question, tr("Ha, yuborish")):
-            self._sync.start()
-            return
-        with _busy():
-            result = Synchronizer(self._conn, client).publish()
-        config.save(self._prefs)
-        if result.ok:
-            message = tr("Ulandi. {0} ta yozuv serverga yuborildi.").format(result.sent)
-        else:
-            message = tr(
-                "Ulanish saqlandi, lekin hammasi yuborilmadi: {0}\nInternet bo'lganda dastur o'zi davom ettiradi."
-            ).format(result.error)
-        QMessageBox.information(self, tr("Markaziy server"), message)
-        self._sync.start()
-        self.refresh()
-
-    def _join(self, config: SyncConfig, client: SyncClient, rows: int) -> None:
-        """Ma'lumoti bor server: shu yerdagi ma'lumotlar serverdagilari bilan almashtiriladi."""
-        question = tr(
-            "Serverda {0} ta yozuv bor. Shu kompyuterdagi ma'lumotlar serverdagi ma'lumotlar bilan ALMASHTIRILADI "
-            "(avval zaxira nusxa olinadi). Keyin dastur qayta ochiladi — serverdagi foydalanuvchi va parol bilan "
-            "kirasiz.\n\nDavom etilsinmi?"
-        ).format(rows)
-        if not confirm(self, tr("Markaziy server"), question, tr("Ha, ulanish")):
-            self._sync.start()
-            return
-        try:
-            self._backup.auto_folder.mkdir(parents=True, exist_ok=True)
-            copy = self._backup.auto_folder / f"serverga-ulanishdan-oldin-{datetime.now():%Y-%m-%d-%H%M}.db"
-            self._backup.save_to(copy)
-            with _busy():
-                Synchronizer(self._conn, client).join()
-        except (SyncError, OSError, sqlite3.Error) as error:
-            QMessageBox.warning(self, tr("Markaziy server"), tr("Ulanib bo'lmadi: {0}").format(error))
-            self._sync.start()
-            return
-        config.save(self._prefs)
-        QMessageBox.information(self, tr("Markaziy server"), tr("Ma'lumotlar serverdan olindi. Dastur qayta ochiladi."))
-        restart_application()
 
     def _sync_now(self) -> None:
         self._sync.sync_now()
         self._sync_status.setText(tr("Sinxronlanmoqda…"))
-
-    def _disconnect_server(self) -> None:
-        question = tr(
-            "Shu kompyuter serverdan uziladi: ma'lumotlar shu yerda qoladi, lekin boshqa kompyuterlar bilan "
-            "almashilmaydi. Hali yuborilmagan o'zgarishlar serverga bormaydi.\n\nDavom etilsinmi?"
-        )
-        if not confirm(self, tr("Markaziy server"), question, tr("Ha, uzish")):
-            return
-        self._sync.stop()
-        Replica(self._conn).disable()
-        SyncConfig.forget(self._prefs)
-        restart_application()
 
     # --- Tarmoqda ishlash --------------------------------------------------
 

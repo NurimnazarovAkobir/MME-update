@@ -6,10 +6,14 @@ from typing import Sequence
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
+    QFrame,
+    QHBoxLayout,
     QHeaderView,
     QLineEdit,
+    QPushButton,
     QTableWidget,
     QWidget,
 )
@@ -21,19 +25,20 @@ from ..i18n import tr
 from ..models import Movement, MovementDetails, MovementKind, ProductStock
 from ..sites import Sites
 from ..warehouse import Warehouse
-from .dialogs import FormDialog, GroupFields, MovementDialog, product_box
+from .dialogs import FormDialog, GroupFields, MovementDialog, ProductDialog, captioned, product_box, side_by_side
 from .icons import Glyph
 from .labels import KindLabels
 from .printing import print_waybill
 from .site_dialogs import SitePicker
 from .widgets import button, date_input, label, number_input, suggestion_box
 
-DIALOG_WIDTH = 960
-LINES_HEIGHT = 236  # to'rtta qator ko'rinadi; ko'pi aylantiriladi
-ROW_HEIGHT = 46  # son maydoni sig'ishi uchun
+DIALOG_WIDTH = 1080
+LINES_HEIGHT = 250  # to'rtta qator ko'rinadi; ko'pi aylantiriladi
+ROW_HEIGHT = 48  # son maydoni sig'ishi uchun
 # Jadval ustunlari va (cho'ziladigan «Mahsulot»dan boshqa) ularning kengliklari.
 PRODUCT, STOCK, QUANTITY, UNIT, PRICE, AMOUNT, REMOVE = range(7)
-COLUMN_WIDTHS = {STOCK: 115, QUANTITY: 115, UNIT: 110, PRICE: 135, AMOUNT: 125, REMOVE: 52}
+COLUMN_WIDTHS = {STOCK: 105, QUANTITY: 110, UNIT: 95, PRICE: 130, AMOUNT: 125, REMOVE: 48}
+EMPTY_NUMBER = " "  # 0 o'rniga bo'sh ko'rinadi: yozishni boshlash oson
 
 
 class IssueTarget(Enum):
@@ -52,9 +57,7 @@ def can_edit_as_document(movements: Sequence[MovementDetails]) -> bool:
     """
     if len(movements) < 2 or any(movement.is_return for movement in movements):
         return False
-    shared = {
-        (m.warehouse_id, m.counterparty, m.person, m.note, m.on_credit, m.sale_price > 0) for m in movements
-    }
+    shared = {(m.warehouse_id, m.counterparty, m.person, m.note, m.on_credit, m.sale_price > 0) for m in movements}
     return len(shared) == 1
 
 
@@ -77,6 +80,8 @@ class DocumentLine(QObject):
         self.quantity = number_input(3)
         self.unit = QComboBox()
         self.price = number_input(2)
+        for field in (self.quantity, self.price):
+            field.setSpecialValueText(EMPTY_NUMBER)
         self.amount = label("", "muted")
         self.amount.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.remove = button("", "rowDelete", Glyph.DELETE)
@@ -183,11 +188,15 @@ class DocumentDialog(FormDialog):
         parent: QWidget | None = None,
         document: Sequence[MovementDetails] = (),
     ):
-        super().__init__(
-            tr("{0}ni tahrirlash").format(labels.title) if document else tr("Yangi {0}").format(labels.title.lower()),
-            parent,
+        title = (
+            tr("{0}ni tahrirlash").format(labels.title) if document else tr("Yangi {0}").format(labels.title.lower())
         )
+        super().__init__(title, parent)
         self.setMinimumWidth(DIALOG_WIDTH)
+        if labels.kind is MovementKind.IN:
+            self.set_header(Glyph.RECEIPT, "Good", title, tr("Omborga mahsulot keldi: kimdan va nima keldi"))
+        else:
+            self.set_header(Glyph.ISSUE, "Out", title, tr("Ombordan mahsulot chiqdi: qayerga va nima ketdi"))
         self._warehouse = warehouse
         self._sites = sites
         self._labels = labels
@@ -218,27 +227,62 @@ class DocumentDialog(FormDialog):
         self._on_credit.setToolTip(tr("Belgilansa, summa «Qarzlar» bo'limida shu kontragent hisobiga yoziladi."))
         self._note = QLineEdit()
 
-        self.form.addRow(tr("Sana *"), self._date)
-        self.form.addRow(tr("Ombor"), self._store)
-        self.form.setRowVisible(self._store, self._store.count() > 1)
+        # 1) Kimdan / qayerga va qachon. 2) Mahsulotlar jadvali. 3) Qo'shimcha maydonlar (yig'iq).
+        store = captioned(tr("Ombor"), self._store)
+        store.setVisible(self._store.count() > 1)
         if self._is_receipt:
-            self.form.addRow(labels.counterparty, self._supplier)
+            self.form.addRow(
+                side_by_side(
+                    captioned(labels.counterparty, self._supplier),
+                    captioned(tr("Sana"), self._date),
+                    store,
+                    stretches=(3, 1, 1),
+                )
+            )
         else:
-            self.form.addRow(tr("Chiqim turi"), self._target)
-            self.form.addRow(tr("Obyekt *"), self._site)
-            self.form.addRow(tr("Xaridor"), self._customer)
+            self._target.setVisible(False)  # o'rniga yaqqol tugmalar; ro'yxat holatni saqlaydi
+            self.form.addRow(captioned(tr("Mahsulot qayerga ketyapti?"), self._target_buttons()))
+            self._site_field = captioned(tr("Obyekt *"), self._site)
+            self._customer_field = captioned(tr("Xaridor"), self._customer)
+            self.form.addRow(
+                side_by_side(
+                    self._site_field,
+                    self._customer_field,
+                    captioned(tr("Sana"), self._date),
+                    store,
+                    stretches=(3, 3, 1, 1),
+                )
+            )
+            self.form.addRow(self._target)
+        self.form.addRow(label(tr("Mahsulotlar"), "fieldCaption"))
         self.form.addRow(self._table)
-        self.form.addRow(self._total)
-        self.add_extra_row(tr("Hujjat №"), self._doc_number)
-        self.add_extra_row(labels.person, self._person)
-        self.add_extra_row(tr("Guruh *") if warehouse.group_required else tr("Guruh"), self._groups.group)
-        self.add_extra_row(tr("Kategoriya"), self._groups.subgroup)
-        self.add_extra_row("", self._on_credit)
-        self.add_extra_row(tr("Izoh"), self._note)
+        new_product = button(tr("Ro'yxatda yo'q mahsulot qo'shish"), "link", Glyph.ADD)
+        new_product.setAutoDefault(False)
+        new_product.clicked.connect(self._add_product)
+        hint = label(tr("Mahsulotni tanlang yoki nomini yozing — ostidan yangi qator o'zi ochiladi."), "muted")
+        below = QWidget()
+        below_row = QHBoxLayout(below)
+        below_row.setContentsMargins(0, 0, 0, 0)
+        below_row.addWidget(hint)
+        below_row.addWidget(new_product)
+        below_row.addStretch()
+        below_row.addWidget(self._total)
+        self.form.addRow(below)
+        group_title = tr("Guruh *") if warehouse.group_required else tr("Guruh")
+        self.add_extra_row(
+            "", side_by_side(captioned(tr("Hujjat №"), self._doc_number), captioned(labels.person, self._person))
+        )
+        self.add_extra_row(
+            "",
+            side_by_side(
+                captioned(group_title, self._groups.group), captioned(tr("Kategoriya"), self._groups.subgroup)
+            ),
+        )
+        self.add_extra_row("", side_by_side(captioned(tr("Izoh"), self._note), captioned(" ", self._on_credit)))
         self._groups.group.setToolTip(tr("Tanlanmasa, har bir mahsulotning oxirgi yozuvidagi guruhi olinadi."))
 
         if not document:
-            full_form = button(tr("To'liq shakl"), "link")
+            full_form = button(tr("Qaytarish yoki boshqa holat"), "link")
             full_form.setToolTip(
                 tr("Bitta mahsulot uchun barcha maydonlar: qaytarish va boshqa kam uchraydigan hollar")
             )
@@ -327,9 +371,9 @@ class DocumentDialog(FormDialog):
         product = line.selected()
         if product is None:
             raise WarehouseError(
-                tr("«{0}» ro'yxatda yo'q. Mahsulotni ro'yxatdan tanlang yoki avval uni «Mahsulotlar»ga qo'shing.").format(
-                    line.product.currentText().strip()
-                )
+                tr(
+                    "«{0}» ro'yxatda yo'q. Mahsulotni ro'yxatdan tanlang yoki avval uni «Mahsulotlar»ga qo'shing."
+                ).format(line.product.currentText().strip())
             )
         price = line.price.value() / line.factor() if self._has_prices() else 0.0
         if self._target_kind() is IssueTarget.SALE and not price:
@@ -363,8 +407,10 @@ class DocumentDialog(FormDialog):
         """Chiqim turiga qarab: obyekt yoki xaridor maydoni, narx ustunlari va jami."""
         target = self._target_kind()
         if not self._is_receipt:
-            self.form.setRowVisible(self._site, target is IssueTarget.SITE)
-            self.form.setRowVisible(self._customer, target is IssueTarget.SALE)
+            self._site_field.setVisible(target is IssueTarget.SITE)
+            self._customer_field.setVisible(target is IssueTarget.SALE)
+            for button_target, choice in self._target_choices.items():
+                choice.setChecked(button_target is target)
         priced = self._has_prices()
         for column in (PRICE, AMOUNT):
             self._table.setColumnHidden(column, not priced)
@@ -373,6 +419,39 @@ class DocumentDialog(FormDialog):
         self._table.horizontalHeaderItem(PRICE).setText(price_title)
         self._show_total()
         self.adjustSize()
+
+    def _target_buttons(self) -> QFrame:
+        """Chiqim turi — uchta yaqqol tugma (ro'yxat o'rniga): bir bosishda tanlanadi."""
+        bar = QFrame()
+        bar.setObjectName("segmentBar")
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(4, 4, 4, 4)
+        row.setSpacing(2)
+        group = QButtonGroup(bar)
+        self._target_choices: dict[IssueTarget, QPushButton] = {}
+        for target in IssueTarget:
+            choice = button(target.value, "segment")
+            choice.setCheckable(True)
+            choice.setAutoDefault(False)
+            choice.clicked.connect(
+                lambda _=False, target=target: self._target.setCurrentIndex(self._target.findData(target))
+            )
+            group.addButton(choice)
+            row.addWidget(choice)
+            self._target_choices[target] = choice
+        row.addStretch()
+        return bar
+
+    def _add_product(self) -> None:
+        """Ro'yxatda yo'q mahsulotni shu yerning o'zida qo'shadi va bo'sh qatorga tanlab qo'yadi."""
+        dialog = ProductDialog(self._warehouse, parent=self)
+        if not dialog.exec():
+            return
+        self._reload_products()
+        name = self._warehouse.product(dialog.saved_id).name
+        blank = next((line for line in self._lines if line.selected() is None), None) or self._add_line()
+        blank.select(name)
+        blank.quantity.setFocus()
 
     def _open_full_form(self) -> None:
         """Shu oyna o'rniga bitta yozuvning to'liq shaklini ochadi."""
