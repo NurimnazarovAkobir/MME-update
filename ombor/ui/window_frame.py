@@ -5,6 +5,10 @@ Qatorda faqat «yig'ish», «kattalashtirish / tiklash» va «yopish» tugmalari
 o'lchami o'zgartiriladi. «Sozlamalar → Asosiy sozlamalar»da Windows'ning odatiy ramkasiga qaytish mumkin.
 """
 
+import ctypes
+import sys
+from ctypes import wintypes
+
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QHBoxLayout, QMainWindow, QPushButton, QVBoxLayout, QWidget
@@ -19,7 +23,119 @@ BUTTON_WIDTH = 46
 RESIZE_MARGIN = 6  # oyna chetidagi shu kenglikdagi joydan o'lchami o'zgartiriladi
 GLYPH_POINT_SIZE = 8
 
-MINIMIZE, MAXIMIZE, RESTORE, CLOSE = "", "", "", ""
+WM_WINDOWPOSCHANGING = 0x0046
+MONITOR_DEFAULTTONEAREST = 2
+ABM_GETSTATE, ABM_GETTASKBARPOS, ABS_AUTOHIDE = 4, 5, 1
+ABE_LEFT, ABE_TOP, ABE_RIGHT, ABE_BOTTOM = range(4)
+SWP_NOSIZE = 0x0001
+
+
+class _WINDOWPOS(ctypes.Structure):
+    _fields_ = [
+        ("hwnd", wintypes.HWND),
+        ("hwndInsertAfter", wintypes.HWND),
+        ("x", ctypes.c_int),
+        ("y", ctypes.c_int),
+        ("cx", ctypes.c_int),
+        ("cy", ctypes.c_int),
+        ("flags", wintypes.UINT),
+    ]
+
+
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("rcMonitor", wintypes.RECT),
+        ("rcWork", wintypes.RECT),
+        ("dwFlags", wintypes.DWORD),
+    ]
+
+
+class _APPBARDATA(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("hWnd", wintypes.HWND),
+        ("uCallbackMessage", wintypes.UINT),
+        ("uEdge", wintypes.UINT),
+        ("rc", wintypes.RECT),
+        ("lParam", wintypes.LPARAM),
+    ]
+
+
+if sys.platform == "win32":
+    _user32, _shell32 = ctypes.windll.user32, ctypes.windll.shell32
+    _user32.MonitorFromWindow.restype = wintypes.HANDLE
+    _user32.MonitorFromWindow.argtypes = (wintypes.HWND, wintypes.DWORD)
+    _user32.GetMonitorInfoW.argtypes = (wintypes.HANDLE, ctypes.POINTER(_MONITORINFO))
+    _user32.IsZoomed.argtypes = (wintypes.HWND,)
+
+    _shell32.SHAppBarMessage.restype = ctypes.c_size_t
+    _shell32.SHAppBarMessage.argtypes = (wintypes.DWORD, ctypes.POINTER(_APPBARDATA))
+
+MINIMIZE, MAXIMIZE, RESTORE, CLOSE ="", "", "", ""
+
+
+AUTOHIDE_GAP = 2  # avtomatik yashirinadigan panel tomonida bo'sh qoladigan joy (piksel)
+
+
+def maximized_rect(hwnd: int) -> tuple[int, int, int, int] | None:
+    """Kattalashtirilgan ramkasiz oyna egallashi kerak bo'lgan joy: monitorning ish maydoni (vazifalar paneli
+    ustiga chiqmaydi). Panel avtomatik yashirinadigan bo'lsa, uning tomonida 2 piksel qoldiriladi — aks holda
+    Windows oynani «to'liq ekran» deb hisoblaydi va sichqoncha pastga borganda panelni chiqarmaydi.
+
+    Qaytadi: (x, y, kenglik, balandlik) — monitorning chap yuqori burchagiga nisbatan; Windows emas — None.
+    """
+    if sys.platform != "win32":
+        return None
+    monitor = _user32.MonitorFromWindow(wintypes.HWND(hwnd), MONITOR_DEFAULTTONEAREST)
+    info = _MONITORINFO()
+    info.cbSize = ctypes.sizeof(info)
+    if not _user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+        return None
+    screen, work = info.rcMonitor, info.rcWork
+    left, top, right, bottom = work.left, work.top, work.right, work.bottom
+    bar = _APPBARDATA()
+    bar.cbSize = ctypes.sizeof(bar)
+    autohide = _shell32.SHAppBarMessage(ABM_GETSTATE, ctypes.byref(bar)) & ABS_AUTOHIDE
+    if autohide and _shell32.SHAppBarMessage(ABM_GETTASKBARPOS, ctypes.byref(bar)):
+        on_this_monitor = not (
+            bar.rc.right <= screen.left
+            or bar.rc.left >= screen.right
+            or bar.rc.bottom <= screen.top
+            or bar.rc.top >= screen.bottom
+        )
+        if on_this_monitor:
+            edge = bar.uEdge
+            left += AUTOHIDE_GAP if edge == ABE_LEFT else 0
+            top += AUTOHIDE_GAP if edge == ABE_TOP else 0
+            right -= AUTOHIDE_GAP if edge == ABE_RIGHT else 0
+            bottom -= AUTOHIDE_GAP if edge == ABE_BOTTOM else 0
+    return left - screen.left, top - screen.top, right - left, bottom - top
+
+
+def clamp_maximized_size(event_type, message) -> None:
+    """`QWidget.nativeEvent` uchun: kattalashtirilgan oynaning o'lchamini `maximized_rect` bilan cheklaydi.
+
+    Qt ramkasiz oynani butun monitorga yoyadi (keyin qo'lda o'zgartirilsa ham qaytaradi), shuning uchun har bir
+    WM_WINDOWPOSCHANGING da o'lcham tuzatiladi. Xabar baribir Qt'ga uzatiladi.
+    """
+    if sys.platform != "win32" or bytes(event_type) != b"windows_generic_MSG":
+        return
+    msg = wintypes.MSG.from_address(int(message))
+    if msg.message != WM_WINDOWPOSCHANGING or not _user32.IsZoomed(msg.hWnd):
+        return
+    position = _WINDOWPOS.from_address(msg.lParam)
+    if position.flags & SWP_NOSIZE:
+        return
+    rect = maximized_rect(msg.hWnd)
+    if rect is None:
+        return
+    monitor = _user32.MonitorFromWindow(msg.hWnd, MONITOR_DEFAULTTONEAREST)
+    info = _MONITORINFO()
+    info.cbSize = ctypes.sizeof(info)
+    if _user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+        position.x, position.y = info.rcMonitor.left + rect[0], info.rcMonitor.top + rect[1]
+        position.cx, position.cy = rect[2], rect[3]
 
 
 def uses_system_frame(prefs: LocalPrefs) -> bool:
@@ -116,6 +232,7 @@ class FramelessFrame(QObject):
         if watched is self._window and event.type() == QEvent.Type.WindowStateChange:
             self._apply_margins()
             self.title_bar.update_state()
+
         elif watched is self._root:
             if event.type() == QEvent.Type.MouseMove:
                 self._root.setCursor(_CURSORS.get(self._edges(event.position().toPoint()), Qt.CursorShape.ArrowCursor))

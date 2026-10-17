@@ -54,7 +54,7 @@ from .statistics_page import StatisticsPage
 from .sync_controller import SyncController, describe
 from .tile_loader import TileLoader
 from .update_page import UpdatePage
-from .window_frame import FramelessFrame, uses_system_frame
+from .window_frame import FramelessFrame, clamp_maximized_size, uses_system_frame
 from .widgets import button, label
 
 SIDEBAR_WIDTH = 250
@@ -279,6 +279,12 @@ class MainWindow(QMainWindow):
         if self._sync.configured:
             self._show_sync_text(describe(None)[0])
             self._sync.start()
+
+    def nativeEvent(self, event_type, message):
+        """Ramkasiz oyna kattalashtirilganda vazifalar paneli ustiga chiqmasin (avtomatik yashirinsa ham chiqsin)."""
+        if getattr(self, "_frame", None) is not None:
+            clamp_maximized_size(event_type, message)
+        return super().nativeEvent(event_type, message)
 
     def closeEvent(self, event) -> None:
         """Boshlangan sinxronlash tugashi kutiladi: baza yopilayotganda u yarim qolmasligi kerak."""

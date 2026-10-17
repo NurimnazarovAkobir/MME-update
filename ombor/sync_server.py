@@ -199,6 +199,14 @@ def make_handler(store: ServerStore, token: str, log: bool = True) -> type[BaseH
                 print(f"{_now()} {self.address_string()} {format % args}", flush=True)
 
         def _handle(self, method: str) -> None:
+            # So'rov tanasi har doim oxirigacha o'qiladi: rad javobini o'qilmagan tana ustidan yuborib, ulanishni
+            # yopsak, Windows mijozga «ulanish uzildi» deydi va u buni «internet yo'q» deb tushunadi.
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > MAX_BODY_BYTES:
+                self.close_connection = True
+                self._reply(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "So'rov juda katta"})
+                return
+            self._raw = self.rfile.read(length) if length else b""
             if not self._authorized():
                 self._reply(HTTPStatus.UNAUTHORIZED, {"error": "Kirish kaliti noto'g'ri"})
                 return
@@ -240,10 +248,7 @@ def make_handler(store: ServerStore, token: str, log: bool = True) -> type[BaseH
             return hmac.compare_digest(given.encode("utf-8"), token.encode("utf-8"))
 
         def _body(self) -> dict:
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > MAX_BODY_BYTES:
-                raise ValueError("So'rov juda katta")
-            value = json.loads(self.rfile.read(length).decode("utf-8"))
+            value = json.loads(self._raw.decode("utf-8"))
             if not isinstance(value, dict):
                 raise ValueError("JSON obyekt kutilgan edi")
             return value
