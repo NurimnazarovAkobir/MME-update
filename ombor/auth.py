@@ -62,6 +62,11 @@ class Auth:
         rows = self._conn.execute("SELECT id, name, role FROM users ORDER BY name")
         return [User(row["id"], row["name"], Role(row["role"])) for row in rows]
 
+    def user(self, user_id: int) -> User | None:
+        """Hisobning bazadagi hozirgi holati; o'chirilgan bo'lsa — None."""
+        row = self._conn.execute("SELECT id, name, role FROM users WHERE id = ?", (user_id,)).fetchone()
+        return User(row["id"], row["name"], Role(row["role"])) if row else None
+
     def add_user(self, name: str, password: str, role: Role) -> User:
         name = name.strip()
         if not name:

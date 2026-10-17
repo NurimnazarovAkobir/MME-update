@@ -7,6 +7,8 @@ from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
+    QMessageBox,
+    QPushButton,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -21,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import catalog
-from ..config import APP_NAME, APP_VERSION
+from ..config import APP_NAME
 from ..driver import sqlite3
 from ..i18n import tr
 from ..models import MovementKind
@@ -37,14 +39,14 @@ from .history_page import HistoryPage
 from .icon import app_icon, icon_pixmap
 from .icons import Glyph, icon_label, menu_icon
 from .labels import LABELS
-from .language import sign_out
+from .language import restart_application
 from .lock_screen import AutoLock, lock_minutes
 from .movements_page import MovementsPage
 from .printing import set_firm_name
 from .products_page import ProductsPage
 from .reports_page import ReportsPage
 from .returns_page import ReturnsPage
-from .settings_page import SettingsPage
+from .settings_page import PROFILE, SettingsPage
 from .site_dialogs import ReturnDialog
 from .sites_page import SitesPage
 from .statistics_page import StatisticsPage
@@ -61,6 +63,7 @@ MENU_ICON_SIZE = 20
 # Istalgan sahifadan yangi yozuv ochadigan tugmalar (bosh sahifadagi katta tugmalar yordam yozuvida ham bor).
 NEW_RECEIPT_KEY, NEW_ISSUE_KEY, NEW_PRODUCT_KEY, NEW_RETURN_KEY = "F2", "F3", "F4", "F5"
 LOCK_KEY = "Ctrl+L"
+CHIP_AVATAR_SIZE, CHIP_HEIGHT = 36, 58
 REFRESH_INTERVAL_MS = 10_000
 MAP_FOLDER = "xarita"  # yuklab olingan xarita rasmlari (shu kompyuterning shaxsiy papkasida)
 NOTIFICATION_MS = 15_000
@@ -123,6 +126,7 @@ class MainWindow(QMainWindow):
             service.actor = session.author  # o'zgarishlar tarixiga shu ism va lavozim yoziladi
             service.actor_role = session.user.role.value
         self._session = session
+        self._auth = services.auth
 
         self._sites = services.sites
         dashboard = DashboardPage(self._warehouse, services.reports, services.sites, session.can_add)
@@ -130,9 +134,7 @@ class MainWindow(QMainWindow):
         dashboard.return_requested.connect(self._new_return)
         dashboard.product_requested.connect(self._new_product)
         dashboard.page_requested.connect(self._open_destination)
-        self._products_page = ProductsPage(
-            self._warehouse, services.sites, session, services.importer, services.backup
-        )
+        self._products_page = ProductsPage(self._warehouse, services.sites, session, services.importer, services.backup)
         self._products_title = tr("Mahsulotlar")
         self._sync = SyncController(services.prefs, services.reconnect, self)
         self._sync.finished.connect(self._show_sync_result)
@@ -153,7 +155,12 @@ class MainWindow(QMainWindow):
             ),
             (tr("Vozvrat"), Glyph.UNDO, ReturnsPage(services.sites, self._warehouse, session), None),
             (self._products_title, Glyph.PRODUCTS, self._products_page, Destination.PRODUCTS),
-            (tr("Obyektlar"), Glyph.PIN, SitesPage(services.sites, session, self._map_tiles(services)), Destination.SITES),
+            (
+                tr("Obyektlar"),
+                Glyph.PIN,
+                SitesPage(services.sites, session, self._map_tiles(services)),
+                Destination.SITES,
+            ),
             (
                 tr("Hisobotlar"),
                 Glyph.REPORTS,
@@ -176,7 +183,9 @@ class MainWindow(QMainWindow):
         settings_page = SettingsPage(services, session, db_path, self._sync)
         settings_page.firm_name_changed.connect(self._show_firm_name)
         settings_page.lock_minutes_changed.connect(lambda minutes: self._auto_lock.set_minutes(minutes))
+        settings_page.lock_requested.connect(lambda: self._auto_lock.lock())
         self._settings_page = settings_page
+        self._settings_row = len(pages)
         pages.append((tr("Sozlamalar"), Glyph.SETTINGS, settings_page, None))
 
         colors = theme.palette()
@@ -196,7 +205,6 @@ class MainWindow(QMainWindow):
         self._menu.item(service_row).setData(DIVIDER_ROLE, True)
         self._menu.currentRowChanged.connect(self._show_page)
 
-        version = self._about_card()
         sidebar_panel = QWidget()
         sidebar_panel.setObjectName("sidebarPanel")
         sidebar_panel.setFixedWidth(SIDEBAR_WIDTH)
@@ -208,15 +216,7 @@ class MainWindow(QMainWindow):
         self._sync_status = label("", "syncStatus")
         self._sync_status.setVisible(self._sync.configured)
         sidebar.addWidget(self._sync_status)
-        sidebar.addWidget(version)
-        sign_out_button = button(tr("Chiqish"), "danger", Glyph.SIGN_OUT)
-        sign_out_button.setToolTip(tr("Hisobdan chiqish va boshqa foydalanuvchi bilan kirish"))
-        sign_out_button.clicked.connect(lambda: sign_out(self))
-        lock_button = button(tr("Qulflash"), glyph=Glyph.LOCK)
-        lock_button.setToolTip(tr("Dasturni qulflash: davom etish uchun parol so'raladi ({0})").format(LOCK_KEY))
-        lock_button.clicked.connect(lambda: self._auto_lock.lock())
-        sidebar.addWidget(lock_button)
-        sidebar.addWidget(sign_out_button)
+        sidebar.addWidget(self._user_chip(session))
 
         central = QWidget()
         layout = QHBoxLayout(central)
@@ -278,9 +278,41 @@ class MainWindow(QMainWindow):
         """Bazani boshqa ulanish (boshqa kompyuter) o'zgartirganda o'zgaradigan son."""
         return self._conn.execute("PRAGMA data_version").fetchone()[0]
 
+    def _session_is_current(self) -> bool:
+        """Kirgan hisob bazada hali o'sha ism va lavozim bilan turibdimi.
+
+        Hisob boshqa kompyuterda o'chirilgan yoki lavozimi o'zgargan bo'lsa, yoki baza umumiy bazaga ulanib
+        almashtirilgan bo'lsa (ochiq seans eskirib qoladi) — False: foydalanuvchi qayta kirishi kerak.
+        """
+        current = self._auth.user(self._session.user.id)
+        user = self._session.user
+        return current is not None and (current.name, current.role) == (user.name, user.role)
+
+    def _require_sign_in_if_stale(self) -> bool:
+        """Seans eskirgan bo'lsa — xabar beradi va dasturni kirish oynasi bilan qayta ochadi. Eskirgan — True."""
+        if not hasattr(self, "_watcher"):
+            return False  # oyna hali qurilmoqda: seans hozirgina kirish oynasida tekshirilgan
+        try:
+            if self._session_is_current():
+                return False
+        except sqlite3.Error:
+            return False  # baza vaqtincha band — keyingi safar
+        self._watcher.stop()
+        QMessageBox.information(
+            self,
+            APP_NAME,
+            tr(
+                "Hisobingiz o'zgardi (yoki baza umumiy bazaga ulandi). Iltimos, o'z login va parolingiz bilan qayta kiring."
+            ),
+        )
+        restart_application()
+        return True
+
     def _refresh_if_changed_elsewhere(self) -> None:
         if QApplication.activeModalWidget() is not None:
             return  # oyna ochiq turganda jadval ostidan o'zgarib ketmasin
+        if self._require_sign_in_if_stale():
+            return
         try:
             version = self._read_data_version()
         except sqlite3.Error:
@@ -298,30 +330,35 @@ class MainWindow(QMainWindow):
         folder = services.prefs.folder
         return TileLoader(TileStore(folder / MAP_FOLDER), self) if folder else None
 
-    def _about_card(self) -> QFrame:
-        """Yon menyu ostidagi kartochka: dastur nomi va versiyasi."""
-        frame = QFrame()
-        frame.setObjectName("sidebarCard")
-        badge = QLabel()
-        badge.setPixmap(icon_pixmap(36))
-        badge.setFixedSize(36, 36)
+    def _user_chip(self, session: Session) -> QPushButton:
+        """Yon menyu pastida: kim kirgani. Bosilsa — Sozlamalarning «Profil» bo'limi (parol, qulflash, chiqish)."""
+        chip = QPushButton()
+        chip.setObjectName("userChip")
+        chip.setCursor(Qt.CursorShape.PointingHandCursor)
+        chip.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        chip.setToolTip(tr("Profil: parol, qulflash ({0}) va chiqish").format(LOCK_KEY))
+        avatar = label(session.user.name[:1].upper(), "chipAvatar")
+        avatar.setFixedSize(CHIP_AVATAR_SIZE, CHIP_AVATAR_SIZE)
+        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         names = QVBoxLayout()
         names.setSpacing(0)
-        card_name = label(APP_NAME, "sidebarCardTitle")
-        card_name.setWordWrap(True)
-        self._name_labels.append(card_name)
-        names.addWidget(card_name)
-        names.addWidget(label(tr("Boshqaruv tizimi"), "firm"))
-        top = QHBoxLayout()
-        top.setSpacing(10)
-        top.addWidget(badge)
-        top.addLayout(names, stretch=1)
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(12, 12, 12, 10)
-        layout.setSpacing(8)
-        layout.addLayout(top)
-        layout.addWidget(label(tr("Versiya {0}").format(APP_VERSION), "firm"))
-        return frame
+        names.addWidget(label(session.user.name, "chipName"))
+        names.addWidget(label(session.user.role.title, "firm"))
+        row = QHBoxLayout(chip)
+        row.setContentsMargins(10, 8, 10, 8)
+        row.setSpacing(10)
+        row.addWidget(avatar)
+        row.addLayout(names, stretch=1)
+        row.addWidget(icon_label(Glyph.CHEVRON, "chevron"))
+        for widget in (avatar, *chip.findChildren(QLabel)):
+            widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        chip.setFixedHeight(CHIP_HEIGHT)
+        chip.clicked.connect(self._open_profile)
+        return chip
+
+    def _open_profile(self) -> None:
+        self._menu.setCurrentRow(self._settings_row)
+        self._settings_page.show_section(PROFILE)
 
     def _brand(self, session: Session) -> QHBoxLayout:
         """Yuqoridagi belgi, dastur nomi va uning ostida foydalanuvchi lavozimi."""
@@ -350,6 +387,8 @@ class MainWindow(QMainWindow):
 
     def _show_page(self, index: int) -> None:
         """Sahifa har ochilganda ma'lumotlari yangilanadi."""
+        if self._require_sign_in_if_stale():
+            return
         page = self._pages.widget(index)
         page.refresh()
         self._pages.setCurrentWidget(page)

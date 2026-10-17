@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton  # noqa: E4
 from ombor import update  # noqa: E402
 from ombor.database import connect  # noqa: E402
 from ombor.errors import WarehouseError  # noqa: E402
-from ombor.models import Role, User  # noqa: E402
+from ombor.models import Role  # noqa: E402
 from ombor.services import Services  # noqa: E402
 from ombor.session import Session  # noqa: E402
 from ombor.ui import update_page as update_page_module  # noqa: E402
@@ -122,8 +122,9 @@ class UpdatePageTests(OnlineTestCase):
         self.conn = connect(":memory:")
         self.addCleanup(self.conn.close)
         self.services = Services.create(self.conn, self.folder / "zaxira")
-        self.admin = Session(User(1, "Rahbar", Role.ADMIN))
-        self.keeper = Session(User(2, "Vali", Role.KEEPER))
+        # Bazadagi haqiqiy hisoblar: asosiy oyna kirgan hisob bazada borligini tekshiradi.
+        self.admin = Session(self.services.auth.add_user("Rahbar", "parol-1", Role.ADMIN))
+        self.keeper = Session(self.services.auth.add_user("Vali", "parol-2", Role.KEEPER))
 
     def page(self, session=None, url=None) -> UpdatePage:
         self.services.settings.set(update.UPDATE_URL_KEY, self.url if url is None else url)

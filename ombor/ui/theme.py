@@ -485,4 +485,18 @@ QTableWidget {{ font-size: 10.5pt; }}
 #fieldTitle {{ font-weight: 600; }}
 #infoPanel {{ background: {header}; border: 1px solid {border}; border-radius: 10px; }}
 #sectionTitle {{ font-size: 12.5pt; font-weight: 700; }}
+
+QListWidget#settingsNav {{ background: transparent; border: none; outline: 0; }}
+QListWidget#settingsNav::item {{ padding: 6px 12px; margin: 2px 0; border-radius: 10px; color: {text}; }}
+QListWidget#settingsNav::item:hover {{ background: {hover}; }}
+QListWidget#settingsNav::item:selected {{ background: {selection}; color: {accent}; font-weight: 600; }}
+#sectionHeading {{ font-size: 17pt; font-weight: 700; }}
+#settingDivider {{ background: {border}; }}
+#avatar {{ background: {accent}; color: #ffffff; border-radius: 32px; font-size: 22pt; font-weight: 700; }}
+#profileName {{ font-size: 14pt; font-weight: 700; }}
+#versionBadge {{ background: {selection}; color: {accent}; border-radius: 8px; padding: 3px 10px; font-weight: 600; }}
+QPushButton#userChip {{ background: {sidebar_hover}; border: 1px solid {border}; border-radius: 12px; padding: 0; }}
+QPushButton#userChip:hover {{ border-color: {accent}; }}
+#chipAvatar {{ background: {accent}; color: #ffffff; border-radius: 18px; font-size: 13pt; font-weight: 700; }}
+#chipName {{ color: #ffffff; font-weight: 600; }}
 """

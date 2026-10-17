@@ -84,3 +84,36 @@ class SharedFolderUiTests(UiTestCase):
         factory = synchronizer_factory(self.boss_prefs)
         self.assertIsInstance(factory(self.conn), FolderSynchronizer)
         self.assertIsNone(synchronizer_factory(LocalPrefs()))
+
+
+class StaleSessionTests(UiTestCase):
+    """Ochiq oyna hisobi boshqa joyda o'zgarsa — qayta kirish so'raladi (eski «rahbar» seansi qolib ketmaydi)."""
+
+    def test_role_changed_elsewhere_requires_sign_in(self):
+        window = self.window(self.keeper)
+        self.conn.execute("UPDATE users SET role = 'admin' WHERE id = ?", (self.keeper.id,))
+        self.conn.commit()
+        with (
+            mock.patch("ombor.ui.main_window.QMessageBox.information") as told,
+            mock.patch("ombor.ui.main_window.restart_application") as restart,
+        ):
+            window._refresh_if_changed_elsewhere()
+        told.assert_called_once()
+        restart.assert_called_once()
+
+    def test_database_replaced_after_joining_requires_sign_in(self):
+        window = self.window(self.admin)
+        self.conn.execute("DELETE FROM users WHERE id = ?", (self.admin.id,))
+        self.conn.commit()
+        with (
+            mock.patch("ombor.ui.main_window.QMessageBox.information"),
+            mock.patch("ombor.ui.main_window.restart_application") as restart,
+        ):
+            window._menu.setCurrentRow(1)
+        restart.assert_called_once()
+
+    def test_unchanged_session_keeps_working(self):
+        window = self.window(self.keeper)
+        with mock.patch("ombor.ui.main_window.restart_application") as restart:
+            window._refresh_if_changed_elsewhere()
+        restart.assert_not_called()

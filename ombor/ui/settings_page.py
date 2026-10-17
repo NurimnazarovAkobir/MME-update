@@ -1,12 +1,14 @@
-"""Sozlamalar: ko'rinish, til, parol, foydalanuvchilar, zaxira nusxa va markaziy server.
+"""Sozlamalar: chapda bo'limlar ro'yxati, o'ngda tanlangan bo'lim (Telegram va Windows sozlamalari kabi).
 
-Foydalanuvchilar, zaxira nusxa va server faqat rahbarga ko'rinadi.
+Bo'limlar: Profil, Ko'rinish, Ombor va ma'lumotlar, Foydalanuvchilar, Umumiy baza, Zaxira va xavfsizlik,
+Dastur haqida. Lavozimga qarab faqat keraklilari ko'rinadi: foydalanuvchilar, umumiy baza va ombor
+sozlamalari — faqat rahbarga.
 """
 
 from datetime import date, datetime
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths, Qt, QUrl, Signal
+from PySide6.QtCore import QSize, QStandardPaths, Qt, QUrl, Signal
 from PySide6.QtGui import QCursor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
@@ -18,9 +20,12 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -48,7 +53,8 @@ from .auth_dialogs import (
     show_recovery_code,
 )
 from .extra_dialogs import GroupsDialog, NameDialog
-from .icons import Glyph, icon_label
+from .icon import icon_pixmap
+from .icons import Glyph, glyph_icon, icon_label
 from .import_dialog import import_from_excel
 from .shared_folder import TITLE as DRIVE_TITLE
 from .shared_folder import connect_folder
@@ -63,8 +69,67 @@ THEME_KEY = "theme"
 FILE_FILTER = tr("Zaxira nusxa (*.db)")
 USERS_TABLE_HEIGHT = 170
 SECTION_BADGE_SIZE = 36
-FIELD_WIDTH = 320
+FIELD_WIDTH = 280
 SERVER_FIELD_WIDTH = 480
+NAV_WIDTH = 250
+NAV_ICON_SIZE = 18
+CONTENT_MAX_WIDTH = 1000  # keng ekranda bo'lim matni cho'zilib ketmasin
+AVATAR_SIZE = 64
+LOGO_SIZE = 72
+PROFILE, APPEARANCE, DATA, USERS, SHARED, SAFETY, ABOUT = (
+    "profile",
+    "appearance",
+    "data",
+    "users",
+    "shared",
+    "safety",
+    "about",
+)
+
+
+def _setting_row(title: str, hint: str, control: QWidget) -> QWidget:
+    """Bitta sozlama: chapda nomi va izohi, o'ngda boshqaruvi (ro'yxat, katakcha, maydon)."""
+    row = QWidget()
+    row.setObjectName("settingRow")
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 10, 0, 10)
+    layout.setSpacing(24)
+    texts = QVBoxLayout()
+    texts.setSpacing(2)
+    texts.addWidget(label(title, "fieldTitle"))
+    if hint:
+        texts.addWidget(_text(hint, "muted"))
+    layout.addLayout(texts, stretch=1)
+    layout.addWidget(control, 0, Qt.AlignmentFlag.AlignVCenter)
+    return row
+
+
+def _divider() -> QFrame:
+    line = QFrame()
+    line.setObjectName("settingDivider")
+    line.setFixedHeight(1)
+    return line
+
+
+def _rows(*rows: QWidget) -> list[QWidget]:
+    """Sozlama qatorlari orasiga ingichka chiziq qo'yadi."""
+    result: list[QWidget] = []
+    for index, row in enumerate(rows):
+        if index:
+            result.append(_divider())
+        result.append(row)
+    return result
+
+
+def _inline(*widgets: QWidget) -> QWidget:
+    """Bir nechta boshqaruv bitta qatorda (masalan, maydon va «Saqlash» tugmasi)."""
+    box = QWidget()
+    layout = QHBoxLayout(box)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(8)
+    for widget in widgets:
+        layout.addWidget(widget)
+    return box
 
 
 def _button_row(*buttons: QPushButton) -> QWidget:
@@ -126,6 +191,7 @@ def _panel(widget: QWidget) -> QFrame:
 class SettingsPage(QWidget):
     firm_name_changed = Signal(str)  # rahbar ombor nomini o'zgartirdi — sarlavhalar yangilanadi
     lock_minutes_changed = Signal(int)  # avtomatik qulflash vaqti o'zgardi (0 — o'chirilgan)
+    lock_requested = Signal()  # «Qulflash» bosildi — asosiy oyna qulf ekranini ko'rsatadi
 
     def __init__(self, services: Services, session: Session, db_path: Path, sync: SyncController | None = None):
         super().__init__()
@@ -153,42 +219,107 @@ class SettingsPage(QWidget):
         if sync is not None and session.is_admin:
             sync.finished.connect(lambda _result: self._show_sync_status())
 
-        content = QWidget()
-        content.setObjectName("page")
-        cards = QVBoxLayout(content)
-        cards.setContentsMargins(24, 20, 24, 16)
-        cards.setSpacing(14)
+        self._nav = QListWidget()
+        self._nav.setObjectName("settingsNav")
+        self._nav.setFixedWidth(NAV_WIDTH)
+        self._nav.setIconSize(QSize(NAV_ICON_SIZE, NAV_ICON_SIZE))
+        self._nav.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._sections = QStackedWidget()
+        self._keys: list[str] = []
+        for key, glyph, title, subtitle, cards in self._build_sections(session, sync):
+            self._add_section(key, glyph, title, subtitle, cards)
+        self._nav.currentRowChanged.connect(self._sections.setCurrentIndex)
+        self._nav.setCurrentRow(0)
+
         header, _tools = page_header(
             Glyph.SETTINGS, tr("Sozlamalar"), tr("Dastur ishlashini o'zingizga qulay qilib sozlang")
         )
-        cards.addLayout(header)
-        cards.addWidget(self._appearance_card())
-        cards.addWidget(self._account_card())
-        if session.is_admin:
-            cards.addWidget(self._import_card())
-            cards.addWidget(self._rules_card())
-            cards.addWidget(self._stores_card())
-            cards.addWidget(self._users_card())
-            cards.addWidget(self._backup_card())
-            if sync is not None and sync.available:
-                cards.addWidget(self._drive_card())
-                cards.addWidget(self._server_card())
-            cards.addWidget(self._network_card())
-            if self._vault is not None:
-                cards.addWidget(self._encryption_card())
-        elif session.can_add:
-            # Omborchi ham bazaning nusxasini saqlab qo'ya oladi; papka tanlash va tiklash — rahbarda.
-            cards.addWidget(self._backup_card())
-        cards.addWidget(self._about_card())
-        cards.addStretch()
+        body = QHBoxLayout()
+        body.setSpacing(18)
+        body.addWidget(self._nav)
+        body.addWidget(self._sections, stretch=1)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 0)
+        layout.setSpacing(16)
+        layout.addLayout(header)
+        layout.addLayout(body, stretch=1)
 
+    def _build_sections(self, session: Session, sync: SyncController | None) -> list[tuple]:
+        """(kalit, belgi, nomi, izohi, kartochkalar) — faqat shu lavozimga keraklilari."""
+        is_admin = session.is_admin
+        sections = [
+            (PROFILE, Glyph.PERSON, tr("Profil"), tr("Hisobingiz, parol va qulflash"), self._profile_cards()),
+            (APPEARANCE, Glyph.SETTINGS, tr("Ko'rinish"), tr("Fon, til va oyna"), self._appearance_cards()),
+        ]
+        if is_admin:
+            data = [self._import_card(), self._stores_card(), self._rules_card()]
+            sections.append((DATA, Glyph.BOX, tr("Ombor va ma'lumotlar"), tr("Excel, omborlar va guruhlar"), data))
+            sections.append(
+                (
+                    USERS,
+                    Glyph.PEOPLE,
+                    tr("Foydalanuvchilar"),
+                    tr("Hisoblar, lavozimlar va parollar"),
+                    [self._users_card()],
+                )
+            )
+            shared = [self._drive_card(), self._server_card()] if sync is not None and sync.available else []
+            sections.append(
+                (
+                    SHARED,
+                    Glyph.SYNC,
+                    tr("Umumiy baza"),
+                    tr("Bir nechta kompyuterda bitta baza: Google Drive, server yoki tarmoq"),
+                    [*shared, self._network_card()],
+                )
+            )
+        if session.can_add:
+            # Omborchi ham bazaning nusxasini saqlab qo'ya oladi; papka tanlash va tiklash — rahbarda.
+            safety = [self._backup_card()]
+            if is_admin and self._vault is not None:
+                safety.append(self._encryption_card())
+            if is_admin:
+                safety.append(self._history_card())
+            sections.append(
+                (SAFETY, Glyph.LOCK, tr("Zaxira va xavfsizlik"), tr("Zaxira nusxa, shifrlash, tarix"), safety)
+            )
+        sections.append(
+            (ABOUT, Glyph.INFO, tr("Dastur haqida"), tr("Versiya va qisqa yo'riqnoma"), self._about_cards())
+        )
+        return sections
+
+    def _add_section(self, key: str, glyph: str, title: str, subtitle: str, cards: list[QWidget]) -> None:
+        item = QListWidgetItem(glyph_icon(glyph, theme.palette().muted), title)
+        item.setSizeHint(QSize(NAV_WIDTH, 44))
+        self._nav.addItem(item)
+        self._keys.append(key)
+        content = QWidget()
+        content.setObjectName("page")
+        content.setMaximumWidth(CONTENT_MAX_WIDTH)
+        column = QVBoxLayout(content)
+        column.setContentsMargins(0, 0, 8, 20)
+        column.setSpacing(14)
+        column.addWidget(label(title, "sectionHeading"))
+        column.addWidget(label(subtitle, "muted"))
+        for widget in cards:
+            column.addWidget(widget)
+        column.addStretch()
+        holder = QWidget()
+        holder.setObjectName("page")
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(content, stretch=1)
+        row.addStretch(0)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setWidget(content)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(scroll)
+        scroll.setWidget(holder)
+        self._sections.addWidget(scroll)
+
+    def show_section(self, key: str) -> None:
+        """Berilgan bo'limni ochadi (masalan, yon menyudagi foydalanuvchi kartochkasi bosilganda — Profil)."""
+        if key in self._keys:
+            self._nav.setCurrentRow(self._keys.index(key))
 
     def refresh(self) -> None:
         if self._session.can_add:
@@ -202,36 +333,48 @@ class SettingsPage(QWidget):
 
     # --- Kartochkalar ------------------------------------------------------
 
-    def _appearance_card(self) -> QFrame:
+    def _appearance_cards(self) -> list[QWidget]:
         themes = QComboBox()
         for name, palette in theme.PALETTES.items():
             themes.addItem(palette.title, name)
         themes.setCurrentIndex(max(themes.findData(self._prefs.get(THEME_KEY, theme.DEFAULT_THEME)), 0))
         themes.currentIndexChanged.connect(lambda: self._change_theme(themes.currentData()))
         languages = language_box(self._prefs)
-        columns = QWidget()
-        row = QHBoxLayout(columns)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(28)
-        for title, hint, control in (
-            (tr("Ko'rinish"), tr("Dastur fonini tanlang."), themes),
-            (tr("Dastur tili"), tr("O'zgartirilganda dastur shu tilda qayta ochiladi."), languages),
-        ):
+        for control in (themes, languages):
             control.setFixedWidth(FIELD_WIDTH)
-            column = QVBoxLayout()
-            column.setSpacing(4)
-            column.addWidget(label(title, "fieldTitle"))
-            column.addWidget(label(hint, "muted"))
-            column.addWidget(control)
-            row.addLayout(column)
-        if self._user.is_admin:
-            row.addLayout(self._firm_name_column())
-        row.addStretch()
         system_frame = QCheckBox(tr("Windows oynasi ramkasidan foydalanish"))
-        system_frame.setToolTip(tr("Belgilanmasa — dastur rangidagi ingichka sarlavha qatori (Telegram'dagi kabi)"))
         system_frame.setChecked(uses_system_frame(self._prefs))
         system_frame.toggled.connect(self._change_window_frame)
-        return _section(Glyph.SETTINGS, "Accent", tr("Asosiy sozlamalar"), columns, system_frame)
+        cards = [
+            _section(
+                Glyph.SETTINGS,
+                "Accent",
+                tr("Ko'rinish"),
+                *_rows(
+                    _setting_row(tr("Fon"), tr("Dastur rangi; shu kompyuterda saqlanadi."), themes),
+                    _setting_row(tr("Dastur tili"), tr("O'zgartirilganda dastur shu tilda qayta ochiladi."), languages),
+                    _setting_row(
+                        tr("Oyna ramkasi"),
+                        tr("Belgilanmasa — dastur rangidagi ingichka sarlavha qatori (Telegram'dagi kabi)"),
+                        system_frame,
+                    ),
+                ),
+            )
+        ]
+        if self._user.is_admin:
+            cards.append(
+                _section(
+                    Glyph.HOME,
+                    "Violet",
+                    tr("Ombor nomi"),
+                    _setting_row(
+                        tr("Nomi"),
+                        tr("Dastur sarlavhasi, yon menyu va chop etilgan varaqlarda ko'rinadi."),
+                        self._firm_name_field(),
+                    ),
+                )
+            )
+        return cards
 
     def _change_window_frame(self, enabled: bool) -> None:
         set_system_frame(self._prefs, enabled)
@@ -239,25 +382,16 @@ class SettingsPage(QWidget):
         if confirm(self, tr("Oyna ramkasi"), question, tr("Ha, qayta ochish")):
             restart_application()
 
-    def _firm_name_column(self) -> QVBoxLayout:
-        """Ombor nomi (faqat rahbar): dastur sarlavhasi va yon menyuda shu nom ko'rinadi."""
+    def _firm_name_field(self) -> QWidget:
+        """Ombor nomi (faqat rahbar): maydon va «Saqlash» tugmasi."""
         self._firm_name = QLineEdit(self._settings.firm_name(APP_NAME))
         self._firm_name.setMaxLength(MAX_FIRM_NAME)
         self._firm_name.setPlaceholderText(APP_NAME)
+        self._firm_name.setFixedWidth(FIELD_WIDTH - 90)
         self._firm_name.returnPressed.connect(self._save_firm_name)
         save = button(tr("Saqlash"), "primary")
         save.clicked.connect(self._save_firm_name)
-        field = QHBoxLayout()
-        field.setSpacing(8)
-        field.addWidget(self._firm_name)
-        field.addWidget(save)
-        column = QVBoxLayout()
-        column.setSpacing(4)
-        column.addWidget(label(tr("Ombor nomi"), "fieldTitle"))
-        column.addWidget(label(tr("Dastur sarlavhasi va yon menyuda ko'rinadi."), "muted"))
-        column.addLayout(field)
-        self._firm_name.setFixedWidth(FIELD_WIDTH - 90)
-        return column
+        return _inline(self._firm_name, save)
 
     def _save_firm_name(self) -> None:
         self._apply_firm_name(self._firm_name.text())
@@ -286,40 +420,54 @@ class SettingsPage(QWidget):
         self._prefs.set(THEME_KEY, name)
         theme.apply(QApplication.instance(), name)
 
-    def _account_card(self) -> QFrame:
-        buttons = [_action(tr("Parolni o'zgartirish"), self._change_password)]
-        if self._user.is_admin:
-            buttons.append(_action(tr("Yangi tiklash kodi"), self._new_recovery_code))
-        buttons.append(_action(tr("Chiqish"), self._sign_out, "danger", Glyph.SIGN_OUT))
-        return _section(
-            Glyph.PERSON,
-            "Violet",
-            tr("Mening hisobim"),
-            _text(tr("Siz {0} ({1}) sifatida kirgansiz.").format(self._user.name, self._user.role.title)),
-            _button_row(*buttons),
-            self._lock_row(),
-        )
+    def _profile_cards(self) -> list[QWidget]:
+        """Kim kirgani, parol, qulflash va chiqish (avval yon menyuning pastida edi)."""
+        avatar = label(self._user.name[:1].upper(), "avatar")
+        avatar.setFixedSize(AVATAR_SIZE, AVATAR_SIZE)
+        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        names = QVBoxLayout()
+        names.setSpacing(2)
+        names.addWidget(label(self._user.name, "profileName"))
+        names.addWidget(label(tr("{0} · shu kompyuterda kirgan").format(self._user.role.title), "muted"))
+        who = QWidget()
+        top = QHBoxLayout(who)
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(16)
+        top.addWidget(avatar)
+        top.addLayout(names, stretch=1)
+        lock = _action(tr("Qulflash"), self.lock_requested.emit, glyph=Glyph.LOCK)
+        lock.setToolTip(tr("Dasturni qulflash: davom etish uchun parol so'raladi (Ctrl+L)"))
+        leave = _action(tr("Chiqish"), self._sign_out, "danger", Glyph.SIGN_OUT)
+        leave.setToolTip(tr("Hisobdan chiqish va boshqa foydalanuvchi bilan kirish"))
+        account = card(who, _button_row(lock, leave))
 
-    def _lock_row(self) -> QWidget:
-        """Avtomatik qulflash vaqti: shu foydalanuvchi uchun, shu kompyuterda."""
+        password = [_action(tr("Parolni o'zgartirish"), self._change_password)]
+        if self._user.is_admin:
+            password.append(_action(tr("Yangi tiklash kodi"), self._new_recovery_code))
         minutes = QComboBox()
         for value in LOCK_MINUTES:
             minutes.addItem(lock_title(value), value)
         minutes.setCurrentIndex(max(minutes.findData(lock_minutes(self._prefs, self._user)), 0))
         minutes.setFixedWidth(FIELD_WIDTH)
         minutes.currentIndexChanged.connect(lambda: self._change_lock_minutes(minutes.currentData()))
-        row = QWidget()
-        column = QVBoxLayout(row)
-        column.setContentsMargins(0, 8, 0, 0)
-        column.setSpacing(4)
-        column.addWidget(label(tr("Avtomatik qulflash"), "fieldTitle"))
-        column.addWidget(
-            label(
-                tr("Dastur shuncha vaqt ishlatilmasa, qulflanadi va parolingiz so'raladi (Ctrl+L — darhol)."), "muted"
-            )
+        security = _section(
+            Glyph.LOCK,
+            "Violet",
+            tr("Parol va qulflash"),
+            *_rows(
+                _setting_row(
+                    tr("Parol"),
+                    tr("Tiklash kodi parol unutilganda kerak bo'ladi.") if self._user.is_admin else "",
+                    _inline(*password),
+                ),
+                _setting_row(
+                    tr("Avtomatik qulflash"),
+                    tr("Dastur shuncha vaqt ishlatilmasa, qulflanadi va parolingiz so'raladi (Ctrl+L — darhol)."),
+                    minutes,
+                ),
+            ),
         )
-        column.addWidget(minutes)
-        return row
+        return [account, security]
 
     def _change_lock_minutes(self, minutes: int) -> None:
         set_lock_minutes(self._prefs, self._user, minutes)
@@ -371,11 +519,29 @@ class SettingsPage(QWidget):
         return _section(
             Glyph.TAG,
             "Warning",
-            tr("Hisob qoidalari"),
-            _text(tr("Yoqilsa, guruhsiz yozuv saqlanmaydi va hisobotda «(ko'rsatilmagan)» qatori chiqmaydi.")),
-            group_required,
-            _button_row(
-                _action(tr("Guruhlarni tahrirlash"), lambda: GroupsDialog(self._groups, self).exec()),
+            tr("Guruhlar va hisob qoidalari"),
+            *_rows(
+                _setting_row(
+                    tr("Guruh majburiy"),
+                    tr("Yoqilsa, guruhsiz yozuv saqlanmaydi va hisobotda «(ko'rsatilmagan)» qatori chiqmaydi."),
+                    group_required,
+                ),
+                _setting_row(
+                    tr("Guruhlar ro'yxati"),
+                    tr("Guruh → kategoriya: qo'shish, nomini o'zgartirish, o'chirish."),
+                    _action(tr("Guruhlarni tahrirlash"), lambda: GroupsDialog(self._groups, self).exec()),
+                ),
+            ),
+        )
+
+    def _history_card(self) -> QFrame:
+        return _section(
+            Glyph.CLOCK,
+            "Out",
+            tr("O'zgarishlar tarixi"),
+            _setting_row(
+                tr("Tarixni tozalash"),
+                tr("«Tarix» bo'limidagi yozuvlar butunlay o'chiriladi; kirim, chiqim va mahsulotlarga tegilmaydi."),
                 _action(tr("Tarixni tozalash"), self._clear_history, "danger", Glyph.DELETE),
             ),
         )
@@ -437,7 +603,26 @@ class SettingsPage(QWidget):
             QMessageBox.warning(self, tr("O'chirib bo'lmadi"), str(error))
         self._fill_stores()
 
-    def _about_card(self) -> QFrame:
+    def _about_cards(self) -> list[QWidget]:
+        """Dastur belgisi, nomi va versiyasi (avval yon menyuning pastida edi) hamda qisqa yo'riqnoma."""
+        logo = QLabel()
+        logo.setPixmap(icon_pixmap(LOGO_SIZE))
+        logo.setFixedSize(LOGO_SIZE, LOGO_SIZE)
+        names = QVBoxLayout()
+        names.setSpacing(2)
+        names.addWidget(label(self._settings.firm_name(APP_NAME), "profileName"))
+        names.addWidget(label(tr("Boshqaruv tizimi"), "muted"))
+        names.addWidget(label(tr("Versiya {0}").format(APP_VERSION), "versionBadge"), 0, Qt.AlignmentFlag.AlignLeft)
+        identity = QWidget()
+        row = QHBoxLayout(identity)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(18)
+        row.addWidget(logo)
+        row.addLayout(names, stretch=1)
+        hint = _text(tr("Yangi versiya chiqqanda yon menyudagi «Yangilash» bo'limida belgi paydo bo'ladi."), "muted")
+        return [card(identity, hint), self._guide_card()]
+
+    def _guide_card(self) -> QFrame:
         lines = (
             tr("F2 — yangi kirim, F3 — yangi chiqim, F4 — yangi mahsulot."),
             tr("Jadvalda: ikki marta bosish — tahrirlash, Delete — o'chirish, ustun sarlavhasi — saralash."),
@@ -453,13 +638,7 @@ class SettingsPage(QWidget):
                 "belgisi bilan qo'shiladi va kirim qilib yoziladi — ular sof foydadan ayriladi."
             ),
         )
-        return _section(
-            Glyph.INFO,
-            "Accent",
-            tr("Dastur haqida va qisqa yo'riqnoma"),
-            _text(f"{self._settings.firm_name(APP_NAME)} — {tr('Versiya {0}').format(APP_VERSION)}", "muted"),
-            *(_text(f"•  {line}") for line in lines),
-        )
+        return _section(Glyph.INFO, "Accent", tr("Qisqa yo'riqnoma"), *(_text(f"•  {line}") for line in lines))
 
     def _users_card(self) -> QFrame:
         return _section(
