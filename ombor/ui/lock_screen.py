@@ -57,7 +57,12 @@ class LockScreen(QDialog):
     """Parol so'raydigan ekran: «Parolingizni kiriting», parol maydoni, «Kirish» va «Hisobdan chiqish»."""
 
     def __init__(self, auth: Auth, user: User, minutes: int, parent: QWidget | None = None):
-        super().__init__(parent, Qt.WindowType.Window)
+        # Asosiy oyna ramkasiz bo'lsa, qulf ekrani ham ramkasiz: u o'sha oynaning o'rnini to'liq egallaydi.
+        frameless = parent is not None and bool(parent.windowFlags() & Qt.WindowType.FramelessWindowHint)
+        flags = Qt.WindowType.Window
+        if frameless:
+            flags |= Qt.WindowType.FramelessWindowHint
+        super().__init__(parent, flags)
         self.setObjectName("lockScreen")
         self.setWindowTitle(f"{APP_NAME} — {tr('qulflangan')}")
         self.setModal(True)

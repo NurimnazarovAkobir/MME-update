@@ -235,7 +235,7 @@ class OtherPagesTests(UiTestCase):
     def test_group_rule_is_switched_in_settings(self):
         page = SettingsPage(self.services, Session(self.admin), self.folder / "ombor.db")
         page.refresh()
-        (rule,) = [box for box in page.findChildren(QCheckBox)]
+        (rule,) = [box for box in page.findChildren(QCheckBox) if box.text() == "Kirim va chiqimda guruh tanlash majburiy"]
         rule.setChecked(True)
         self.assertTrue(self.warehouse.group_required)
         self.assertIn("⚠", page._backup_status.text())  # qo'shimcha papka tanlanmagan
@@ -243,7 +243,8 @@ class OtherPagesTests(UiTestCase):
     def test_settings_for_keeper_have_no_rules(self):
         page = SettingsPage(self.services, Session(self.keeper), self.folder / "ombor.db")
         page.refresh()
-        self.assertEqual(page.findChildren(QCheckBox), [])
+        # Faqat shu kompyuterning shaxsiy sozlamasi (oyna ramkasi) qoladi.
+        self.assertEqual([box.text() for box in page.findChildren(QCheckBox)], ["Windows oynasi ramkasidan foydalanish"])
 
     def test_table_handles_many_rows(self):
         for offset in range(300):

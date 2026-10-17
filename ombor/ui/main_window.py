@@ -51,6 +51,7 @@ from .statistics_page import StatisticsPage
 from .sync_controller import SyncController, describe
 from .tile_loader import TileLoader
 from .update_page import UpdatePage
+from .window_frame import FramelessFrame, uses_system_frame
 from .widgets import button, label
 
 SIDEBAR_WIDTH = 250
@@ -228,7 +229,10 @@ class MainWindow(QMainWindow):
         content.addWidget(self._build_update_notice())
         content.addWidget(self._pages)
         layout.addLayout(content)
-        self.setCentralWidget(central)
+        # Telegram'dagi kabi o'z sarlavha qatori; «Sozlamalar»da Windows ramkasiga qaytish mumkin.
+        self._frame = None if uses_system_frame(services.prefs) else FramelessFrame(self, central)
+        if self._frame is None:
+            self.setCentralWidget(central)
 
         if session.can_add:
             QShortcut(QKeySequence(NEW_RECEIPT_KEY), self, lambda: self._new_movement(MovementKind.IN))

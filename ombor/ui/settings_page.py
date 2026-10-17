@@ -48,6 +48,8 @@ from .auth_dialogs import (
 )
 from .extra_dialogs import GroupsDialog, NameDialog
 from .icons import Glyph, icon_label
+from .import_dialog import import_from_excel
+from .window_frame import set_system_frame, uses_system_frame
 from .language import language_box, restart_application, sign_out
 from .lock_screen import LOCK_MINUTES, lock_minutes, lock_title, set_lock_minutes
 from .sync_controller import SyncController, describe
@@ -137,6 +139,7 @@ class SettingsPage(QWidget):
         self._stores = DataTable((Column(tr("Ombor nomi")),))
         self._stores.setFixedHeight(USERS_TABLE_HEIGHT)
         self._groups = services.groups
+        self._importer = services.importer
         self._prefs = services.prefs
         self._vault = services.vault
         self._conn = services.conn
@@ -158,6 +161,7 @@ class SettingsPage(QWidget):
         cards.addWidget(self._appearance_card())
         cards.addWidget(self._account_card())
         if session.is_admin:
+            cards.addWidget(self._import_card())
             cards.addWidget(self._rules_card())
             cards.addWidget(self._stores_card())
             cards.addWidget(self._users_card())
@@ -218,7 +222,17 @@ class SettingsPage(QWidget):
         if self._user.is_admin:
             row.addLayout(self._firm_name_column())
         row.addStretch()
-        return _section(Glyph.SETTINGS, "Accent", tr("Asosiy sozlamalar"), columns)
+        system_frame = QCheckBox(tr("Windows oynasi ramkasidan foydalanish"))
+        system_frame.setToolTip(tr("Belgilanmasa — dastur rangidagi ingichka sarlavha qatori (Telegram'dagi kabi)"))
+        system_frame.setChecked(uses_system_frame(self._prefs))
+        system_frame.toggled.connect(self._change_window_frame)
+        return _section(Glyph.SETTINGS, "Accent", tr("Asosiy sozlamalar"), columns, system_frame)
+
+    def _change_window_frame(self, enabled: bool) -> None:
+        set_system_frame(self._prefs, enabled)
+        question = tr("Oyna ko'rinishi dastur qayta ochilganda o'zgaradi. Hozir qayta ochilsinmi?")
+        if confirm(self, tr("Oyna ramkasi"), question, tr("Ha, qayta ochish")):
+            restart_application()
 
     def _firm_name_column(self) -> QVBoxLayout:
         """Ombor nomi (faqat rahbar): dastur sarlavhasi va yon menyuda shu nom ko'rinadi."""
@@ -318,6 +332,27 @@ class SettingsPage(QWidget):
         removed = self._warehouse.clear_history()
         QMessageBox.information(
             self, tr("Tarixni tozalash"), tr("Tarix tozalandi: {0} ta yozuv o'chirildi.").format(removed)
+        )
+
+    def _import_card(self) -> QFrame:
+        return _section(
+            Glyph.IMPORT,
+            "Good",
+            tr("Exceldan yuklash"),
+            _text(
+                tr(
+                    "Excelda yuritilgan hisobni bir yo'la bazaga o'tkazish: mahsulotlar, kirim, chiqim va obyektlar. "
+                    "Shu tugma «Mahsulotlar» bo'limida ham bor."
+                )
+            ),
+            _button_row(
+                _action(
+                    tr("Exceldan yuklash"),
+                    lambda: import_from_excel(self, self._importer, self._backup, self._session.author),
+                    "excel",
+                    Glyph.IMPORT,
+                )
+            ),
         )
 
     def _rules_card(self) -> QFrame:

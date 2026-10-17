@@ -823,4 +823,14 @@ TRANSLATIONS = {
     '{0}  ·  {1} ta mahsulot harakatda': '{0}  ·  товаров в движении: {1}',
     '{0} {1}  ·  {2} {3}  ·  {4} ta yozuv': '{0} {1}  ·  {2} {3}  ·  записей: {4}',
     "Oldingi xarid oyi": "Месяц прежней закупки",
+    # --- Oyna ramkasi ---
+    "Belgilanmasa — dastur rangidagi ingichka sarlavha qatori (Telegram'dagi kabi)": 'Если не отмечено — тонкая строка заголовка в цветах программы (как в Telegram)',
+    "Excelda yuritilgan hisobni bir yo'la bazaga o'tkazish: mahsulotlar, kirim, chiqim va obyektlar. Shu tugma «Mahsulotlar» bo'limida ham bor.": 'Перенести учёт из Excel в базу за один раз: товары, приход, расход и объекты. Эта кнопка есть и в разделе «Товары».',
+    'Ha, qayta ochish': 'Да, перезапустить',
+    "Ish mahsulot qo'shishdan boshlanadi: «Yangi mahsulot» tugmasini bosing yoki Excelda yuritilgan hisobni «Exceldan yuklash» bilan bir yo'la yuklang.": 'Работа начинается с добавления товаров: нажмите «Новый товар» или загрузите учёт из Excel кнопкой «Загрузить из Excel».',
+    'Kattalashtirish': 'Развернуть',
+    "Oyna ko'rinishi dastur qayta ochilganda o'zgaradi. Hozir qayta ochilsinmi?": 'Вид окна изменится после перезапуска программы. Перезапустить сейчас?',
+    'Oyna ramkasi': 'Рамка окна',
+    'Windows oynasi ramkasidan foydalanish': 'Использовать системную рамку окна Windows',
+    "Yig'ish": 'Свернуть',
 }

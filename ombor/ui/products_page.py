@@ -22,6 +22,7 @@ from .site_dialogs import TableDialog
 from .widgets import Column, ColumnKind, button
 
 STATUS_COLUMN = 7
+FILTER_WIDTH = 260  # uzun guruh nomi sarlavhadagi tugmalarni siqib chiqarmasin
 _PURCHASE_COLUMNS = (
     Column(tr("Mahsulot"), style="strong"),
     Column(tr("Birlik")),
@@ -90,8 +91,10 @@ class ProductsPage(ListPage):
         self.header_tools.addWidget(self._store)
         self._group = QComboBox()
         self._group.setToolTip(tr("Faqat shu guruh mahsulotlari"))
+        self._group.setMaximumWidth(FILTER_WIDTH)
         self._category = QComboBox()
         self._category.setToolTip(tr("Faqat guruhning shu kategoriyasi"))
+        self._category.setMaximumWidth(FILTER_WIDTH)
         self._group.currentIndexChanged.connect(self._fill_categories)
         self._category.currentIndexChanged.connect(self.refresh)
         self.header_tools.addWidget(self._group)
@@ -111,10 +114,15 @@ class ProductsPage(ListPage):
         self.toolbar_tools.addWidget(purchases)
         self.table.setToolTip(tr("Mahsulot kartochkasi — qatorni ikki marta bosing"))
         if session.can_add and importer is not None:
-            import_button = button(tr("Exceldan yuklash"), glyph=Glyph.IMPORT)
+            # «Yangi mahsulot» yonida, Excel rangida: ish ko'pincha Exceldagi hisobni yuklashdan boshlanadi.
+            import_button = button(tr("Exceldan yuklash"), "excel", Glyph.IMPORT)
             import_button.setToolTip(tr("Excelda yuritilgan mahsulotlar, kirim, chiqim va obyektlarni bazaga yuklash"))
             import_button.clicked.connect(self._import_from_excel)
-            self.header_tools.addWidget(import_button)
+            self.toolbar_tools.insertWidget(0, import_button)
+            self.empty_hint = tr(
+                "Ish mahsulot qo'shishdan boshlanadi: «Yangi mahsulot» tugmasini bosing yoki Excelda yuritilgan "
+                "hisobni «Exceldan yuklash» bilan bir yo'la yuklang."
+            )
         if session.can_modify:
             inventory = button(tr("Inventarizatsiya"), glyph=Glyph.CLIPBOARD)
             inventory.setToolTip(tr("Jadvaldagi mahsulotlarning sanab chiqilgan haqiqiy qoldig'ini kiritish"))

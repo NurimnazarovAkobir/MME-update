@@ -289,6 +289,15 @@ QProgressBar::chunk {{ background: {accent}; border-radius: 3px; }}
 #muted {{ color: {muted}; }}
 #error {{ color: {danger}; font-weight: 600; }}
 #syncStatus {{ color: {sidebar_text}; font-size: 9pt; }}
+#framelessRoot {{ background: {sidebar}; }}
+#framelessRoot[framed="true"] {{ border: 1px solid {border}; }}
+#titleBar {{ background: {sidebar}; }}
+QPushButton#captionButton, QPushButton#closeButton {{
+    background: transparent; border: none; border-radius: 0; padding: 0; color: {sidebar_text};
+    font-family: "Segoe MDL2 Assets"; font-size: 8pt;
+}}
+QPushButton#captionButton:hover {{ background: {sidebar_hover}; color: #ffffff; }}
+QPushButton#closeButton:hover {{ background: #e81123; color: #ffffff; }}
 QDialog#lockScreen {{ background: {page}; }}
 #lockTitle {{ font-size: 16pt; }}
 #lockFieldTitle {{ color: {accent}; font-weight: 600; }}
