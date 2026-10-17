@@ -34,6 +34,7 @@ from ..models import User
 from ..replication import Replica
 from ..services import Services
 from ..session import Session
+from ..folder_sync import remember_folder, shared_folder
 from ..settings import MAX_FIRM_NAME
 from ..sync import SyncClient, SyncConfig, SyncError, Synchronizer, device_name, normalize_url
 from . import theme
@@ -49,6 +50,8 @@ from .auth_dialogs import (
 from .extra_dialogs import GroupsDialog, NameDialog
 from .icons import Glyph, icon_label
 from .import_dialog import import_from_excel
+from .shared_folder import TITLE as DRIVE_TITLE
+from .shared_folder import connect_folder
 from .window_frame import set_system_frame, uses_system_frame
 from .language import language_box, restart_application, sign_out
 from .lock_screen import LOCK_MINUTES, lock_minutes, lock_title, set_lock_minutes
@@ -146,6 +149,7 @@ class SettingsPage(QWidget):
         self._sync = sync
         self._backup_status = _text("", "muted")
         self._sync_status = _text("", "muted")
+        self._drive_status = _text("", "muted")
         if sync is not None and session.is_admin:
             sync.finished.connect(lambda _result: self._show_sync_status())
 
@@ -167,6 +171,7 @@ class SettingsPage(QWidget):
             cards.addWidget(self._users_card())
             cards.addWidget(self._backup_card())
             if sync is not None and sync.available:
+                cards.addWidget(self._drive_card())
                 cards.addWidget(self._server_card())
             cards.addWidget(self._network_card())
             if self._vault is not None:
@@ -262,7 +267,9 @@ class SettingsPage(QWidget):
         if not self._user.is_admin:
             return
         name, accepted = QInputDialog.getText(
-            self.window(), tr("Ombor nomi"), tr("Yangi nom (bo'sh qoldirilsa — {0}):").format(APP_NAME),
+            self.window(),
+            tr("Ombor nomi"),
+            tr("Yangi nom (bo'sh qoldirilsa — {0}):").format(APP_NAME),
             text=self._settings.firm_name(APP_NAME),
         )
         if accepted:
@@ -307,7 +314,9 @@ class SettingsPage(QWidget):
         column.setSpacing(4)
         column.addWidget(label(tr("Avtomatik qulflash"), "fieldTitle"))
         column.addWidget(
-            label(tr("Dastur shuncha vaqt ishlatilmasa, qulflanadi va parolingiz so'raladi (Ctrl+L — darhol)."), "muted")
+            label(
+                tr("Dastur shuncha vaqt ishlatilmasa, qulflanadi va parolingiz so'raladi (Ctrl+L — darhol)."), "muted"
+            )
         )
         column.addWidget(minutes)
         return row
@@ -490,6 +499,58 @@ class SettingsPage(QWidget):
             _button_row(*buttons),
         )
 
+    # --- Google Drive (umumiy papka) orqali yagona baza -----------------------
+
+    def _drive_card(self) -> QFrame:
+        folder = shared_folder(self._prefs)
+        buttons = [_action(tr("Papkani tanlab ulanish"), self._connect_drive, "primary")]
+        if folder is not None:
+            buttons += [
+                _action(tr("Hozir sinxronlash"), self._sync_now),
+                _action(tr("Uzish"), self._disconnect_drive, "danger"),
+            ]
+        actions = _button_row(*buttons)
+        blocker = self._sync_blocker(server=False)
+        actions.setEnabled(not blocker)
+        return _section(
+            Glyph.SYNC,
+            "Good",
+            DRIVE_TITLE,
+            _text(
+                tr(
+                    "Server kerak emas. Har bir kompyuterga «Google Drive for desktop» o'rnatiladi va bitta umumiy "
+                    "papka tanlanadi. Har kim o'z bazasida ishlaydi — internet bo'lmasa ham; internet bo'lganda "
+                    "o'zgarishlar Drive orqali hamma kompyuterga o'zi yetib boradi (har 30 soniyada).\n"
+                    "1) Rahbar kompyuterida: shu yerda bo'sh papkani tanlang — baza (foydalanuvchilar va parollar "
+                    "bilan) papkaga yoziladi. 2) Papkani Google Drive'da omborchi bilan ulashing. 3) Omborchi "
+                    "dasturni ochib, «Google Drive'dagi bazaga ulanish» tugmasi bilan xuddi shu papkani tanlaydi va "
+                    "o'z login-paroli bilan kiradi."
+                )
+            ),
+            _panel(self._drive_status),
+            *([_text(blocker, "error")] if blocker else []),
+            actions,
+        )
+
+    def _connect_drive(self) -> None:
+        self._sync.stop()  # fondagi sinxronlash ulanishga xalaqit bermasin
+        connected = connect_folder(self, self._conn, self._prefs, self._backup)
+        self._sync.start()
+        if connected:
+            self.refresh()
+
+    def _disconnect_drive(self) -> None:
+        question = tr(
+            "Shu kompyuter umumiy papkadan uziladi: ma'lumotlar shu yerda qoladi, lekin boshqa kompyuterlar bilan "
+            "almashilmaydi. Hali yozilmagan o'zgarishlar papkaga bormaydi.\n\nDavom etilsinmi?"
+        )
+        if not confirm(self, DRIVE_TITLE, question, tr("Ha, uzish")):
+            return
+        self._sync.stop()
+        Replica(self._conn).disable()
+        remember_folder(self._prefs, None)
+        restart_application()
+
     # --- Markaziy server (internet orqali) ------------------------------------
 
     def _server_card(self) -> QFrame:
@@ -534,29 +595,38 @@ class SettingsPage(QWidget):
             actions,
         )
 
-    def _sync_blocker(self) -> str:
-        """Server bilan ishlashga nima xalaqit beradi (hech narsa bo'lmasa — bo'sh)."""
+    def _sync_blocker(self, server: bool = True) -> str:
+        """Server yoki umumiy papka bilan ishlashga nima xalaqit beradi (hech narsa bo'lmasa — bo'sh)."""
         if self._vault is not None and self._vault.enabled:
             return tr("Shifrlangan baza bilan sinxronlab bo'lmaydi: avval «Bazani shifrlash»ni o'chiring.")
         if self._prefs.uses_shared_folder:
-            return tr("Baza tarmoqdagi umumiy papkada: server bilan ishlash uchun shu kompyuterdagi bazaga qayting.")
+            return tr("Baza tarmoqdagi umumiy papkada: sinxronlash uchun shu kompyuterdagi bazaga qayting.")
+        if server and shared_folder(self._prefs) is not None:
+            return tr("Shu kompyuter Google Drive papkasi orqali ulangan: server uchun avval undan uzing.")
+        if not server and SyncConfig.load(self._prefs) is not None:
+            return tr("Shu kompyuter markaziy serverga ulangan: Google Drive uchun avval serverdan uzing.")
         return ""
 
     def _show_sync_status(self) -> None:
         if self._sync is None or not self._sync.available:
             return
+        text, details = describe(self._sync.last_result)
+        state = (
+            f"{text}  {details}".strip(),
+            tr("Yuborilishini kutayotgan o'zgarishlar: {0}").format(Replica(self._conn).pending_count()),
+        )
+        folder = shared_folder(self._prefs)
+        if folder is None:
+            self._drive_status.setText(tr("Ulanmagan: ma'lumotlar faqat shu kompyuterda."))
+        else:
+            place = (tr("Papka: {0}").format(folder.root), tr("Shu kompyuter nomi: {0}").format(folder.device))
+            self._drive_status.setText("\n".join((*place, *state)))
         config = SyncConfig.load(self._prefs)
         if config is None:
             self._sync_status.setText(tr("Server ulanmagan: ma'lumotlar faqat shu kompyuterda."))
             return
-        text, details = describe(self._sync.last_result)
-        lines = (
-            tr("Server: {0}").format(config.url),
-            tr("Shu kompyuter nomi: {0}").format(config.device),
-            f"{text}  {details}".strip(),
-            tr("Yuborilishini kutayotgan o'zgarishlar: {0}").format(Replica(self._conn).pending_count()),
-        )
-        self._sync_status.setText("\n".join(lines))
+        place = (tr("Server: {0}").format(config.url), tr("Shu kompyuter nomi: {0}").format(config.device))
+        self._sync_status.setText("\n".join((*place, *state)))
 
     def _connect_server(self) -> None:
         try:
@@ -680,13 +750,13 @@ class SettingsPage(QWidget):
         restart_application()
 
     def _uses_server(self) -> bool:
-        """Markaziy server ulangan bo'lsa, umumiy papka va shifrlash ishlatilmaydi (ogohlantiriladi)."""
-        if SyncConfig.load(self._prefs) is None:
+        """Server yoki Google Drive orqali ulangan bo'lsa, tarmoq papkasi va shifrlash ishlatilmaydi."""
+        if SyncConfig.load(self._prefs) is None and shared_folder(self._prefs) is None:
             return False
         QMessageBox.warning(
             self,
             tr("Markaziy server"),
-            tr("Shu kompyuter markaziy serverga ulangan. Bu amal uchun avval serverdan uzing."),
+            tr("Shu kompyuter umumiy bazaga (server yoki Google Drive) ulangan. Bu amal uchun avval undan uzing."),
         )
         return True
 

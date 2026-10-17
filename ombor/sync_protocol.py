@@ -71,9 +71,13 @@ class Change:
     data: dict | None
     deleted: bool = False
     seq: int = 0  # serverdagi tartib raqami (serverdan kelganda)
+    stamp: str = ""  # umumiy papka orqali almashishda: o'zgarish vaqti belgisi (kattasi g'olib)
 
     def to_json(self) -> dict:
-        return {"table": self.table, "uid": self.uid, "data": self.data, "deleted": self.deleted, "seq": self.seq}
+        value = {"table": self.table, "uid": self.uid, "data": self.data, "deleted": self.deleted, "seq": self.seq}
+        if self.stamp:
+            value["stamp"] = self.stamp
+        return value
 
     @classmethod
     def from_json(cls, value: dict) -> "Change":
@@ -84,7 +88,8 @@ class Change:
         data = value.get("data")
         if not deleted and not isinstance(data, dict):
             raise ValueError(f"O'zgarishda ma'lumot yo'q: {table} / {uid}")
-        return cls(table, uid, None if deleted else data, deleted, int(value.get("seq") or 0))
+        stamp = value.get("stamp") or ""
+        return cls(table, uid, None if deleted else data, deleted, int(value.get("seq") or 0), str(stamp))
 
 
 def unique_key(spec: TableSpec, data: dict | None) -> str:

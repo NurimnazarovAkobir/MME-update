@@ -1,6 +1,7 @@
 """Kirish, parol va foydalanuvchi oynalari."""
 
 from pathlib import Path
+from typing import Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox, QFileDialog, QLineEdit, QMessageBox, QPushButton, QWidget
@@ -23,13 +24,19 @@ ROLES_HINT = tr(
 )
 
 
-def sign_in(auth: Auth, settings: LocalPrefs) -> User | None:
-    """Dastur ochilganda: birinchi marta — rahbar hisobini yaratadi, keyin — parol so'raydi.
+JoinShared = Callable[[QWidget], bool]  # umumiy (Google Drive) bazaga ulanadi; ulansa dastur qayta ochiladi
+
+
+def sign_in(auth: Auth, settings: LocalPrefs, join_shared: JoinShared | None = None) -> User | None:
+    """Dastur ochilganda: birinchi marta — rahbar hisobini yaratadi yoki umumiy bazaga ulanadi, keyin — parol so'raydi.
 
     Rahbar kirganda tiklash kodi hali yaratilmagan bo'lsa, yaratib ko'rsatadi.
     Foydalanuvchi oynani yopsa, None qaytadi.
     """
-    dialog = LoginDialog(auth, settings) if auth.users() else SetupDialog(auth, settings)
+    if auth.users():
+        dialog = LoginDialog(auth, settings, join_shared)
+    else:
+        dialog = SetupDialog(auth, settings, join_shared)
     if not dialog.exec():
         return None
     if dialog.user.is_admin and not auth.has_recovery_code():
@@ -70,6 +77,14 @@ def _join_shared_database(prefs: LocalPrefs, parent: QWidget) -> None:
         return
     prefs.use_folder(Path(folder))
     restart_application()
+
+
+def _shared_button(join_shared: JoinShared, parent: QWidget, role: str = "") -> QPushButton:
+    join = button(tr("Google Drive'dagi bazaga ulanish"), role)
+    join.setAutoDefault(False)
+    join.setToolTip(tr("Rahbar umumiy bazani Google Drive papkasiga qo'ygan bo'lsa: shu papkani tanlang"))
+    join.clicked.connect(lambda: join_shared(parent))
+    return join
 
 
 def _network_button(prefs: LocalPrefs, parent: QWidget) -> QPushButton:
@@ -117,14 +132,28 @@ class _NewPasswordDialog(FormDialog):
 class SetupDialog(_NewPasswordDialog):
     """Birinchi ishga tushirish: rahbar hisobini yaratadi."""
 
-    def __init__(self, auth: Auth, settings: LocalPrefs):
+    def __init__(self, auth: Auth, settings: LocalPrefs, join_shared: JoinShared | None = None):
         super().__init__(APP_NAME, save_text=tr("Boshlash"))
         self._auth = auth
         self.user: User | None = None
         self._name = QLineEdit(DEFAULT_ADMIN_NAME)
-        intro = label(tr("Dasturdan foydalanishni boshlash uchun ismingizni kiriting va parol o'ylab toping."))
-        intro.setWordWrap(True)
         self.form.addRow(LANGUAGE_LABEL, language_box(settings))
+        if join_shared is not None:
+            # Omborchi va boshqalar: rahbar ochgan hisob bilan kirish uchun umumiy bazaga ulanadi.
+            shared = label(
+                tr(
+                    "Rahbar sizga login va parol bergan bo'lsa, yangi hisob ochmang — umumiy bazaga ulaning, "
+                    "keyin o'z login va parolingiz bilan kirasiz."
+                ),
+                "muted",
+            )
+            shared.setWordWrap(True)
+            self.form.addRow(shared)
+            self.form.addRow(_shared_button(join_shared, self, "primary"))
+        intro = label(
+            tr("Yangi baza: dasturdan birinchi bo'lib foydalanayotgan rahbar ismini kiritib, parol o'ylab topadi.")
+        )
+        intro.setWordWrap(True)
         self.form.addRow(intro)
         self.form.addRow(tr("Ismingiz"), self._name)
         self.add_new_password_rows()
@@ -135,7 +164,7 @@ class SetupDialog(_NewPasswordDialog):
 
 
 class LoginDialog(FormDialog):
-    def __init__(self, auth: Auth, settings: LocalPrefs):
+    def __init__(self, auth: Auth, settings: LocalPrefs, join_shared: JoinShared | None = None):
         super().__init__(APP_NAME, save_text=tr("Kirish"))
         self._auth = auth
         self.user: User | None = None
@@ -153,6 +182,8 @@ class LoginDialog(FormDialog):
         forgot.setAutoDefault(False)
         forgot.clicked.connect(self._recover)
         self.extra_buttons.addWidget(forgot)
+        if join_shared is not None:
+            self.extra_buttons.addWidget(_shared_button(join_shared, self))
         self.extra_buttons.addWidget(_network_button(settings, self))
 
     def save(self) -> None:

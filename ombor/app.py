@@ -8,11 +8,12 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from . import i18n, update
 from .auth import Auth, LockedAuth
-from .backup import copy_before_upgrade
+from .backup import Backup, copy_before_upgrade
 from .config import APP_NAME, BACKUP_DIR, DB_PATH
 from .database import NewerDatabaseError, connect, reopen
 from .driver import sqlite3
 from .errors import WarehouseError
+from .folder_sync import shared_folder
 from .i18n import tr
 from .local import LocalPrefs
 from .models import User
@@ -25,6 +26,7 @@ from .ui.auth_dialogs import sign_in
 from .ui.icon import app_icon
 from .ui.language import restart_application
 from .ui.main_window import MainWindow
+from .ui.shared_folder import join_folder
 from .ui.settings_page import THEME_KEY
 from .vault import Vault
 
@@ -89,7 +91,10 @@ def _sign_in(vault: Vault, prefs: LocalPrefs) -> tuple[sqlite3.Connection, User]
 
     conn = _open_database()
     _keep_legacy_theme(conn, prefs)
-    user = sign_in(Auth(conn), prefs)
+    join_shared = (
+        None if shared_folder(prefs) else lambda parent: join_folder(parent, conn, prefs, Backup(conn, BACKUP_DIR))
+    )
+    user = sign_in(Auth(conn), prefs, join_shared)
     if user is None:
         conn.close()
         return None

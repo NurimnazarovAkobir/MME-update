@@ -41,7 +41,17 @@ _SCHEMA = (
     "CREATE TABLE IF NOT EXISTS sync_outbox (id INTEGER PRIMARY KEY, tbl TEXT NOT NULL, uid TEXT NOT NULL)",
     # Serverdan kelgan, lekin bog'langan qatori (masalan, mahsuloti) hali kelmagan o'zgarishlar.
     "CREATE TABLE IF NOT EXISTS sync_pending (id INTEGER PRIMARY KEY, change TEXT NOT NULL)",
+    # Umumiy papka orqali almashish (folder_sync.py): har bir qatorning shu yerdagi holati qaysi vaqt belgisiga
+    # tegishli (eskiroq o'zgarish uni bosib ketmaydi), boshqa kompyuterlarning qaysi fayllari o'qilgani va soat.
+    """
+    CREATE TABLE IF NOT EXISTS sync_versions (
+        tbl TEXT NOT NULL, uid TEXT NOT NULL, stamp TEXT NOT NULL, PRIMARY KEY (tbl, uid)
+    )
+    """,
+    "CREATE TABLE IF NOT EXISTS sync_peers (device TEXT PRIMARY KEY, last_batch INTEGER NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
 )
+FOLDER_STATE_TABLES = ("sync_versions", "sync_peers", "sync_meta")
 _TRACKING = "(SELECT tracking FROM sync_state WHERE id = 1) = 1"
 _NEW_UID = "lower(hex(randomblob(16)))"
 _LOCAL_KEYS = ", ".join(f"'{key}'" for key in sorted(LOCAL_SETTINGS))
@@ -124,6 +134,8 @@ class _Applier:
     """Serverdan kelgan o'zgarishlarni bitta tranzaksiya ichida qo'llaydi."""
 
     conn: sqlite3.Connection
+    # Umumiy papkada markaz yo'q: nom to'qnashuvini har bir kompyuter bir xil qoida bilan hal qiladi.
+    deterministic_names: bool = False
     products: set[int] = field(default_factory=set)  # tannarxi qayta hisoblanadigan mahsulotlar
     _columns: dict[str, set[str]] = field(default_factory=dict)
 
@@ -195,11 +207,33 @@ class _Applier:
         """
         if not spec.unique or values.get(spec.unique) is None:
             return
+        if self.deterministic_names:
+            self._resolve_name(spec, uid, values)
+            return
         self.conn.execute(
             f"UPDATE {spec.name} SET {spec.unique} = {spec.unique} || ' ~' || substr({spec.key}, 1, 8)"
             f" WHERE {spec.unique} = ? AND {spec.key} <> ?",
             (values[spec.unique], uid),
         )
+
+    def _resolve_name(self, spec: TableSpec, uid: str, values: dict) -> None:
+        """Ikki kompyuter internetsiz bir xil nomli qator qo'shgan bo'lsa: uid i kichigi nomini saqlaydi,
+        kattasining nomiga uid boshi qo'shiladi (« (a3f9)»). Qoida hamma kompyuterda bir xil natija beradi."""
+        name = values[spec.unique]
+        other = self.conn.execute(
+            f"SELECT {spec.key}, {spec.unique} FROM {spec.name} WHERE {spec.unique} = ? AND {spec.key} <> ?",
+            (name, uid),
+        ).fetchone()
+        if other is None:
+            return
+        other_uid, other_name = other
+        if uid < other_uid:
+            self.conn.execute(
+                f"UPDATE {spec.name} SET {spec.unique} = ? WHERE {spec.key} = ?",
+                (_suffixed(other_name, other_uid), other_uid),
+            )
+        else:
+            values[spec.unique] = _suffixed(name, uid)
 
     def _delete(self, spec: TableSpec, uid: str, current: sqlite3.Row) -> None:
         """O'chiradi; shu yerda unga hali bog'langan yozuvlar bo'lsa, qator qoladi va serverga qaytadan yuboriladi."""
@@ -226,6 +260,10 @@ class _Applier:
             names = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
             self._columns[table] = names - {"id", "uid"}
         return self._columns[table]
+
+
+def _suffixed(name: str, uid: str) -> str:
+    return f"{name} ({uid[:4]})"
 
 
 class Replica:
@@ -258,25 +296,33 @@ class Replica:
     def enable(self, publish_all: bool) -> None:
         """Sinxronlashni yoqadi. `publish_all` — bazadagi hamma narsa serverga yuboriladi (birinchi kompyuter)."""
         with self._conn:
-            self._conn.execute("UPDATE sync_state SET tracking = 1, last_seq = 0, republish = 0")
-            self._conn.execute("DELETE FROM sync_outbox")
-            self._conn.execute("DELETE FROM sync_pending")
+            self._reset()
+            self._conn.execute("UPDATE sync_state SET tracking = 1")
             if publish_all:
                 self._enqueue_all()
 
     def disable(self) -> None:
         with self._conn:
-            self._conn.execute("UPDATE sync_state SET tracking = 0, last_seq = 0, republish = 0")
-            self._conn.execute("DELETE FROM sync_outbox")
-            self._conn.execute("DELETE FROM sync_pending")
+            self._reset()
+
+    def _reset(self) -> None:
+        """Tranzaksiya ichida: navbat, kutayotganlar va umumiy papka holati tozalanadi."""
+        self._conn.execute("UPDATE sync_state SET tracking = 0, last_seq = 0, republish = 0")
+        for table in ("sync_outbox", "sync_pending", *FOLDER_STATE_TABLES):
+            self._conn.execute(f"DELETE FROM {table}")
 
     def mark_restored(self) -> None:
-        """Zaxiradan tiklangach: tiklangan holat to'liq serverga yuboriladi, serverdagi ortiqchasi o'chiriladi."""
+        """Zaxiradan tiklangach: tiklangan holat to'liq yuboriladi, boshqa kompyuterlardagi ortiqchasi o'chiriladi.
+
+        Serverda ortiqchasi `prune` bilan o'chiriladi; umumiy papkada esa ilgari almashilgan, lekin tiklangan
+        bazada yo'q qatorlar o'chirilgan sifatida yuboriladi.
+        """
         with self._conn:
             self._conn.execute("UPDATE sync_state SET tracking = 1, last_seq = 0, republish = 1")
             self._conn.execute("DELETE FROM sync_outbox")
             self._conn.execute("DELETE FROM sync_pending")
             self._enqueue_all()
+            self._conn.execute("INSERT INTO sync_outbox (tbl, uid) SELECT tbl, uid FROM sync_versions")
 
     def _enqueue_all(self) -> None:
         for spec in TABLES:  # jadvallar va qatorlar yaratilgan tartibda: bog'langan qator oldin boradi
@@ -355,20 +401,74 @@ class Replica:
             raise
         return True
 
-    def replace_all(self, changes: list[Change], head: int) -> None:
-        """Shu kompyuterdagi ma'lumotlarni serverdagi bilan butunlay almashtiradi (serverga ulanganda).
+    def apply_versioned(self, changes: list[Change], peers: dict[str, int]) -> bool:
+        """Umumiy papkadan kelgan o'zgarishlarni qo'llaydi (har biri shu yerdagidan yangiroq bo'lsa) va boshqa
+        kompyuterlarning qaysi fayllari o'qilganini (`peers`) eslab qoladi — hammasi bitta tranzaksiyada.
 
-        Bitta tranzaksiyada: xato bo'lsa, eski ma'lumotlar o'z holicha qoladi.
+        `apply_remote` kabi: shu orada bu yerda hali yuborilmagan o'zgarish paydo bo'lsa, False qaytadi.
         """
         self._begin()
         try:
-            self._conn.execute("UPDATE sync_state SET tracking = 0")
+            if self._conn.execute("SELECT 1 FROM sync_outbox LIMIT 1").fetchone():
+                self._conn.rollback()
+                return False
+            self._apply(changes, versioned=True)
+            self._save_peers(peers)
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            raise
+        return True
+
+    def record_versions(self, changes: list[Change]) -> None:
+        """Shu kompyuter yuborgan o'zgarishlarning vaqt belgilari: eskiroq kelgan o'zgarish ularni bosmasin."""
+        with self._conn:
+            self._conn.executemany(
+                "INSERT INTO sync_versions (tbl, uid, stamp) VALUES (?, ?, ?)"
+                " ON CONFLICT(tbl, uid) DO UPDATE SET stamp = excluded.stamp",
+                [(change.table, change.uid, change.stamp) for change in changes],
+            )
+
+    def peers(self) -> dict[str, int]:
+        """Har bir kompyuterning (shu kompyuterning o'zi ham) oxirgi o'qilgan / yozilgan fayl raqami."""
+        return {row[0]: row[1] for row in self._conn.execute("SELECT device, last_batch FROM sync_peers")}
+
+    def save_peers(self, peers: dict[str, int]) -> None:
+        with self._conn:
+            self._save_peers(peers)
+
+    def _save_peers(self, peers: dict[str, int]) -> None:
+        self._conn.executemany(
+            "INSERT INTO sync_peers (device, last_batch) VALUES (?, ?)"
+            " ON CONFLICT(device) DO UPDATE SET last_batch = MAX(last_batch, excluded.last_batch)",
+            list(peers.items()),
+        )
+
+    def meta(self, key: str, default: str = "") -> str:
+        row = self._conn.execute("SELECT value FROM sync_meta WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else default
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO sync_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+
+    def replace_all(
+        self, changes: list[Change], head: int = 0, versioned: bool = False, peers: dict[str, int] | None = None
+    ) -> None:
+        """Shu kompyuterdagi ma'lumotlarni umumiy bazadagi bilan butunlay almashtiradi (serverga yoki umumiy
+        papkaga ulanganda). Bitta tranzaksiyada: xato bo'lsa, eski ma'lumotlar o'z holicha qoladi.
+        """
+        self._begin()
+        try:
+            self._reset()
             for spec in reversed(TABLES):  # avval bog'langan yozuvlar, keyin ular bog'langan qatorlar
                 kept = f"uid = '{MAIN_WAREHOUSE_UID}'" if spec.name == "warehouses" else f"NOT ({_shared(spec, 'OLD')})"
                 self._conn.execute(f"DELETE FROM {spec.name} AS OLD WHERE NOT ({kept})")
-            self._conn.execute("DELETE FROM sync_outbox")
-            self._conn.execute("DELETE FROM sync_pending")
-            self._apply(changes)
+            self._apply(changes, versioned=versioned)
+            self._save_peers(peers or {})
             self._conn.execute("UPDATE sync_state SET tracking = 1, last_seq = ?, republish = 0", (head,))
             self._conn.commit()
         except BaseException:
@@ -380,19 +480,33 @@ class Replica:
             self._conn.commit()
         self._conn.execute("BEGIN IMMEDIATE")
 
-    def _apply(self, changes: list[Change]) -> None:
-        """Tranzaksiya ichida: triggerlar o'chirib turiladi, bog'langan qatori kelmaganlar kutishga qo'yiladi."""
+    def _apply(self, changes: list[Change], versioned: bool = False) -> None:
+        """Tranzaksiya ichida: triggerlar o'chirib turiladi, bog'langan qatori kelmaganlar kutishga qo'yiladi.
+
+        `versioned` (umumiy papka): har bir o'zgarish shu qatorning shu yerdagi holatidan yangiroq bo'lsagina
+        qo'llanadi — shunda o'zgarishlar qaysi tartibda kelmasin, hamma kompyuterda natija bir xil bo'ladi.
+        """
         tracking = self._state()["tracking"]
         self._conn.execute("UPDATE sync_state SET tracking = 0")
-        applier = _Applier(self._conn)
+        applier = _Applier(self._conn, deterministic_names=versioned)
         queue = known_changes([json.loads(row[0]) for row in self._conn.execute("SELECT change FROM sync_pending")])
         self._conn.execute("DELETE FROM sync_pending")
         queue += changes
+        if versioned:
+            queue.sort(key=lambda change: change.stamp)
         waiting: list[Change] = []
         while queue:  # bog'langan qatori shu to'plamda keyinroq kelgan bo'lishi mumkin: yana bir aylanish
             waiting = []
             for change in queue:
+                if versioned and not self._is_newer(change):
+                    continue  # shu yerda allaqachon yangiroq holat bor
                 if applier.apply(change):
+                    if versioned:
+                        self._conn.execute(
+                            "INSERT INTO sync_versions (tbl, uid, stamp) VALUES (?, ?, ?)"
+                            " ON CONFLICT(tbl, uid) DO UPDATE SET stamp = excluded.stamp",
+                            (change.table, change.uid, change.stamp),
+                        )
                     # Shu qatorning kutib turgan eskiroq holati endi kerak emas: yangisi qo'llandi.
                     waiting = [old for old in waiting if (old.table, old.uid) != (change.table, change.uid)]
                 else:
@@ -405,3 +519,9 @@ class Replica:
         )
         applier.recalculate()
         self._conn.execute("UPDATE sync_state SET tracking = ?", (tracking,))
+
+    def _is_newer(self, change: Change) -> bool:
+        row = self._conn.execute(
+            "SELECT stamp FROM sync_versions WHERE tbl = ? AND uid = ?", (change.table, change.uid)
+        ).fetchone()
+        return row is None or change.stamp > row[0]

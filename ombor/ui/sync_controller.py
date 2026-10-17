@@ -1,6 +1,7 @@
-"""Fonda sinxronlash: har 30 soniyada (va so'ralganda) alohida oqimda serverga yuboradi va undan oladi.
+"""Fonda sinxronlash: har 30 soniyada (va so'ralganda) alohida oqimda umumiy baza bilan almashadi.
 
-Oqim bazaga o'zining alohida ulanishi bilan ishlaydi, shuning uchun internet sekin bo'lsa ham oyna qotmaydi.
+Umumiy baza — markaziy server (sync.py) yoki umumiy papka, masalan Google Drive (folder_sync.py). Oqim bazaga
+o'zining alohida ulanishi bilan ishlaydi, shuning uchun internet sekin bo'lsa ham oyna qotmaydi.
 """
 
 from typing import Callable
@@ -8,6 +9,7 @@ from typing import Callable
 from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from ..driver import sqlite3
+from ..folder_sync import FolderSynchronizer, shared_folder
 from ..i18n import tr
 from ..local import LocalPrefs
 from ..sync import SyncClient, SyncConfig, SyncResult, Synchronizer
@@ -15,14 +17,27 @@ from ..sync import SyncClient, SyncConfig, SyncResult, Synchronizer
 SYNC_INTERVAL_MS = 30_000
 SHUTDOWN_WAIT_MS = 25_000  # dastur yopilganda boshlangan sinxronlash tugashi kutiladi
 
+SynchronizerFactory = Callable[[sqlite3.Connection], "Synchronizer | FolderSynchronizer"]
+
+
+def synchronizer_factory(prefs: LocalPrefs) -> SynchronizerFactory | None:
+    """Shu kompyuterda sozlangan almashish usuli: umumiy papka yoki server; hech biri bo'lmasa — None."""
+    folder = shared_folder(prefs)
+    if folder is not None:
+        return lambda conn: FolderSynchronizer(conn, folder)
+    config = SyncConfig.load(prefs)
+    if config is not None:
+        return lambda conn: Synchronizer(conn, SyncClient(config))
+    return None
+
 
 class _SyncThread(QThread):
     done = Signal(object)  # SyncResult
 
-    def __init__(self, reconnect: Callable[[], sqlite3.Connection], config: SyncConfig, parent: QObject):
+    def __init__(self, reconnect: Callable[[], sqlite3.Connection], factory: SynchronizerFactory, parent: QObject):
         super().__init__(parent)
         self._reconnect = reconnect
-        self._config = config
+        self._factory = factory
 
     def run(self) -> None:
         try:
@@ -31,7 +46,7 @@ class _SyncThread(QThread):
             self.done.emit(SyncResult(error=tr("Bazani ochib bo'lmadi: {0}").format(error)))
             return
         try:
-            result = Synchronizer(conn, SyncClient(self._config)).run()
+            result = self._factory(conn).run()
         except sqlite3.Error as error:  # masalan, baza uzoq vaqt band bo'lsa — keyingi safar qayta uriniladi
             result = SyncResult(error=tr("Baza xatosi: {0}").format(error))
         finally:
@@ -60,7 +75,7 @@ class SyncController(QObject):
 
     @property
     def configured(self) -> bool:
-        return self.available and SyncConfig.load(self._prefs) is not None
+        return self.available and synchronizer_factory(self._prefs) is not None
 
     @property
     def running(self) -> bool:
@@ -77,10 +92,10 @@ class SyncController(QObject):
         self.wait()
 
     def sync_now(self) -> None:
-        config = SyncConfig.load(self._prefs)
-        if self.running or config is None or self._reconnect is None:
+        factory = synchronizer_factory(self._prefs)
+        if self.running or factory is None or self._reconnect is None:
             return
-        self._thread = _SyncThread(self._reconnect, config, self)
+        self._thread = _SyncThread(self._reconnect, factory, self)
         self._thread.done.connect(self._finish)
         self._thread.start()
 

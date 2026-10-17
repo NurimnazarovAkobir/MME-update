@@ -50,11 +50,11 @@ class StartupTests(unittest.TestCase):
             return application.run()
 
     @staticmethod
-    def _first_run(auth, prefs):
+    def _first_run(auth, prefs, join_shared=None):
         return auth.add_user("Rahbar", PASSWORD, Role.ADMIN)
 
     @staticmethod
-    def _login(auth, prefs):
+    def _login(auth, prefs, join_shared=None):
         (admin,) = [user for user in auth.users() if user.is_admin]
         return auth.login(admin.id, PASSWORD)
 
@@ -67,7 +67,7 @@ class StartupTests(unittest.TestCase):
         self.assertEqual(self._run(self._login), 0)
 
     def test_closing_the_login_window_exits_quietly(self):
-        self.assertEqual(self._run(lambda auth, prefs: None), 0)
+        self.assertEqual(self._run(lambda auth, prefs, join_shared=None: None), 0)
         self.assertEqual(self.windows, [])
 
     def test_encrypted_database_opens_after_the_password(self):
@@ -92,7 +92,7 @@ class StartupTests(unittest.TestCase):
         Vault(self.db_path).encrypt(conn, admin, PASSWORD, auth.new_recovery_code())
         self.windows.clear()
 
-        def give_up(auth, prefs):
+        def give_up(auth, prefs, join_shared=None):
             with self.assertRaises(application.WarehouseError):
                 auth.login(admin.id, "xato-parol")
             return None

@@ -118,6 +118,28 @@ keyingi davrga o'tkazadi.
 - **O'rnatish**: `Ornatish.bat` dasturni ko'chiradi, ish stoli va «Pusk»ga yorliq qo'yadi va Windows ning
   «O'rnatilgan ilovalar» ro'yxatiga yozadi; u yerdan (yoki `Ochirish.bat` bilan) o'chiriladi, ma'lumotlar qoladi.
 
+## Google Drive orqali yagona baza (1.28) — server kerak emas
+
+Hisoblar (login, parol, lavozim) exe ichida emas, bazada saqlanadi. Shuning uchun boshqa noutbukda rahbar va omborchi
+o'z login-paroli bilan kirishi uchun noutbuklar bitta umumiy bazaga ulanadi. Eng oson yo'li — Google Drive papkasi:
+
+1. **Ikkala noutbukka** «Google Drive for desktop» o'rnatiladi (Drive kompyuterda disk sifatida ko'rinadi, masalan `G:`).
+2. **Rahbar noutbukida**: dasturda rahbar hisobini yarating, «Sozlamalar → Foydalanuvchilar»da omborchi va boshqa
+   hisoblarni oching, keyin «Sozlamalar → Google Drive orqali umumiy baza → Papkani tanlab ulanish» — Drive ichidagi
+   bo'sh papkani tanlang. Baza (hisoblar va parollar bilan) shu papkaga yoziladi.
+3. Papkani Google Drive'da omborchi bilan **ulashing** (omborchi uni «Mening Diskim»ga yorliq qilib qo'shadi).
+4. **Omborchi noutbukida**: dasturni oching va kirish oynasidagi **«Google Drive'dagi bazaga ulanish»** tugmasi bilan
+   xuddi shu papkani tanlang. Dastur qayta ochiladi — omborchi rahbar bergan o'z login-paroli bilan kiradi.
+
+Shundan keyin har kim o'z bazasida ishlaydi — internet bo'lmasa ham. Internet bo'lganda o'zgarishlar har 30 soniyada
+Drive orqali hamma noutbukka yetib boradi; yon menyu pastida holat ko'rinadi.
+
+Ichki tuzilish (`ombor/folder_sync.py`): papkada har bir noutbukning o'z papkachasi bor, u yerga faqat shu noutbuk
+o'zgarishlar faylini yozadi (`000001.json`, `000002.json`…). Bitta faylga ikki kompyuter hech qachon yozmaydi, shuning
+uchun Drive faylni buzmaydi yoki «nusxa (1)» qilmaydi. **Bazaning o'zini (`ombor.db`) Drive papkasiga qo'ymang.**
+Bitta yozuvni ikki noutbuk internetsiz o'zgartirsa, keyinroq yuborgani qoladi; bir xil nomli mahsulot qo'shilsa,
+birining nomiga « (a3f9)» kabi belgi qo'shiladi.
+
 ## Markaziy server: yagona baza va internetsiz ishlash (1.25)
 
 Har bir kompyuter **o'z bazasida** ishlaydi — internet bo'lmasa ham hamma narsa odatdagidek. Server ulangach:

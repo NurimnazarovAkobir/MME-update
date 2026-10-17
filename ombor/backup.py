@@ -10,14 +10,14 @@ from .driver import sqlite3
 from .errors import WarehouseError
 from .i18n import tr
 from .migrations import SCHEMA_VERSION
-from .replication import Replica
+from .replication import FOLDER_STATE_TABLES, Replica
 from .settings import Settings
 from .vault import KEY_SUFFIX, Vault
 
 REQUIRED_TABLES = {"products", "movements"}
-# Tiklashda joriy holicha qoladigan jadvallar: eski zaxira dasturni eski yoki
-# noma'lum parol bilan qulflab qo'ymasligi kerak.
-PRESERVED_TABLES = ("settings", "users")
+# Tiklashda joriy holicha qoladigan jadvallar: eski zaxira dasturni eski yoki noma'lum parol bilan qulflab
+# qo'ymasligi kerak; umumiy papka holati (qaysi fayllar o'qilgani, vaqt belgilari) ham eskirmasligi kerak.
+PRESERVED_TABLES = ("settings", "users", *FOLDER_STATE_TABLES)
 EXTRA_FOLDER_KEY = "backup_folder"
 AUTO_FILE_PATTERN = "ombor-????-??-??.db"
 AUTO_COPIES_KEPT = 30

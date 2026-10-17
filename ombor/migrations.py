@@ -5,7 +5,7 @@ from .costing import recalculate_costs
 from .driver import sqlite3
 from .models import Role
 
-SCHEMA_VERSION = 11  # 11: buxgalteriya jadvallari sinxronlashdan chiqarildi
+SCHEMA_VERSION = 12  # 11: buxgalteriya sinxronlashdan chiqarildi; 12: umumiy papka orqali almashish jadvallari
 LEGACY_PASSWORD_KEY = "password"
 LEGACY_ADMIN_NAME = "Rahbar"
 # 3-versiyagacha «boshlang'ich qoldiq» belgisi o'sha paytdagi tilda yozilgan; endi bitta ko'rinishda saqlanadi.
