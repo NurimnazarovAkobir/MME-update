@@ -874,4 +874,7 @@ TRANSLATIONS = {
     "Rasm qo'yish uchun bosing": 'Нажмите, чтобы установить фото',
     'Rasmlar (*.jpg *.jpeg *.png *.bmp *.webp)': 'Изображения (*.jpg *.jpeg *.png *.bmp *.webp)',
     'Rasmni olib tashlash': 'Удалить фото',
+    "Rasmni sudrab suring, g'ildirak yoki surgich bilan kattalashtiring": (
+        'Перетащите фото, увеличьте колёсиком мыши или ползунком'
+    ),
 }

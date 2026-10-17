@@ -3,7 +3,7 @@
 import base64
 
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPixmap
+from PySide6.QtGui import QColor, QFont, QImage, QImageReader, QPainter, QPainterPath, QPixmap
 
 from ..errors import WarehouseError
 from ..i18n import tr
@@ -13,13 +13,25 @@ PHOTO_SIZE = 256  # saqlanadigan rasm: kvadrat, piksel
 PHOTO_QUALITY = 85
 
 
-def encode_photo(path: str) -> str:
-    """Rasm faylini o'qiydi, o'rtasidan kvadrat qilib qirqadi, 256×256 gacha kichraytiradi — base64 JPEG."""
-    image = QImage(path)
+def load_photo(path: str) -> QImage:
+    """Rasm faylini o'qiydi (telefonda olingan rasm qanday burilgan bo'lsa, shunday ko'rinadi)."""
+    reader = QImageReader(path)
+    reader.setAutoTransform(True)
+    image = reader.read()
     if image.isNull():
         raise WarehouseError(tr("Bu faylni rasm sifatida ochib bo'lmadi. JPG yoki PNG rasm tanlang."))
+    return image
+
+
+def encode_photo(path: str) -> str:
+    """Rasm faylini o'qiydi, o'rtasidan kvadrat qilib qirqadi — base64 JPEG (`encode_square`)."""
+    image = load_photo(path)
     side = min(image.width(), image.height())
-    square = image.copy((image.width() - side) // 2, (image.height() - side) // 2, side, side)
+    return encode_square(image.copy((image.width() - side) // 2, (image.height() - side) // 2, side, side))
+
+
+def encode_square(square: QImage) -> str:
+    """Kvadrat rasmni 256×256 gacha kichraytiradi va base64 JPEG qilib qaytaradi."""
     square = square.scaled(
         PHOTO_SIZE, PHOTO_SIZE, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation
     )

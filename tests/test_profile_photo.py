@@ -14,6 +14,7 @@ from ombor.folder_sync import FolderSynchronizer, SharedFolder
 from ombor.models import Role
 from ombor.session import Session
 from ombor.ui.avatar import PHOTO_SIZE, avatar_pixmap, encode_photo
+from ombor.ui.photo_crop import MAX_ZOOM, VIEW_SIZE, PhotoCropDialog
 from ombor.ui.settings_page import SettingsPage
 from tests.test_ui import UiTestCase
 
@@ -33,6 +34,37 @@ class ProfilePhotoTests(UiTestCase):
         self.assertEqual((image.width(), image.height()), (PHOTO_SIZE, PHOTO_SIZE))
         self.assertLess(len(encoded), 60_000)
 
+    def test_crop_starts_centered_and_follows_drag_and_zoom(self):
+        image = QImage(800, 400, QImage.Format.Format_RGB32)
+        image.fill(QColor("#ffffff"))
+        for x in range(0, 100):
+            for y in range(400):
+                image.setPixelColor(x, y, QColor("#ff0000"))  # chap chetida qizil chiziq
+        dialog = PhotoCropDialog(image)
+        crop = dialog.cropped()
+        self.assertEqual((crop.width(), crop.height()), (400, 400))  # boshida — o'rtadagi kvadrat
+        self.assertEqual(crop.pixelColor(0, 0), QColor("#ffffff"))
+        dialog.view.move_by(10_000, 0)  # rasm o'ngga surildi — chap qismi doira ichida, chetdan chiqmaydi
+        crop = dialog.cropped()
+        self.assertEqual(crop.width(), 400)
+        self.assertEqual(crop.pixelColor(0, 0), QColor("#ff0000"))
+        dialog.slider.setValue(dialog.slider.maximum())
+        self.assertAlmostEqual(dialog.view.zoom, MAX_ZOOM)
+        self.assertEqual(dialog.cropped().width(), round(VIEW_SIZE / (VIEW_SIZE / 400 * MAX_ZOOM)))
+        dialog.view.set_zoom(1.0)
+        self.assertEqual(dialog.slider.value(), 0)  # surgich kattalashtirishga ergashadi
+
+    def test_cancel_in_crop_window_keeps_no_photo(self):
+        page = SettingsPage(self.services, Session(self.keeper), self.folder / "ombor.db")
+        with (
+            mock.patch(
+                "ombor.ui.settings_page.QFileDialog.getOpenFileName", return_value=(str(picture(self.folder)), "")
+            ),
+            mock.patch.object(PhotoCropDialog, "exec", return_value=PhotoCropDialog.DialogCode.Rejected),
+        ):
+            page._choose_photo()
+        self.assertEqual(self.services.auth.photo(self.keeper.id), "")  # «Bekor qilish» — rasm qo'yilmadi
+
     def test_not_an_image_is_rejected(self):
         path = self.folder / "matn.png"
         path.write_text("rasm emas")
@@ -43,8 +75,11 @@ class ProfilePhotoTests(UiTestCase):
         page = SettingsPage(self.services, Session(self.keeper), self.folder / "ombor.db")
         changed = []
         page.photo_changed.connect(lambda: changed.append(True))
-        with mock.patch(
-            "ombor.ui.settings_page.QFileDialog.getOpenFileName", return_value=(str(picture(self.folder)), "")
+        with (
+            mock.patch(
+                "ombor.ui.settings_page.QFileDialog.getOpenFileName", return_value=(str(picture(self.folder)), "")
+            ),
+            mock.patch.object(PhotoCropDialog, "exec", return_value=PhotoCropDialog.DialogCode.Accepted),
         ):
             page._choose_photo()
         self.assertTrue(self.services.auth.photo(self.keeper.id))

@@ -53,10 +53,11 @@ from .auth_dialogs import (
     show_recovery_code,
 )
 from .extra_dialogs import GroupsDialog, NameDialog
-from .avatar import avatar_pixmap, encode_photo
+from .avatar import avatar_pixmap, encode_square, load_photo
 from .icon import icon_pixmap
 from .icons import Glyph, glyph_icon, icon_label
 from .import_dialog import import_from_excel
+from .photo_crop import PhotoCropDialog
 from .shared_folder import TITLE as DRIVE_TITLE
 from .shared_folder import connect_folder
 from .window_frame import set_system_frame, uses_system_frame
@@ -497,9 +498,13 @@ class SettingsPage(QWidget):
         if not path:
             return
         try:
-            self._save_photo(encode_photo(path))
+            image = load_photo(path)
         except WarehouseError as error:
             QMessageBox.warning(self, tr("Profil rasmi"), str(error))
+            return
+        dialog = PhotoCropDialog(image, self)  # Telegram'dagi kabi: rasmning qaysi qismi ko'rinishini tanlash
+        if dialog.exec() == PhotoCropDialog.DialogCode.Accepted:
+            self._save_photo(encode_square(dialog.cropped()))
 
     def _save_photo(self, photo: str) -> None:
         self._auth.set_photo(self._user.id, photo)
