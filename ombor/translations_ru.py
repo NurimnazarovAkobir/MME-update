@@ -865,4 +865,6 @@ TRANSLATIONS = {
     "Ro'yxatda yo'q mahsulot qo'shish": 'Добавить товар, которого нет в списке',
     'Shundan kam qolsa — «Kam qoldi» belgisi': 'Если останется меньше — отметка «Мало»',
     "Skaner bilan o'qiting yoki yozing": 'Отсканируйте или введите',
+    'Menyuni yoyish': 'Развернуть меню',
+    "Menyuni yig'ish": 'Свернуть меню',
 }

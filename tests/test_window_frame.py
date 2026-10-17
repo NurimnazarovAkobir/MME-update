@@ -52,3 +52,22 @@ class ExcelButtonTests(UiTestCase):
         )
         texts = [page.toolbar_tools.itemAt(i).widget().text() for i in range(page.toolbar_tools.count())]
         self.assertNotIn("Exceldan yuklash", texts)
+
+
+class SidebarCollapseTests(UiTestCase):
+    def test_collapse_keeps_icons_hides_texts_and_is_remembered(self):
+        window = self.window(self.admin)
+        window._sidebar_toggle.click()
+        self.assertTrue(window._sidebar_collapsed)
+        self.assertEqual(window._sidebar_panel.width(), 80)
+        first = window._menu.item(0)
+        self.assertEqual(first.text(), "")
+        self.assertFalse(first.icon().isNull())
+        self.assertEqual(first.toolTip(), "Bosh sahifa")
+        self.assertTrue(window._brand_texts.isHidden())
+        self.assertEqual(self.services.prefs.get("sidebar_collapsed"), "1")
+        again = self.window(self.admin)  # keyingi ochilishda ham yig'iq
+        self.assertTrue(again._sidebar_collapsed)
+        again._sidebar_toggle.click()
+        self.assertEqual(again._menu.item(0).text().strip(), "Bosh sahifa")
+        self.assertFalse(again._brand_texts.isHidden())

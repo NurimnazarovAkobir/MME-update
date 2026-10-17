@@ -499,6 +499,11 @@ QPushButton#userChip {{ background: {sidebar_hover}; border: 1px solid {border};
 QPushButton#userChip:hover {{ border-color: {accent}; }}
 #chipAvatar {{ background: {accent}; color: #ffffff; border-radius: 18px; font-size: 13pt; font-weight: 700; }}
 #chipName {{ color: #ffffff; font-weight: 600; }}
+QPushButton[role="sidebarToggle"] {{
+    background: transparent; border: none; border-radius: 10px; text-align: left; padding: 0 12px;
+}}
+QPushButton[role="sidebarToggle"][collapsed="true"] {{ text-align: center; padding: 0; }}
+QPushButton[role="sidebarToggle"]:hover {{ background: {sidebar_hover}; }}
 #dialogTitle {{ font-size: 15pt; font-weight: 700; }}
 #fieldCaption {{ font-weight: 600; }}
 QLineEdit#bigInput {{ font-size: 12pt; padding: 9px 12px; }}

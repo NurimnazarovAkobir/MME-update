@@ -57,6 +57,9 @@ from .window_frame import FramelessFrame, uses_system_frame
 from .widgets import button, label
 
 SIDEBAR_WIDTH = 250
+COLLAPSED_WIDTH = 80  # yig'ilgan yon menyu: faqat belgilar
+SIDEBAR_COLLAPSED_KEY = "sidebar_collapsed"  # shu kompyuterning shaxsiy sozlamasi
+TOGGLE_HEIGHT = 40
 BRAND_WIDTH = 150  # yon menyu tepasidagi nom uchun joy (piksel)
 LOGO_SIZE = 48
 MENU_ICON_SIZE = 20
@@ -75,7 +78,11 @@ DIVIDER_GAP, DIVIDER_INSET = 15, 10  # chiziq uchun qator ustidagi joy va chetla
 
 class MenuBadgeDelegate(QStyledItemDelegate):
     """Menyu qatorini chizadi: o'ng chetida qizil doira ichida son (masalan, yangilanish kelganda «1»)
-    va, belgilangan qator ustida, kam ishlatiladigan bo'limlarni ajratib turuvchi chiziq."""
+    va, belgilangan qator ustida, kam ishlatiladigan bo'limlarni ajratib turuvchi chiziq.
+
+    Menyu yig'ilganda (`collapsed`) son belgi ustiga, kichik doira bo'lib chiziladi."""
+
+    collapsed = False
 
     def sizeHint(self, option: QStyleOptionViewItem, index):
         hint = super().sizeHint(option, index)
@@ -96,10 +103,16 @@ class MenuBadgeDelegate(QStyledItemDelegate):
         count = index.data(BADGE_ROLE)
         if not count:
             return
-        size = BADGE_SIZE
-        circle = QRectF(option.rect.right() - size - BADGE_MARGIN, option.rect.center().y() - size / 2 + 1, size, size)
+        if self.collapsed:
+            size = BADGE_SIZE * 0.75
+            circle = QRectF(option.rect.center().x() + 2, option.rect.top() + 4, size, size)
+        else:
+            size = BADGE_SIZE
+            circle = QRectF(
+                option.rect.right() - size - BADGE_MARGIN, option.rect.center().y() - size / 2 + 1, size, size
+            )
         font = QFont(option.font)
-        font.setPointSize(9)
+        font.setPointSize(7 if self.collapsed else 9)
         font.setBold(True)
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -195,8 +208,10 @@ class MainWindow(QMainWindow):
         self._menu.setIconSize(QSize(MENU_ICON_SIZE, MENU_ICON_SIZE))
         self._menu.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._menu.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._menu.setItemDelegate(MenuBadgeDelegate(self._menu))
+        self._menu_delegate = MenuBadgeDelegate(self._menu)
+        self._menu.setItemDelegate(self._menu_delegate)
         self._rows: dict[Destination, int] = {}
+        self._menu_titles = [title for title, *_rest in pages]
         for row, (title, glyph, page, destination) in enumerate(pages):
             self._menu.addItem(QListWidgetItem(menu_icon(glyph, colors.sidebar_text, "#ffffff"), f"  {title}"))
             self._pages.addWidget(page)
@@ -207,16 +222,24 @@ class MainWindow(QMainWindow):
 
         sidebar_panel = QWidget()
         sidebar_panel.setObjectName("sidebarPanel")
-        sidebar_panel.setFixedWidth(SIDEBAR_WIDTH)
+        self._sidebar_panel = sidebar_panel
         sidebar = QVBoxLayout(sidebar_panel)
-        sidebar.setContentsMargins(16, 20, 16, 16)
+        self._sidebar_layout = sidebar
         sidebar.setSpacing(12)
+        self._sidebar_toggle = button("", "sidebarToggle", Glyph.MENU)
+        self._sidebar_toggle.setFixedHeight(TOGGLE_HEIGHT)
+        self._sidebar_toggle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._sidebar_toggle.clicked.connect(lambda: self.set_sidebar_collapsed(not self._sidebar_collapsed))
+        sidebar.addWidget(self._sidebar_toggle)
         sidebar.addLayout(self._brand(session))
         sidebar.addWidget(self._menu, stretch=1)
         self._sync_status = label("", "syncStatus")
         self._sync_status.setVisible(self._sync.configured)
+        self._sync_text = ""  # to'liq holat yozuvi: yig'ilgan menyuda faqat belgisi ko'rinadi
         sidebar.addWidget(self._sync_status)
         sidebar.addWidget(self._user_chip(session))
+        self._prefs = services.prefs
+        self._sidebar_collapsed = False
 
         central = QWidget()
         layout = QHBoxLayout(central)
@@ -241,6 +264,7 @@ class MainWindow(QMainWindow):
             QShortcut(QKeySequence(NEW_RETURN_KEY), self, self._new_return)
         QShortcut(QKeySequence(LOCK_KEY), self, lambda: self._auto_lock.lock())
         self._auto_lock = AutoLock(self, services.auth, session.user, lock_minutes(services.prefs, session.user))
+        self.set_sidebar_collapsed(self._prefs.get(SIDEBAR_COLLAPSED_KEY) == "1")
         self._menu.setCurrentRow(0)
         self._show_firm_name(self._settings.firm_name(APP_NAME))
 
@@ -251,7 +275,7 @@ class MainWindow(QMainWindow):
         self._watcher.timeout.connect(self._refresh_if_changed_elsewhere)
         self._watcher.start(REFRESH_INTERVAL_MS)
         if self._sync.configured:
-            self._sync_status.setText(describe(None)[0])
+            self._show_sync_text(describe(None)[0])
             self._sync.start()
 
     def closeEvent(self, event) -> None:
@@ -263,8 +287,8 @@ class MainWindow(QMainWindow):
         """Yon menyudagi holat; boshqa kompyuterlardan o'zgarish kelgan bo'lsa — ochiq sahifa darhol yangilanadi."""
         text, details = describe(result)
         self._sync_status.setVisible(self._sync.configured)
-        self._sync_status.setText(text)
         self._sync_status.setToolTip(details)
+        self._show_sync_text(text)
         if result.received:
             self._refresh_if_changed_elsewhere()
 
@@ -340,17 +364,20 @@ class MainWindow(QMainWindow):
         avatar = label(session.user.name[:1].upper(), "chipAvatar")
         avatar.setFixedSize(CHIP_AVATAR_SIZE, CHIP_AVATAR_SIZE)
         avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        names = QVBoxLayout()
+        self._chip_texts = QWidget()
+        names = QVBoxLayout(self._chip_texts)
+        names.setContentsMargins(0, 0, 0, 0)
         names.setSpacing(0)
         names.addWidget(label(session.user.name, "chipName"))
         names.addWidget(label(session.user.role.title, "firm"))
+        self._chip_chevron = icon_label(Glyph.CHEVRON, "chevron")
         row = QHBoxLayout(chip)
         row.setContentsMargins(10, 8, 10, 8)
         row.setSpacing(10)
         row.addWidget(avatar)
-        row.addLayout(names, stretch=1)
-        row.addWidget(icon_label(Glyph.CHEVRON, "chevron"))
-        for widget in (avatar, *chip.findChildren(QLabel)):
+        row.addWidget(self._chip_texts, stretch=1)
+        row.addWidget(self._chip_chevron)
+        for widget in (avatar, self._chip_texts, *chip.findChildren(QLabel)):
             widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         chip.setFixedHeight(CHIP_HEIGHT)
         chip.clicked.connect(self._open_profile)
@@ -367,7 +394,9 @@ class MainWindow(QMainWindow):
         logo.setFixedSize(LOGO_SIZE, LOGO_SIZE)
         owner = label(tr("{0} paneli").format(session.user.role.title), "firm")
         owner.setWordWrap(True)
-        names = QVBoxLayout()
+        self._brand_texts = QWidget()  # yig'ilgan menyuda yashiriladi, belgi qoladi
+        names = QVBoxLayout(self._brand_texts)
+        names.setContentsMargins(0, 0, 0, 0)
         names.setSpacing(2)
         names.addStretch()
         brand_name = label(APP_NAME, "brand")
@@ -382,7 +411,7 @@ class MainWindow(QMainWindow):
         brand = QHBoxLayout()
         brand.setSpacing(12)
         brand.addWidget(logo)
-        brand.addLayout(names, stretch=1)
+        brand.addWidget(self._brand_texts, stretch=1)
         return brand
 
     def _show_page(self, index: int) -> None:
@@ -397,9 +426,47 @@ class MainWindow(QMainWindow):
     def _update_attention_badge(self) -> None:
         """«Mahsulotlar» yonida kam qolgan yoki tugagan mahsulotlar soni — bosh sahifani band qilmaydigan eslatma."""
         count = self._warehouse.attention_count()
-        item = self._menu.item(self._rows[Destination.PRODUCTS])
-        item.setText(f"  {self._products_title}  ⚠ {count}" if count else f"  {self._products_title}")
-        item.setToolTip(tr("{0} ta mahsulot kam qolgan yoki tugagan").format(count) if count else "")
+        row = self._rows[Destination.PRODUCTS]
+        self._menu_titles[row] = f"{self._products_title}  ⚠ {count}" if count else self._products_title
+        self._show_menu_item(row)
+        hint = tr("{0} ta mahsulot kam qolgan yoki tugagan").format(count) if count else ""
+        if hint:
+            self._menu.item(row).setToolTip(f"{self._products_title}\n{hint}" if self._sidebar_collapsed else hint)
+
+    # --- Yon menyuni yig'ish ---------------------------------------------------
+
+    def set_sidebar_collapsed(self, collapsed: bool) -> None:
+        """Yon menyuni toraytiradi (faqat belgilar; nomlari — sichqoncha ustida) yoki to'liq ko'rsatadi."""
+        self._sidebar_collapsed = collapsed
+        self._prefs.set(SIDEBAR_COLLAPSED_KEY, "1" if collapsed else "")
+        self._sidebar_panel.setFixedWidth(COLLAPSED_WIDTH if collapsed else SIDEBAR_WIDTH)
+        side = 10 if collapsed else 16
+        self._sidebar_layout.setContentsMargins(side, 12, side, 16)
+        self._sidebar_toggle.setToolTip(tr("Menyuni yoyish") if collapsed else tr("Menyuni yig'ish"))
+        self._sidebar_toggle.setProperty("collapsed", collapsed)  # yig'ilganda belgi o'rtada
+        self._sidebar_toggle.style().unpolish(self._sidebar_toggle)
+        self._sidebar_toggle.style().polish(self._sidebar_toggle)
+        for widget in (self._brand_texts, self._chip_texts, self._chip_chevron):
+            widget.setVisible(not collapsed)
+        self._menu_delegate.collapsed = collapsed
+        for row in range(self._menu.count()):
+            self._show_menu_item(row)
+        self._show_sync_text(self._sync_text)
+        self._menu.viewport().update()
+
+    def _show_menu_item(self, row: int) -> None:
+        item = self._menu.item(row)
+        title = self._menu_titles[row]
+        item.setText("" if self._sidebar_collapsed else f"  {title}")
+        item.setToolTip(title if self._sidebar_collapsed else "")
+
+    def _show_sync_text(self, text: str) -> None:
+        """Sinxronlash holati; yig'ilgan menyuda — faqat belgisi (☁ yoki ⚠), to'liq matn — sichqoncha ustida."""
+        self._sync_text = text
+        self._sync_status.setText(text.split(" ")[0] if self._sidebar_collapsed else text)
+        self._sync_status.setAlignment(
+            Qt.AlignmentFlag.AlignCenter if self._sidebar_collapsed else Qt.AlignmentFlag.AlignLeft
+        )
 
     def eventFilter(self, watched, event) -> bool:
         if watched is self._brand_name and event.type() == QEvent.Type.MouseButtonRelease:

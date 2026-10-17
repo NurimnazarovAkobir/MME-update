@@ -54,6 +54,7 @@ class Glyph:
     FIT = "\ue9a6"  # hammasini ko'rsatish (xaritada)
     SEARCH = "\ue721"
     LOCK = "\ue72e"
+    MENU = "\ue700"  # \u00ab\u2630\u00bb: yon menyuni yig'ish / yoyish
 
 
 def icon_label(glyph: str, object_name: str = "icon") -> QLabel:
