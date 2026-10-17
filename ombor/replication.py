@@ -17,7 +17,15 @@ from dataclasses import dataclass, field
 
 from .costing import recalculate_costs
 from .driver import sqlite3
-from .sync_protocol import LOCAL_SETTINGS, MAIN_WAREHOUSE_UID, TABLES, TABLES_BY_NAME, Change, TableSpec
+from .sync_protocol import (
+    LOCAL_SETTINGS,
+    MAIN_WAREHOUSE_UID,
+    TABLES,
+    TABLES_BY_NAME,
+    Change,
+    TableSpec,
+    known_changes,
+)
 
 _SCHEMA = (
     """
@@ -59,6 +67,21 @@ def install(conn: sqlite3.Connection, main_warehouse_id: int) -> None:
     for spec in TABLES:
         if spec.key == "uid":
             conn.execute(f"UPDATE {spec.name} SET uid = {_NEW_UID} WHERE uid IS NULL")
+    _retire_unknown_tables(conn)
+
+
+def _retire_unknown_tables(conn: sqlite3.Connection) -> None:
+    """Endi sinxronlanmaydigan jadvallar (masalan, 1.25 dagi buxgalteriya): triggerlari va navbatdagi qatorlari olib
+    tashlanadi. Jadvallarning o'zi va ma'lumoti tegilmay qoladi."""
+    known = {spec.name for spec in TABLES}
+    triggers = conn.execute(
+        "SELECT name, tbl_name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'sync\\_%' ESCAPE '\\'"
+    )
+    for name, table in triggers.fetchall():
+        if table not in known:
+            conn.execute(f"DROP TRIGGER IF EXISTS {name}")
+    placeholders = ", ".join("?" * len(known))
+    conn.execute(f"DELETE FROM sync_outbox WHERE tbl NOT IN ({placeholders})", tuple(known))
 
 
 def _add_uid(conn: sqlite3.Connection, table: str) -> None:
@@ -362,7 +385,7 @@ class Replica:
         tracking = self._state()["tracking"]
         self._conn.execute("UPDATE sync_state SET tracking = 0")
         applier = _Applier(self._conn)
-        queue = [Change.from_json(json.loads(row[0])) for row in self._conn.execute("SELECT change FROM sync_pending")]
+        queue = known_changes([json.loads(row[0]) for row in self._conn.execute("SELECT change FROM sync_pending")])
         self._conn.execute("DELETE FROM sync_pending")
         queue += changes
         waiting: list[Change] = []

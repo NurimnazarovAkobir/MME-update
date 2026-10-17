@@ -1,5 +1,6 @@
 """Markaziy server bilan sinxronlash testlari: haqiqiy HTTP server shu kompyuterda ochiladi."""
 
+import json
 import tempfile
 import threading
 import unittest
@@ -11,7 +12,7 @@ from ombor.auth import Auth
 from ombor.backup import Backup
 from ombor.database import connect
 from ombor.models import Movement, MovementKind, Product, Role
-from ombor.replication import Replica
+from ombor.replication import Replica, install
 from ombor.settings import Settings
 from ombor.sync import OfflineError, SyncClient, SyncConfig, SyncError, Synchronizer, normalize_url
 from ombor.sync_protocol import Change
@@ -247,6 +248,38 @@ class ReplicaTests(SyncTestCase):
         data = {"name": "Yangi", "unit": "kg", "kelajakdagi_ustun": 1}
         self.keeper.replica.apply_remote([Change("products", "abc", data)], 0)
         self.assertIn("Yangi", self.keeper.product_names())
+
+
+class RetiredTablesTests(SyncTestCase):
+    """1.25 da sinxronlangan buxgalteriya jadvallari endi e'tiborga olinmaydi."""
+
+    def test_old_payroll_changes_from_the_server_are_skipped(self):
+        old = [Change("employees", "e1", {"name": "Ali", "salary": 100}).to_json()]
+        self.store.push([Change("products", "p-new", {"name": "Sement", "unit": "kg"})], "boshqa")
+        with self.store._lock, self.store._conn:  # eski (1.25) mijoz yozgan qator
+            self.store._conn.execute(
+                "INSERT INTO rows (tbl, uid, data, deleted, seq, at) VALUES ('employees', 'e1', ?, 0, 9999, '')",
+                (json.dumps(old[0]["data"]),),
+            )
+        result = self.keeper.sync.run()
+        self.assertTrue(result.ok, result.error)
+        self.assertIn("Sement", self.keeper.product_names())
+        self.assertEqual(self.keeper.replica.last_seq, 9999)
+
+    def test_old_triggers_are_removed_on_upgrade(self):
+        conn = self.keeper.conn
+        conn.execute("CREATE TABLE employees (id INTEGER PRIMARY KEY, name TEXT, uid TEXT)")
+        conn.execute(
+            "CREATE TRIGGER sync_insert_employees AFTER INSERT ON employees"
+            " BEGIN INSERT INTO sync_outbox (tbl, uid) VALUES ('employees', NEW.uid); END"
+        )
+        conn.execute("INSERT INTO employees (name, uid) VALUES ('Ali', 'e1')")
+        conn.commit()
+        install(conn, main_warehouse_id=1)
+        names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")}
+        self.assertNotIn("sync_insert_employees", names)
+        self.assertIsNone(conn.execute("SELECT 1 FROM sync_outbox WHERE tbl = 'employees'").fetchone())
+        self.assertTrue(self.keeper.sync.run().ok)
 
 
 class UrlTests(unittest.TestCase):

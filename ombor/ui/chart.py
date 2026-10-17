@@ -128,3 +128,75 @@ class BarChart(QWidget):
     def _tooltip(self, group_label: str, values: Sequence[float]) -> str:
         lines = [f"{name}: {fmt_money(value)} {self._unit}".rstrip() for name, value in zip(self._series, values)]
         return "\n".join([group_label, *lines])
+
+
+RANK_ROW_HEIGHT = 30
+RANK_BAR_HEIGHT = 12
+RANK_LABEL_SHARE = 0.36  # kenglikning nomlar egallaydigan qismi
+RANK_VALUE_WIDTH = 92
+
+
+class RankingChart(QWidget):
+    """Gorizontal ustunli reyting: har qatorda nom, uzunligi qiymatga mos ustun va qiymat (masalan, top-10)."""
+
+    def __init__(self, color: str, empty_text: str = ""):
+        super().__init__()
+        self._color = color
+        self._empty_text = empty_text or tr("Hozircha ma'lumot yo'q")
+        self._rows: list[tuple[str, float, str]] = []
+        self._hover_areas: list[tuple[QRectF, str]] = []
+        self.setMouseTracking(True)
+        self.set_rows([])
+
+    def set_rows(self, rows: Sequence[tuple[str, float, str]]) -> None:
+        """`rows` — (nom, qiymat, sichqoncha ustida chiqadigan izoh); katta qiymat yuqorida bo'lishi kutiladi."""
+        self._rows = list(rows)
+        self.setMinimumHeight(max(len(self._rows), 3) * RANK_ROW_HEIGHT)
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        colors = theme.palette()
+        self._hover_areas = []
+        if not self._rows:
+            painter.setPen(QColor(colors.muted))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._empty_text)
+            return
+        top_value = max(value for _, value, _ in self._rows) or 1.0
+        label_width = self.width() * RANK_LABEL_SHARE
+        bar_left = label_width + 10
+        bar_room = max(self.width() - bar_left - RANK_VALUE_WIDTH - 8, 1)
+        metrics = painter.fontMetrics()
+        for index, (name, value, hint) in enumerate(self._rows):
+            top = index * RANK_ROW_HEIGHT
+            row = QRectF(0, top, self.width(), RANK_ROW_HEIGHT)
+            painter.setPen(QColor(colors.text))
+            painter.drawText(
+                QRectF(0, top, label_width, RANK_ROW_HEIGHT),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                metrics.elidedText(f"{index + 1}. {name}", Qt.TextElideMode.ElideRight, int(label_width)),
+            )
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(colors.grid))
+            track = QRectF(bar_left, top + (RANK_ROW_HEIGHT - RANK_BAR_HEIGHT) / 2, bar_room, RANK_BAR_HEIGHT)
+            painter.drawRoundedRect(track, RANK_BAR_HEIGHT / 2, RANK_BAR_HEIGHT / 2)
+            painter.setBrush(QColor(self._color))
+            filled = QRectF(
+                track.left(), track.top(), max(track.width() * max(value, 0) / top_value, 2), track.height()
+            )
+            painter.drawRoundedRect(filled, RANK_BAR_HEIGHT / 2, RANK_BAR_HEIGHT / 2)
+            painter.setPen(QColor(colors.muted))
+            painter.drawText(
+                QRectF(self.width() - RANK_VALUE_WIDTH, top, RANK_VALUE_WIDTH, RANK_ROW_HEIGHT),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                fmt_compact(value),
+            )
+            self._hover_areas.append((row, f"{name}\n{hint}" if hint else name))
+
+    def mouseMoveEvent(self, event) -> None:
+        for area, text in self._hover_areas:
+            if area.contains(event.position()):
+                QToolTip.showText(event.globalPosition().toPoint(), text, self)
+                return
+        QToolTip.hideText()

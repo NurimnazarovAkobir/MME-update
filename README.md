@@ -19,11 +19,10 @@ kodini** ko'rsatadi — uni qog'ozga yozib qo'ying.
 | **Chiqim** | Mahsulot chiqishi: sana, miqdor, **sotuv narxi** (bo'sh bo'lsa — ichki rasxod), guruh va kategoriya, kim oldi, xaridor yoki obyekt |
 | **Mahsulotlar** | Mahsulot yoki xizmat qo'shish, **guruh → kategoriya**, joriy qoldiq, o'rtacha narx, qiymati, holati; guruh, kategoriya va «faqat kam qolganlar» filtri; inventarizatsiya varag'i; Exceldan yuklash. Menyuda kam qolgan mahsulotlar soni ko'rinadi |
 | **Hisobotlar** | Kunlik, haftalik, oylik, yillik yoki ixtiyoriy davr bo'yicha hisobotlar |
-| **Narx nazorati** | 6 oy ichida xarid narxi o'zgargan mahsulotlar (masalan, sentabrda 100 000, oktyabrda 120 000 — +20 %); har 6 oyda menyuda eslatma chiqadi |
+| **Statistika** | Umumiy ko'rinish: eng ko'p chiqqan va sotib olingan mahsulotlar (top-10), kirim-chiqim dinamikasi, obyektlar bo'yicha rasxod, qaysi oyda qaysi mahsulot narxi oshgani yoki tushgani (oldingi xarid oyiga nisbatan, %) |
 | **Qarzlar** | Yetkazib beruvchilarga qarzimiz, xaridorlarning qarzi, to'lovlar («Qarzga» belgili yozuvlardan) |
-| **Buxgalteriya** | Alohida parol bilan: xodimlar, oylik vedomosti, oyliklar — **perechisleniye, karta yoki naqd** |
 | **Tarix** | Faqat rahbarga: kim, qachon, nimani qo'shgan, o'zgartirgan, o'chirgan; o'chirilgan yozuvni tiklash |
-| **Sozlamalar** | Fon, til, parol, hisob qoidalari, foydalanuvchilar, buxgalteriya paroli, zaxira nusxa, markaziy server, qisqa yo'riqnoma |
+| **Sozlamalar** | Fon, til, parol, avtomatik qulflash, hisob qoidalari, foydalanuvchilar, zaxira nusxa, markaziy server, qisqa yo'riqnoma |
 
 Tahrirlash va o'chirish har bir qatorning boshida: **✎** — tahrirlash (yoki qatorni ikki marta bosish), **✕** — o'chirish (yoki Delete tugmasi; avval tasdiq so'raladi).
 
@@ -46,10 +45,6 @@ Parol dasturga kirishni cheklaydi; ma'lumotlar fayli shifrlanmaydi.
 yashiriladi va «Parolingizni kiriting» ekrani chiqadi — har kim (rahbar, omborchi…) o'z paroli bilan ochadi, yozilgan
 ma'lumot yo'qolmaydi. Vaqtni har bir foydalanuvchi «Sozlamalar → Mening hisobim»da tanlaydi: o'chirilgan, 1, 5, 15
 daqiqa yoki 1 soat (odatda 15 daqiqa). Darhol qulflash — yon menyudagi «Qulflash» tugmasi yoki **Ctrl+L**.
-
-**Buxgalteriya paroli** — foydalanuvchilar parolidan alohida. Uni rahbar «Sozlamalar → Buxgalteriya paroli»da
-o'rnatadi. Parolni bilgan har qanday foydalanuvchi (lavozimidan qat'i nazar) «Buxgalteriya» bo'limini ochadi;
-boshqa bo'limga o'tilganda yoki «Qulflash» bosilganda bo'lim yana qulflanadi.
 
 ## Hisobotlar
 
@@ -165,11 +160,29 @@ umumiy nusxasi; uni ham zaxiralang.
 - Server bilan **shifrlangan baza** va **umumiy tarmoq papkasi** ishlatilmaydi (ular bir-birini istisno qiladi).
 - Dastur va server versiyasi mos kelmasa (protokol), server rad etadi — dasturni yangilang.
 
-## Mahsulotlarni Exceldan yuklash
+## Exceldan yuklash: Excelda yuritilgan hisobni bazaga o'tkazish
 
-«Mahsulotlar → Exceldan yuklash → Namuna faylni saqlash», namunani to'ldirib, shu yerdan yuklang.
-Ustunlar: `Nomi | Birlik | Minimal qoldiq | Qoldiq | Narxi`. «Qoldiq» ko'rsatilgan mahsulotga
-bugungi sana bilan «Boshlang'ich qoldiq» kirimi yoziladi. Ro'yxatda bor mahsulotlar o'zgarmaydi.
+«Mahsulotlar → Exceldan yuklash». Fayldagi har bir varaq o'qiladi (`ombor/excel_import.py`, `ombor/importer.py`):
+
+| Varaq | Ustunlar (tartibi ixtiyoriy, o'zbekcha yoki ruscha) |
+|---|---|
+| **Mahsulotlar** | Nomi, Birlik, Guruh, Kategoriya, Minimal qoldiq, Boshlang'ich qoldiq, Narxi, Shtrix-kod, Izoh |
+| **Kirim** | Sana, Hujjat №, Mahsulot, Miqdor, Birlik, Narxi (yoki Summa), Yetkazib beruvchi, Kim olib keldi, Guruh, Kategoriya, Ombor, Qarzga, Izoh |
+| **Chiqim** | Sana, Hujjat №, Mahsulot, Miqdor, Sotuv narxi, Xaridor / obyekt, Kim oldi, Guruh, Kategoriya, Ombor, Qarzga, Izoh |
+| **Obyektlar** | Nomi, Manzil, Mas'ul shaxs, Izoh |
+
+- Varaq turi nomidan («Kirim», «Приход», «Chiqim», «Расход»…) yoki ustunlaridan taniladi; bitta jurnal varag'ida
+  «Turi» ustuni (Kirim/Chiqim) bo'lsa ham bo'ladi. Sarlavha birinchi qatorda bo'lishi shart emas, «Jami» qatorlari
+  o'tkazib yuboriladi. Dasturning o'zi «Excelga chiqarish»da yozgan fayl ham qayta yuklanadi.
+- Sana — Excel sanasi yoki `03.10.2026`, `2026-10-03`; sonlar `1 250 000`, `12,5`, `32 000 so'm` ko'rinishida ham o'qiladi.
+- Bazada yo'q mahsulot, guruh, kategoriya, ombor va obyektlar o'zi qo'shiladi; bor mahsulotning bo'sh guruhi to'ldiriladi.
+- Yozuvlar sana tartibida yoziladi (bir kunda avval kirim, keyin chiqim), chiqim tannarxi o'zi hisoblanadi.
+  Boshlang'ich qoldiq kirimi sanasi — ustunda berilgan bo'lsa o'sha, aks holda mahsulotning birinchi yozuvi sanasi.
+- Yuklashdan oldin oyna nimalar qo'shilishini va o'qilmagan qatorlarni ko'rsatadi; bazaning zaxira nusxasi
+  (`zaxira\exceldan-yuklashdan-oldin-….db`) olinadi.
+- Xato qator (sana yo'q, son emas, qoldiq yetmaydi) qolganlarini to'xtatmaydi — natijada varaq va qator raqami bilan
+  ko'rsatiladi. Excelda tuzatib, faylni **qayta yuklash xavfsiz**: bazada bor yozuvlar takrorlanmaydi.
+- «Namuna faylni saqlash» — to'rtta varaqli to'ldirish namunasi.
 
 ## Ma'lumotlar va zaxira nusxa
 
@@ -194,14 +207,13 @@ ombor/
   database.py        SQLite sxemasi
   migrations.py      eski bazani yangi versiyaga o'tkazish
   costing.py         chiqim tannarxi (sirpanuvchi o'rtacha narx)
-  payroll.py         buxgalteriya: xodimlar va oyliklar (perechisleniye, karta, naqd)
-  pricing.py         narx nazorati va 6 oylik eslatma
   sync_protocol.py   sinxronlash protokoli (mijoz va server uchun umumiy, faqat standart kutubxona)
   replication.py     o'zgarishlarni kuzatish (triggerlar, navbat) va serverdagilarni qo'llash
   sync.py            server bilan HTTP orqali almashish (mijoz)
   sync_server.py     markaziy server: python -m ombor.sync_server
   warehouse.py       mahsulot, kirim, chiqim, inventarizatsiya, o'zgarishlar tarixi
   reports.py         statistika so'rovlari
+  statistics.py      «Statistika» bo'limi: reytinglar, oyma-oy narx o'zgarishi, obyektlar rasxodi
   auth.py            foydalanuvchilar, parollar, tiklash kodi
   analytics.py       foyda va zarar hisob-kitobi
   session.py         joriy foydalanuvchi va ruxsatlar
@@ -209,7 +221,8 @@ ombor/
   backup.py          qo'lda va avtomatik zaxira nusxa
   settings.py        kalit-qiymat sozlamalar
   excel_export.py    Excelga chiqarish
-  excel_import.py    mahsulotlarni Exceldan o'qish
+  excel_import.py    Excel faylini o'qish (mahsulotlar, kirim, chiqim, obyektlar)
+  importer.py        o'qilgan hisobni bazaga yozish
   formatting.py      son va sana formati
   ui/                oynalar va sahifalar (PySide6)
 tests/               mantiq va interfeys (ekransiz) testlari

@@ -124,31 +124,7 @@ CREATE TABLE IF NOT EXISTS history (
     previous  TEXT NOT NULL DEFAULT ''   -- tahrirlashda: oldingi holat
 );
 
--- Buxgalteriya: xodimlar va ularga to'langan oyliklar.
-CREATE TABLE IF NOT EXISTS employees (
-    id       INTEGER PRIMARY KEY,
-    name     TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    position TEXT NOT NULL DEFAULT '',
-    salary   REAL NOT NULL DEFAULT 0 CHECK (salary >= 0),  -- oylik maoshi
-    note     TEXT NOT NULL DEFAULT '',
-    active   INTEGER NOT NULL DEFAULT 1                    -- ishdan ketgan xodim ro'yxatda yashiriladi
-);
-
--- `month` — qaysi oy uchun ('YYYY-MM'); `method` — models.PaymentMethod (perechisleniye, karta, naqd).
-CREATE TABLE IF NOT EXISTS salary_payments (
-    id          INTEGER PRIMARY KEY,
-    employee_id INTEGER NOT NULL REFERENCES employees(id),
-    date        TEXT NOT NULL,
-    month       TEXT NOT NULL,
-    amount      REAL NOT NULL CHECK (amount > 0),
-    method      TEXT NOT NULL,
-    note        TEXT NOT NULL DEFAULT '',
-    created_by  TEXT NOT NULL DEFAULT '',
-    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
-);
-
 CREATE INDEX IF NOT EXISTS idx_movements_product ON movements(product_id);
-CREATE INDEX IF NOT EXISTS idx_salary_payments_month ON salary_payments(month);
 CREATE INDEX IF NOT EXISTS idx_movements_date ON movements(date);
 """
 

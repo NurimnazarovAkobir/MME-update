@@ -32,6 +32,7 @@ from .sync_protocol import (
     TABLES_BY_NAME,
     TOKEN_HEADER,
     Change,
+    known_changes,
     unique_key,
 )
 
@@ -228,7 +229,7 @@ def make_handler(store: ServerStore, token: str, log: bool = True) -> type[BaseH
                 limit = max(1, min(int(query.get("limit", [str(PULL_LIMIT)])[0]), PULL_LIMIT))
                 return store.pull(since, limit)
             if method == "POST" and path == "/api/push":
-                changes = [Change.from_json(item) for item in self._body()["changes"]]
+                changes = known_changes(self._body()["changes"])
                 return {"head": store.push(changes, device)}
             if method == "POST" and path == "/api/prune":
                 return {"head": store.prune(self._body()["keys"], device)}

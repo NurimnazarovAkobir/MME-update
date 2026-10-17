@@ -37,7 +37,6 @@ from ..session import Session
 from ..settings import MAX_FIRM_NAME
 from ..sync import SyncClient, SyncConfig, SyncError, Synchronizer, device_name, normalize_url
 from . import theme
-from .accounting_page import AccountingPasswordDialog
 from .auth_dialogs import (
     ROLES_HINT,
     ChangePasswordDialog,
@@ -162,7 +161,6 @@ class SettingsPage(QWidget):
             cards.addWidget(self._rules_card())
             cards.addWidget(self._stores_card())
             cards.addWidget(self._users_card())
-            cards.addWidget(self._accounting_card())
             cards.addWidget(self._backup_card())
             if sync is not None and sync.available:
                 cards.addWidget(self._server_card())
@@ -456,26 +454,6 @@ class SettingsPage(QWidget):
             _panel(self._backup_status),
             _button_row(*buttons),
         )
-
-    # --- Buxgalteriya paroli -----------------------------------------------
-
-    def _accounting_card(self) -> QFrame:
-        return _section(
-            Glyph.WALLET,
-            "Good",
-            tr("Buxgalteriya paroli"),
-            _text(
-                tr(
-                    "«Buxgalteriya» bo'limi (xodimlar va oyliklar) alohida parol bilan ochiladi. Parolni bilgan "
-                    "har qanday foydalanuvchi oyliklarni ko'radi va kiritadi."
-                )
-            ),
-            _button_row(_action(tr("Parolni o'rnatish yoki almashtirish"), self._set_accounting_password, "primary")),
-        )
-
-    def _set_accounting_password(self) -> None:
-        if AccountingPasswordDialog(self._auth, self).exec():
-            QMessageBox.information(self, tr("Buxgalteriya paroli"), tr("Buxgalteriya paroli saqlandi."))
 
     # --- Markaziy server (internet orqali) ------------------------------------
 

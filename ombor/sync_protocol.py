@@ -48,14 +48,18 @@ TABLES = (
     TableSpec("groups", references={"parent_id": "groups"}),
     TableSpec("products", unique="name"),
     TableSpec("sites", unique="name"),
-    TableSpec("employees", unique="name"),
     TableSpec("movements", references={"product_id": "products", "warehouse_id": "warehouses"}),
     TableSpec("transfers", references={"product_id": "products", "from_id": "warehouses", "to_id": "warehouses"}),
     TableSpec("payments"),
-    TableSpec("salary_payments", references={"employee_id": "employees"}),
     TableSpec("history"),
 )
 TABLES_BY_NAME = {spec.name: spec for spec in TABLES}
+
+
+def known_changes(items: list[dict]) -> list["Change"]:
+    """Bu versiya biladigan jadvallardagi o'zgarishlar; boshqa versiyadan kelgan noma'lum jadvallar tashlab ketiladi
+    (masalan, 1.25 dagi buxgalteriya jadvallari)."""
+    return [Change.from_json(item) for item in items if item.get("table") in TABLES_BY_NAME]
 
 
 @dataclass(frozen=True)

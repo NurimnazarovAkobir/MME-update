@@ -1,8 +1,8 @@
 """Omborning asosiy amallari: mahsulotlar, kirim va chiqim, o'zgarishlar tarixi."""
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import date, datetime
-from typing import Callable, Iterable, Sequence
+from typing import Callable, Sequence
 
 from .catalog import display_name
 from .config import CURRENCY
@@ -15,7 +15,6 @@ from .i18n import tr
 from .models import (
     HistoryAction,
     HistoryEntry,
-    ImportedProduct,
     Movement,
     MovementDetails,
     MovementKind,
@@ -52,12 +51,6 @@ _SYSTEM_COUNTERPARTIES = {
 def display_counterparty(value: str) -> str:
     """Dastur o'zi yozgan belgilar tanlangan tilda, qo'lda kiritilganlari — o'z holicha."""
     return _SYSTEM_COUNTERPARTIES.get(value, value)
-
-
-@dataclass(frozen=True)
-class ImportResult:
-    added: int
-    skipped: list[str]  # bazada allaqachon bor bo'lgan nomlar
 
 
 def _matches(search: str, *fields: str) -> bool:
@@ -566,36 +559,6 @@ class Warehouse:
             )
             for row in rows
         ]
-
-    def import_products(self, rows: Iterable[ImportedProduct], day: date, author: str) -> ImportResult:
-        """Excel dan o'qilgan mahsulotlarni qo'shadi.
-
-        Bazada bor yoki faylda takrorlangan nomlar o'tkazib yuboriladi. Qoldig'i
-        ko'rsatilgan mahsulotga `day` sanasi bilan boshlang'ich kirim yoziladi.
-        """
-        existing = {product.name.casefold() for product in self.products()}
-        added, skipped = 0, []
-        for row in rows:
-            key = row.name.strip().casefold()
-            if key in existing:
-                skipped.append(row.name)
-                continue
-            product_id = self.save_product(Product(row.name, row.unit, row.min_stock))
-            existing.add(key)
-            added += 1
-            if row.stock > 0:
-                self._store(
-                    Movement(
-                        MovementKind.IN,
-                        day,
-                        product_id,
-                        row.stock,
-                        row.price,
-                        counterparty=OPENING_BALANCE,
-                        created_by=author,
-                    )
-                )
-        return ImportResult(added, skipped)
 
     def default_group(self, product_id: int) -> tuple[str, str]:
         """Yangi yozuvda taklif qilinadigan guruh va kategoriya: mahsulotning o'z guruhi,

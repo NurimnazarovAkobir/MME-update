@@ -91,7 +91,7 @@ class IconTests(UiTestCase):
 
 class MainWindowTests(UiTestCase):
     def test_every_page_opens_for_each_role(self):
-        for user, pages in ((self.admin, 13), (self.keeper, 13), (self.viewer, 13)):
+        for user, pages in ((self.admin, 12), (self.keeper, 12), (self.viewer, 12)):
             window = self.window(user)
             self.assertEqual(window._menu.count(), pages, user.role)
             for row in range(window._menu.count()):

@@ -1,17 +1,13 @@
 """Mahsulotlar va ularning ombordagi qoldig'i."""
 
-from datetime import date
-from pathlib import Path
-
-from PySide6.QtCore import QStandardPaths
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QMessageBox
 
 from ..catalog import display_name, find_group, groups
 from ..config import CURRENCY
-from ..errors import WarehouseError
-from ..excel_import import COLUMNS, read_products, write_template
+from ..backup import Backup
 from ..formatting import fmt_money
 from ..i18n import tr
+from ..importer import ExcelImporter
 from ..models import ProductStock, StockStatus
 from ..session import Session
 from ..sites import Sites
@@ -19,13 +15,12 @@ from ..warehouse import Warehouse
 from .dialogs import InventoryDialog, ProductDialog
 from .extra_dialogs import TransferDialog
 from .icons import Glyph
+from .import_dialog import import_from_excel
 from .list_page import ListPage
 from .product_card import ProductCardDialog
 from .site_dialogs import TableDialog
 from .widgets import Column, ColumnKind, button
 
-EXCEL_FILTER = tr("Excel fayli (*.xlsx)")
-MAX_SKIPPED_SHOWN = 10
 STATUS_COLUMN = 7
 _PURCHASE_COLUMNS = (
     Column(tr("Mahsulot"), style="strong"),
@@ -46,7 +41,15 @@ def _group_title(product: ProductStock) -> str:
 class ProductsPage(ListPage):
     delete_question = tr("Bu mahsulot ro'yxatdan o'chirilsinmi?")
 
-    def __init__(self, warehouse: Warehouse, sites: Sites, session: Session):
+    def __init__(
+        self,
+        warehouse: Warehouse,
+        sites: Sites,
+        session: Session,
+        importer: ExcelImporter | None = None,
+        backup: Backup | None = None,
+    ):
+        """`importer` berilsa — «Exceldan yuklash» tugmasi (mahsulot, kirim, chiqim, obyektlar); `backup` — undan oldin nusxa."""
         columns = (
             Column(tr("Mahsulot"), style="strong"),
             Column(tr("Guruh / kategoriya")),
@@ -67,6 +70,8 @@ class ProductsPage(ListPage):
         )
         self._warehouse = warehouse
         self._sites = sites
+        self._importer = importer
+        self._backup = backup
         self.empty_hint = tr("Ish mahsulot qo'shishdan boshlanadi: «Yangi mahsulot» tugmasini bosing.")
         # «Holati» — rangli yorliq: yetarli yashil, kam qolgan sariq, tugagan qizil.
         self.table.set_badges(
@@ -105,9 +110,9 @@ class ProductsPage(ListPage):
         purchases.clicked.connect(self._show_purchase_list)
         self.toolbar_tools.addWidget(purchases)
         self.table.setToolTip(tr("Mahsulot kartochkasi — qatorni ikki marta bosing"))
-        if session.can_add:
+        if session.can_add and importer is not None:
             import_button = button(tr("Exceldan yuklash"), glyph=Glyph.IMPORT)
-            import_button.setToolTip(tr("Mahsulotlar ro'yxatini Excel faylidan qo'shish"))
+            import_button.setToolTip(tr("Excelda yuritilgan mahsulotlar, kirim, chiqim va obyektlarni bazaga yuklash"))
             import_button.clicked.connect(self._import_from_excel)
             self.header_tools.addWidget(import_button)
         if session.can_modify:
@@ -246,57 +251,5 @@ class ProductsPage(ListPage):
             )
 
     def _import_from_excel(self) -> None:
-        box = QMessageBox(QMessageBox.Icon.Information, tr("Exceldan yuklash"), "", parent=self)
-        box.setText(
-            tr(
-                "Excel faylining birinchi qatori sarlavha, ustunlari shu tartibda bo'lishi kerak:\n\n{0}\n\n"
-                "«Qoldiq» ko'rsatilgan mahsulotga bugungi sana bilan boshlang'ich kirim yoziladi.\n"
-                "Ro'yxatda bor mahsulotlar o'zgarmaydi."
-            ).format("  |  ".join(COLUMNS))
-        )
-        choose = box.addButton(tr("Faylni tanlash"), QMessageBox.ButtonRole.AcceptRole)
-        template = box.addButton(tr("Namuna faylni saqlash"), QMessageBox.ButtonRole.ActionRole)
-        box.addButton(tr("Bekor qilish"), QMessageBox.ButtonRole.RejectRole)
-        box.exec()
-        if box.clickedButton() is template:
-            self._save_template()
-        elif box.clickedButton() is choose:
-            self._import_file()
-
-    def _save_template(self) -> None:
-        documents = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
-        default_path = Path(documents) / tr("Mahsulotlar namuna.xlsx")
-        path, _ = QFileDialog.getSaveFileName(self, tr("Namuna faylni saqlash"), str(default_path), EXCEL_FILTER)
-        if not path:
-            return
-        try:
-            write_template(path)
-        except OSError:
-            QMessageBox.warning(
-                self, tr("Exceldan yuklash"), tr("Faylni saqlab bo'lmadi. Boshqa joyni tanlab ko'ring.")
-            )
-            return
-        QMessageBox.information(
-            self,
-            tr("Exceldan yuklash"),
-            tr("Namuna saqlandi:\n{0}\n\nUni to'ldirib, shu yerdan qayta yuklang.").format(path),
-        )
-
-    def _import_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, tr("Excel faylini tanlash"), "", EXCEL_FILTER)
-        if not path:
-            return
-        try:
-            result = self._warehouse.import_products(read_products(path), date.today(), self.session.author)
-        except WarehouseError as error:
-            QMessageBox.warning(self, tr("Yuklab bo'lmadi"), str(error))
-            return
-        self.refresh()
-        message = tr("{0} ta mahsulot qo'shildi.").format(result.added)
-        if result.skipped:
-            shown = ", ".join(result.skipped[:MAX_SKIPPED_SHOWN])
-            more = "…" if len(result.skipped) > MAX_SKIPPED_SHOWN else ""
-            message += tr("\n\nRo'yxatda borligi uchun o'tkazib yuborildi ({0} ta): {1}{2}").format(
-                len(result.skipped), shown, more
-            )
-        QMessageBox.information(self, tr("Exceldan yuklash"), message)
+        if import_from_excel(self, self._importer, self._backup, self.session.author):
+            self.refresh()

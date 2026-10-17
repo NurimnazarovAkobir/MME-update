@@ -24,6 +24,7 @@ from .sync_protocol import (
     PUSH_LIMIT,
     TOKEN_HEADER,
     Change,
+    known_changes,
 )
 
 URL_KEY, TOKEN_KEY, DEVICE_KEY = "sync_url", "sync_token", "sync_device"
@@ -97,10 +98,13 @@ class SyncClient:
     def push(self, changes: list[Change]) -> int:
         return self._call("POST", "/api/push", {"changes": [change.to_json() for change in changes]})["head"]
 
-    def pull(self, since: int) -> tuple[list[Change], int, bool]:
-        """`since` dan keyingi o'zgarishlar: (o'zgarishlar, serverdagi oxirgi raqam, yana bormi)."""
+    def pull(self, since: int) -> tuple[list[Change], int, bool, int]:
+        """`since` dan keyingi o'zgarishlar: (o'zgarishlar, serverdagi oxirgi raqam, yana bormi, shu to'plamning
+        oxirgi raqami). Bu versiya bilmaydigan jadvallar tashlab ketiladi, lekin raqami hisobga olinadi."""
         answer = self._call("GET", f"/api/pull?since={since}&limit={PULL_LIMIT}")
-        return [Change.from_json(item) for item in answer["changes"]], answer["head"], bool(answer["more"])
+        items = answer["changes"]
+        last = max([since, *(int(item.get("seq") or 0) for item in items)])
+        return known_changes(items), answer["head"], bool(answer["more"]), last
 
     def prune(self, keys: dict[str, list[str]]) -> int:
         """Serverda `keys` da yo'q qatorlarni o'chiradi (zaxiradan tiklangan bazani asosiy qilish uchun)."""
@@ -213,8 +217,7 @@ class Synchronizer:
     def _pull_all(self, since: int) -> tuple[list[Change], int]:
         changes: list[Change] = []
         while True:
-            batch, head, more = self._client.pull(since)
+            batch, head, more, since = self._client.pull(since)
             changes += batch
-            since = max([since, *(change.seq for change in batch)])
             if not more:
                 return changes, max(head, since)

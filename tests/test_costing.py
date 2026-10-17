@@ -1,14 +1,11 @@
-"""Tannarx, sana tartibi, inventarizatsiya va Exceldan yuklash testlari."""
+"""Tannarx, sana tartibi va inventarizatsiya testlari."""
 
-import tempfile
 import unittest
 from datetime import date
-from pathlib import Path
 
 from ombor.errors import WarehouseError
-from ombor.excel_import import read_products, write_template
-from ombor.models import ImportedProduct, MovementKind, Period
-from ombor.warehouse import INVENTORY_SHORTAGE, INVENTORY_SURPLUS, OPENING_BALANCE
+from ombor.models import MovementKind, Period
+from ombor.warehouse import INVENTORY_SHORTAGE, INVENTORY_SURPLUS
 from tests.test_warehouse import TODAY, WarehouseTestCase
 
 SEPTEMBER = date(2026, 9, 10)
@@ -109,52 +106,6 @@ class InventoryTests(WarehouseTestCase):
     def test_negative_count_is_rejected(self):
         with self.assertRaises(WarehouseError):
             self.warehouse.adjust_stock(self.pipe, -1, TODAY, "Rahbar")
-
-
-class ImportTests(WarehouseTestCase):
-    def test_adds_new_products_with_opening_balance(self):
-        result = self.warehouse.import_products(
-            [
-                ImportedProduct("Shveller 12", "metr", 50, stock=200, price=85_000),
-                ImportedProduct("Bolt M12", "dona"),
-                ImportedProduct("TRUBA 40x40", "metr"),
-                ImportedProduct("bolt m12", "dona"),
-            ],
-            TODAY,
-            "Rahbar",
-        )
-        self.assertEqual((result.added, result.skipped), (2, ["TRUBA 40x40", "bolt m12"]))
-        (receipt,) = self.warehouse.movements()
-        self.assertEqual((receipt.product_name, receipt.quantity, receipt.amount), ("Shveller 12", 200, 17_000_000))
-        self.assertEqual((receipt.counterparty, receipt.created_by), (OPENING_BALANCE, "Rahbar"))
-
-    def test_template_round_trip(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "namuna.xlsx"
-            write_template(path)
-            products = read_products(path)
-        self.assertEqual(products[0], ImportedProduct("Truba 40x40x2", "metr", 100, 250, 32000))
-        self.assertEqual(len(products), 2)
-
-    def test_bad_number_names_the_cell(self):
-        from openpyxl import Workbook
-
-        workbook = Workbook()
-        workbook.active.append(["Nomi", "Birlik", "Minimal qoldiq", "Qoldiq", "Narxi"])
-        workbook.active.append(["Bolt", "dona", "", "ko'p", 5])
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "xato.xlsx"
-            workbook.save(path)
-            with self.assertRaises(WarehouseError) as raised:
-                read_products(path)
-        self.assertIn("2-qator, «Qoldiq»", str(raised.exception))
-
-    def test_non_excel_file_is_rejected(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "matn.xlsx"
-            path.write_text("bu excel emas")
-            with self.assertRaises(WarehouseError):
-                read_products(path)
 
 
 if __name__ == "__main__":
