@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QRectF, QSize, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QShortcut
+from PySide6.QtCore import QEvent, QRect, QRectF, QSize, Qt, QTimer
+from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QStackedWidget,
+    QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QSystemTrayIcon,
@@ -64,6 +65,8 @@ TOGGLE_HEIGHT = 40
 BRAND_WIDTH = 150  # yon menyu tepasidagi nom uchun joy (piksel)
 LOGO_SIZE = 48
 MENU_ICON_SIZE = 26
+COLLAPSED_ICON_SIZE = 20  # yig'ilgan menyuda belgi kichikroq
+COLLAPSED_TILE = 42  # yig'ilgan menyuda tanlangan qator — belgi atrofidagi o'rtadagi kvadrat
 # Istalgan sahifadan yangi yozuv ochadigan tugmalar (bosh sahifadagi katta tugmalar yordam yozuvida ham bor).
 NEW_RECEIPT_KEY, NEW_ISSUE_KEY, NEW_PRODUCT_KEY, NEW_RETURN_KEY = "F2", "F3", "F4", "F5"
 LOCK_KEY = "Ctrl+L"
@@ -87,6 +90,8 @@ class MenuBadgeDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option: QStyleOptionViewItem, index):
         hint = super().sizeHint(option, index)
+        if self.collapsed:
+            hint.setHeight(COLLAPSED_TILE + 4)
         if index.data(DIVIDER_ROLE):
             hint.setHeight(hint.height() + DIVIDER_GAP)
         return hint
@@ -100,7 +105,10 @@ class MenuBadgeDelegate(QStyledItemDelegate):
             painter.restore()
             option = QStyleOptionViewItem(option)
             option.rect = option.rect.adjusted(0, DIVIDER_GAP, 0, 0)  # qatorning o'zi chiziqdan pastda
-        super().paint(painter, option, index)
+        if self.collapsed:
+            self._paint_tile(painter, option, index)
+        else:
+            super().paint(painter, option, index)
         count = index.data(BADGE_ROLE)
         if not count:
             return
@@ -123,6 +131,30 @@ class MenuBadgeDelegate(QStyledItemDelegate):
         painter.setPen(QColor("#ffffff"))
         painter.setFont(font)
         painter.drawText(circle, Qt.AlignmentFlag.AlignCenter, str(count))
+        painter.restore()
+
+    @staticmethod
+    def _paint_tile(painter: QPainter, option: QStyleOptionViewItem, index) -> None:
+        """Yig'ilgan menyu qatori: o'rtada kvadrat (tanlangan — urg'u rangida, sichqoncha ustida — och) va belgi."""
+        colors = theme.palette()
+        center = option.rect.center()
+        tile = QRect(0, 0, COLLAPSED_TILE, COLLAPSED_TILE)
+        tile.moveCenter(center)
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        if selected or hovered:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(colors.accent if selected else colors.sidebar_hover))
+            painter.drawRoundedRect(QRectF(tile), 10, 10)
+        icon_rect = QRect(0, 0, COLLAPSED_ICON_SIZE, COLLAPSED_ICON_SIZE)
+        icon_rect.moveCenter(center)
+        icon = index.data(Qt.ItemDataRole.DecorationRole)
+        if isinstance(icon, QIcon):
+            mode = QIcon.Mode.Selected if selected else QIcon.Mode.Normal
+            icon.paint(painter, icon_rect, Qt.AlignmentFlag.AlignCenter, mode)
         painter.restore()
 
 
@@ -464,8 +496,13 @@ class MainWindow(QMainWindow):
         for widget in (self._brand_texts, self._chip_texts, self._chip_chevron):
             widget.setVisible(not collapsed)
         self._menu_delegate.collapsed = collapsed
+        # Yig'ilgan menyuda aylantirish chizig'i belgilarni chetga surmasin (g'ildirak bilan baribir aylanadi).
+        self._menu.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff if collapsed else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
         for row in range(self._menu.count()):
             self._show_menu_item(row)
+        self._menu.doItemsLayout()  # qator balandligi o'zgardi
         self._show_sync_text(self._sync_text)
         self._menu.viewport().update()
 
