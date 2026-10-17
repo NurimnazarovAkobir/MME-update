@@ -1,9 +1,8 @@
 """Joriy ish seansi: kim kirgan va unga nimalar ruxsat etilgan."""
 
 from dataclasses import dataclass
-from datetime import date
 
-from .models import MovementDetails, Role, User
+from .models import MovementDetails, User
 
 
 @dataclass(frozen=True)
@@ -29,15 +28,9 @@ class Session:
         """Istalgan yozuvni tahrirlash va o'chirish, inventarizatsiya, zaxiradan tiklash — faqat rahbarga."""
         return self.user.is_admin
 
-    def can_change(self, movement: MovementDetails, today: date | None = None) -> bool:
-        """Yozuvni tahrirlash yoki o'chirish mumkinmi.
+    def can_change(self, movement: MovementDetails) -> bool:
+        """Kirim, chiqim yoki vozvratni tahrirlash va o'chirish — faqat rahbarga.
 
-        Rahbar — istalganini; omborchi — faqat o'zi bugun kiritganini (xatoni darhol tuzatishi uchun).
+        Omborchi yozuvni faqat qo'shadi: xato kiritgan bo'lsa, rahbarga aytadi va u tuzatadi.
         """
-        if self.user.is_admin:
-            return True
-        return (
-            self.user.role is Role.KEEPER
-            and movement.created_by == self.user.name
-            and movement.created_on == (today or date.today())
-        )
+        return self.user.is_admin

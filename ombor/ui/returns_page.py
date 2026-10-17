@@ -60,7 +60,6 @@ def _row(movement: MovementDetails) -> tuple:
 
 class ReturnsPage(ListPage):
     delete_question = tr("Bu vozvrat o'chirilsinmi? Mahsulot ombor qoldig'idan chiqariladi.")
-    locked_message = tr("Omborchi faqat o'zi bugun kiritgan yozuvni o'zgartira oladi. Boshqasini rahbar tuzatadi.")
 
     def __init__(self, sites: Sites, warehouse: Warehouse, session: Session):
         super().__init__(
@@ -68,7 +67,7 @@ class ReturnsPage(ListPage):
             tr("+ Yangi vozvrat"),
             _COLUMNS,
             session,
-            row_actions=session.can_add,  # omborchi — faqat o'zi bugun kiritgan yozuvlarda
+            row_actions=session.can_modify,  # tahrirlash va o'chirish — faqat rahbarda
             glyph=Glyph.UNDO,
             subtitle=tr("Obyektlardan omborga qaytgan mahsulotlar"),
         )

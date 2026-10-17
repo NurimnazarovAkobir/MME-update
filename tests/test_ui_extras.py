@@ -212,10 +212,7 @@ class FitAndHistoryTests(UiTestCase):
         self.assertFalse(admin.table.isColumnHidden(0))
         self.assertGreaterEqual(admin.table.columnWidth(0), admin.table.horizontalHeader().sectionSizeHint(0))
         keeper = self.page(self.keeper)
-        self.assertFalse(keeper.table.isColumnHidden(0))  # o'zi bugun kiritgan yozuvi bor
-        keeper.search.setText("Truba")  # faqat rahbar kiritgan yozuv qoldi
-        self.assertEqual(keeper.table.total_rows(), 1)
-        self.assertTrue(keeper.table.isColumnHidden(0))
+        self.assertEqual(keeper.table.columnCount(), admin.table.columnCount() - 1)  # omborchida tugmalar yo'q
 
     def test_columns_nobody_filled_are_hidden(self):
         page = self.page()
@@ -449,8 +446,12 @@ class SettingsCardsTests(UiTestCase):
 
         window = MainWindow(self.services, Session(self.admin), self.folder / "ombor.db")
         click = QMouseEvent(
-            QEvent.Type.MouseButtonRelease, QPointF(5, 5), QPointF(5, 5),
-            Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+            QEvent.Type.MouseButtonRelease,
+            QPointF(5, 5),
+            QPointF(5, 5),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
         )
         with (
             mock.patch.object(QInputDialog, "getText", return_value=("Metall Ombor", True)),

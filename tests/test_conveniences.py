@@ -93,16 +93,18 @@ class DocumentEditTests(ConveniencesTestCase):
             dialog.accept()
         self.assertEqual([m.quantity for m in self.warehouse.document(self.issue[0])], [30, 5])
 
-    def test_keeper_edits_a_document_as_a_whole_only_if_all_of_it_is_theirs(self):
+    def test_keeper_cannot_open_even_own_document_for_editing(self):
         page = self.page(self.keeper)
-        self.assertIsInstance(page.edit_dialog(self.issue[0]), MovementDialog)
         own = self.warehouse.save_document(
             [
                 Movement(MovementKind.OUT, TODAY, self.pipe, 1, created_by="Vali"),
                 Movement(MovementKind.OUT, TODAY, self.sheet, 1, created_by="Vali"),
             ]
         )
-        self.assertIsInstance(page.edit_dialog(own[0]), DocumentDialog)
+        self.assertFalse(page.can_change(own[0]))
+        with mock.patch.object(QMessageBox, "information") as told:  # «faqat rahbar o'zgartira oladi»
+            page._open(own[0])
+        told.assert_called_once()
 
     def test_documents_with_returns_or_mixed_details_are_edited_line_by_line(self):
         document = self.warehouse.document(self.issue[0])

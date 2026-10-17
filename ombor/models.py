@@ -16,7 +16,7 @@ class MovementKind(str, Enum):
 class Role(Enum):
     """Foydalanuvchi lavozimi.
 
-    Rahbar hammasini qila oladi. Omborchi yozuv qo'shadi va o'zi bugun kiritganini tuzata oladi.
+    Rahbar hammasini qila oladi. Omborchi yozuv qo'shadi, lekin tahrirlay va o'chira olmaydi.
     Kuzatuvchi (masalan, buxgalter) faqat ko'radi.
     """
 

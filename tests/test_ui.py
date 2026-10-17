@@ -124,12 +124,13 @@ class MovementsPageTests(UiTestCase):
         ids = [m.id for m in self.warehouse.movements(MovementKind.IN)]
         return ids.index(movement_id)
 
-    def test_keeper_has_row_buttons_only_on_own_records(self):
+    def test_keeper_cannot_edit_even_own_records(self):
         page = self.page(self.keeper)
-        self.assertIsNotNone(page.table.cellWidget(self._row_of(page, self.by_keeper), 0))
-        self.assertIsNone(page.table.cellWidget(self._row_of(page, self.by_admin), 0))
-        self.assertTrue(page.can_change(self.by_keeper))
+        self.assertIsNone(page.table.cellWidget(self._row_of(page, self.by_keeper), 0))
+        self.assertFalse(page.can_change(self.by_keeper))
         self.assertFalse(page.can_change(self.by_admin))
+        admin = self.page(self.admin)
+        self.assertTrue(admin.can_change(self.by_keeper))
 
     def test_keeper_is_told_why_a_foreign_record_cannot_be_changed(self):
         page = self.page(self.keeper)
@@ -235,7 +236,9 @@ class OtherPagesTests(UiTestCase):
     def test_group_rule_is_switched_in_settings(self):
         page = SettingsPage(self.services, Session(self.admin), self.folder / "ombor.db")
         page.refresh()
-        (rule,) = [box for box in page.findChildren(QCheckBox) if box.text() == "Kirim va chiqimda guruh tanlash majburiy"]
+        (rule,) = [
+            box for box in page.findChildren(QCheckBox) if box.text() == "Kirim va chiqimda guruh tanlash majburiy"
+        ]
         rule.setChecked(True)
         self.assertTrue(self.warehouse.group_required)
         self.assertIn("⚠", page._backup_status.text())  # qo'shimcha papka tanlanmagan
@@ -244,7 +247,9 @@ class OtherPagesTests(UiTestCase):
         page = SettingsPage(self.services, Session(self.keeper), self.folder / "ombor.db")
         page.refresh()
         # Faqat shu kompyuterning shaxsiy sozlamasi (oyna ramkasi) qoladi.
-        self.assertEqual([box.text() for box in page.findChildren(QCheckBox)], ["Windows oynasi ramkasidan foydalanish"])
+        self.assertEqual(
+            [box.text() for box in page.findChildren(QCheckBox)], ["Windows oynasi ramkasidan foydalanish"]
+        )
 
     def test_table_handles_many_rows(self):
         for offset in range(300):

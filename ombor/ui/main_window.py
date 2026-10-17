@@ -37,6 +37,7 @@ from .dialogs import ProductDialog
 from .document_dialog import DocumentDialog
 from .history_page import HistoryPage
 from .icon import app_icon, icon_pixmap
+from .avatar import avatar_pixmap
 from .icons import Glyph, icon_label, menu_icon
 from .labels import LABELS
 from .language import restart_application
@@ -62,7 +63,7 @@ SIDEBAR_COLLAPSED_KEY = "sidebar_collapsed"  # shu kompyuterning shaxsiy sozlama
 TOGGLE_HEIGHT = 40
 BRAND_WIDTH = 150  # yon menyu tepasidagi nom uchun joy (piksel)
 LOGO_SIZE = 48
-MENU_ICON_SIZE = 20
+MENU_ICON_SIZE = 26
 # Istalgan sahifadan yangi yozuv ochadigan tugmalar (bosh sahifadagi katta tugmalar yordam yozuvida ham bor).
 NEW_RECEIPT_KEY, NEW_ISSUE_KEY, NEW_PRODUCT_KEY, NEW_RETURN_KEY = "F2", "F3", "F4", "F5"
 LOCK_KEY = "Ctrl+L"
@@ -197,6 +198,7 @@ class MainWindow(QMainWindow):
         settings_page.firm_name_changed.connect(self._show_firm_name)
         settings_page.lock_minutes_changed.connect(lambda minutes: self._auto_lock.set_minutes(minutes))
         settings_page.lock_requested.connect(lambda: self._auto_lock.lock())
+        settings_page.photo_changed.connect(self._show_chip_photo)
         self._settings_page = settings_page
         self._settings_row = len(pages)
         pages.append((tr("Sozlamalar"), Glyph.SETTINGS, settings_page, None))
@@ -344,6 +346,7 @@ class MainWindow(QMainWindow):
         if version != self._data_version:
             self._data_version = version
             catalog.load(self._conn)  # guruhlar boshqa kompyuterda o'zgargan bo'lishi mumkin
+            self._show_chip_photo()  # rasm boshqa kompyuterda qo'yilgan bo'lishi mumkin
             self._refresh_current()
 
     def _map_tiles(self, services: Services) -> TileLoader | None:
@@ -361,9 +364,10 @@ class MainWindow(QMainWindow):
         chip.setCursor(Qt.CursorShape.PointingHandCursor)
         chip.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         chip.setToolTip(tr("Profil: parol, qulflash ({0}) va chiqish").format(LOCK_KEY))
-        avatar = label(session.user.name[:1].upper(), "chipAvatar")
+        avatar = QLabel()
         avatar.setFixedSize(CHIP_AVATAR_SIZE, CHIP_AVATAR_SIZE)
-        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._chip_avatar = avatar
+        self._show_chip_photo()
         self._chip_texts = QWidget()
         names = QVBoxLayout(self._chip_texts)
         names.setContentsMargins(0, 0, 0, 0)
@@ -382,6 +386,11 @@ class MainWindow(QMainWindow):
         chip.setFixedHeight(CHIP_HEIGHT)
         chip.clicked.connect(self._open_profile)
         return chip
+
+    def _show_chip_photo(self) -> None:
+        """Yon menyu kartochkasidagi profil rasmi (boshqa kompyuterda o'zgarsa ham yangilanadi)."""
+        user = self._session.user
+        self._chip_avatar.setPixmap(avatar_pixmap(user.name, self._auth.photo(user.id), CHIP_AVATAR_SIZE))
 
     def _open_profile(self) -> None:
         self._menu.setCurrentRow(self._settings_row)

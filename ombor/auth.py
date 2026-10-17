@@ -17,6 +17,7 @@ from .settings import Settings
 from .vault import Vault
 
 MIN_PASSWORD_LENGTH = 4
+MAX_PHOTO_CHARS = 400_000  # base64 dagi rasm (≈300 KB); oyna uni oldindan 256×256 gacha kichraytiradi
 HASH_ITERATIONS = 200_000
 SALT_BYTES = 16
 
@@ -66,6 +67,20 @@ class Auth:
         """Hisobning bazadagi hozirgi holati; o'chirilgan bo'lsa — None."""
         row = self._conn.execute("SELECT id, name, role FROM users WHERE id = ?", (user_id,)).fetchone()
         return User(row["id"], row["name"], Role(row["role"])) if row else None
+
+    # --- Profil rasmi --------------------------------------------------------
+
+    def photo(self, user_id: int) -> str:
+        """Profil rasmi (kvadrat JPEG, base64); rasm qo'yilmagan bo'lsa — bo'sh qator."""
+        row = self._conn.execute("SELECT photo FROM users WHERE id = ?", (user_id,)).fetchone()
+        return row["photo"] if row else ""
+
+    def set_photo(self, user_id: int, photo: str) -> None:
+        """Rasmni almashtiradi (bo'sh qator — rasmni olib tashlash). Umumiy bazada boshqa kompyuterlarga ham o'tadi."""
+        if len(photo) > MAX_PHOTO_CHARS:
+            raise WarehouseError(tr("Rasm juda katta."))
+        with self._conn:
+            self._conn.execute("UPDATE users SET photo = ? WHERE id = ?", (photo, user_id))
 
     def add_user(self, name: str, password: str, role: Role) -> User:
         name = name.strip()

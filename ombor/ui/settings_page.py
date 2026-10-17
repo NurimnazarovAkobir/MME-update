@@ -9,7 +9,7 @@ from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import QSize, QStandardPaths, Qt, QUrl, Signal
-from PySide6.QtGui import QCursor, QDesktopServices
+from PySide6.QtGui import QCursor, QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -53,6 +53,7 @@ from .auth_dialogs import (
     show_recovery_code,
 )
 from .extra_dialogs import GroupsDialog, NameDialog
+from .avatar import avatar_pixmap, encode_photo
 from .icon import icon_pixmap
 from .icons import Glyph, glyph_icon, icon_label
 from .import_dialog import import_from_excel
@@ -67,14 +68,15 @@ from .widgets import Column, DataTable, button, card, confirm, label, page_heade
 THEME_KEY = "theme"
 
 FILE_FILTER = tr("Zaxira nusxa (*.db)")
+PHOTO_FILTER = tr("Rasmlar (*.jpg *.jpeg *.png *.bmp *.webp)")
 USERS_TABLE_HEIGHT = 170
 SECTION_BADGE_SIZE = 36
 FIELD_WIDTH = 280
 SERVER_FIELD_WIDTH = 480
 NAV_WIDTH = 250
-NAV_ICON_SIZE = 18
+NAV_ICON_SIZE = 22
 CONTENT_MAX_WIDTH = 1000  # keng ekranda bo'lim matni cho'zilib ketmasin
-AVATAR_SIZE = 64
+AVATAR_SIZE = 88
 LOGO_SIZE = 72
 PROFILE, APPEARANCE, DATA, USERS, SHARED, SAFETY, ABOUT = (
     "profile",
@@ -192,6 +194,7 @@ class SettingsPage(QWidget):
     firm_name_changed = Signal(str)  # rahbar ombor nomini o'zgartirdi — sarlavhalar yangilanadi
     lock_minutes_changed = Signal(int)  # avtomatik qulflash vaqti o'zgardi (0 — o'chirilgan)
     lock_requested = Signal()  # «Qulflash» bosildi — asosiy oyna qulf ekranini ko'rsatadi
+    photo_changed = Signal()  # profil rasmi o'zgardi — yon menyudagi kartochka yangilanadi
 
     def __init__(self, services: Services, session: Session, db_path: Path, sync: SyncController | None = None):
         super().__init__()
@@ -421,18 +424,33 @@ class SettingsPage(QWidget):
 
     def _profile_cards(self) -> list[QWidget]:
         """Kim kirgani, parol, qulflash va chiqish (avval yon menyuning pastida edi)."""
-        avatar = label(self._user.name[:1].upper(), "avatar")
-        avatar.setFixedSize(AVATAR_SIZE, AVATAR_SIZE)
-        avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._avatar = QPushButton()
+        self._avatar.setObjectName("avatarButton")
+        self._avatar.setFixedSize(AVATAR_SIZE, AVATAR_SIZE)
+        self._avatar.setIconSize(QSize(AVATAR_SIZE, AVATAR_SIZE))
+        self._avatar.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._avatar.setToolTip(tr("Rasm qo'yish uchun bosing"))
+        self._avatar.clicked.connect(self._choose_photo)
+        self._remove_photo = button(tr("Rasmni olib tashlash"), "link")
+        self._remove_photo.clicked.connect(lambda: self._save_photo(""))
         names = QVBoxLayout()
         names.setSpacing(2)
         names.addWidget(label(self._user.name, "profileName"))
         names.addWidget(label(tr("{0} · shu kompyuterda kirgan").format(self._user.role.title), "muted"))
+        photo_row = QHBoxLayout()
+        photo_row.setSpacing(4)
+        change = button(tr("Rasm qo'yish"), "link")
+        change.clicked.connect(self._choose_photo)
+        photo_row.addWidget(change)
+        photo_row.addWidget(self._remove_photo)
+        photo_row.addStretch()
+        names.addLayout(photo_row)
+        self._show_photo()
         who = QWidget()
         top = QHBoxLayout(who)
         top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(16)
-        top.addWidget(avatar)
+        top.addWidget(self._avatar)
         top.addLayout(names, stretch=1)
         lock = _action(tr("Qulflash"), self.lock_requested.emit, glyph=Glyph.LOCK)
         lock.setToolTip(tr("Dasturni qulflash: davom etish uchun parol so'raladi (Ctrl+L)"))
@@ -467,6 +485,26 @@ class SettingsPage(QWidget):
             ),
         )
         return [account, security]
+
+    def _show_photo(self) -> None:
+        photo = self._auth.photo(self._user.id)
+        self._avatar.setIcon(QIcon(avatar_pixmap(self._user.name, photo, AVATAR_SIZE)))
+        self._remove_photo.setVisible(bool(photo))
+
+    def _choose_photo(self) -> None:
+        pictures = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
+        path, _ = QFileDialog.getOpenFileName(self, tr("Profil rasmi"), pictures, PHOTO_FILTER)
+        if not path:
+            return
+        try:
+            self._save_photo(encode_photo(path))
+        except WarehouseError as error:
+            QMessageBox.warning(self, tr("Profil rasmi"), str(error))
+
+    def _save_photo(self, photo: str) -> None:
+        self._auth.set_photo(self._user.id, photo)
+        self._show_photo()
+        self.photo_changed.emit()
 
     def _change_lock_minutes(self, minutes: int) -> None:
         set_lock_minutes(self._prefs, self._user, minutes)

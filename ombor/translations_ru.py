@@ -328,8 +328,6 @@ TRANSLATIONS = {
     "O'zgarishlar": "Изменения",
     "O'zgarishlar: {0} ta  ·  o'chirilgan yozuvlar: {1} ta": "Изменений: {0}  ·  удалённых записей: {1}",
     "O'zgartirildi": "Изменено",
-    "Omborchi faqat o'zi bugun kiritgan yozuvni o'zgartira oladi. Boshqasini rahbar tuzatadi.": "Кладовщик может изменить только запись, которую сам внёс сегодня. Остальные исправляет руководитель.",
-    "Omborchi kirim, chiqim va mahsulot qo'shadi, o'zi bugun kiritgan yozuvni tuzata oladi. Kuzatuvchi (masalan, buxgalter) faqat ko'radi. Qolgan hammasi — tahrirlash, o'chirish, inventarizatsiya, o'chirilganni tiklash va sozlamalar — faqat rahbarda.": "Кладовщик добавляет приход, расход и товары, может исправить запись, внесённую им сегодня. Наблюдатель (например, бухгалтер) только просматривает. Всё остальное — редактирование, удаление, инвентаризация, восстановление удалённого и настройки — только у руководителя.",
     "Qabul qildi": "Принял",
     "Qo'shildi": "Добавлено",
     "Sana bugundan keyin bo'lishi mumkin emas.": "Дата не может быть позже сегодняшней.",
@@ -867,4 +865,13 @@ TRANSLATIONS = {
     "Skaner bilan o'qiting yoki yozing": 'Отсканируйте или введите',
     'Menyuni yoyish': 'Развернуть меню',
     "Menyuni yig'ish": 'Свернуть меню',
+    # --- Profil rasmi ---
+    "Bu faylni rasm sifatida ochib bo'lmadi. JPG yoki PNG rasm tanlang.": 'Не удалось открыть файл как изображение. Выберите JPG или PNG.',
+    "Omborchi kirim, chiqim va mahsulot qo'shadi; kiritilgan yozuvni tahrirlay olmaydi. Kuzatuvchi (masalan, buxgalter) faqat ko'radi. Qolgan hammasi — tahrirlash, o'chirish, inventarizatsiya, o'chirilganni tiklash va sozlamalar — faqat rahbarda.": 'Кладовщик добавляет приход, расход и товары; редактировать внесённые записи не может. Наблюдатель (например, бухгалтер) только просматривает. Всё остальное — редактирование, удаление, инвентаризация, восстановление удалённого и настройки — только у руководителя.',
+    'Profil rasmi': 'Фото профиля',
+    'Rasm juda katta.': 'Изображение слишком большое.',
+    "Rasm qo'yish": 'Установить фото',
+    "Rasm qo'yish uchun bosing": 'Нажмите, чтобы установить фото',
+    'Rasmlar (*.jpg *.jpeg *.png *.bmp *.webp)': 'Изображения (*.jpg *.jpeg *.png *.bmp *.webp)',
+    'Rasmni olib tashlash': 'Удалить фото',
 }

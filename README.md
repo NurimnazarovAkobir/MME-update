@@ -34,8 +34,10 @@ saralash. Har bir kirim/chiqim yonida uni **kim kiritgani** yoziladi.
 | Lavozim | Nima qila oladi |
 |---|---|
 | **Kuzatuvchi** | Faqat ko'radi, chop etadi, Excelga chiqaradi (masalan, buxgalter) |
-| **Omborchi** | Kirim, chiqim va mahsulot qo'shadi; **o'zi bugun kiritgan** yozuvni tahrirlaydi yoki o'chiradi |
+| **Omborchi** | Kirim, chiqim va mahsulot qo'shadi; kiritilgan yozuvni **tahrirlay va o'chira olmaydi** (xatoni rahbar tuzatadi) |
 | **Rahbar** | Hammasi: istalgan yozuvni tahrirlash va o'chirish, inventarizatsiya, tarix, foydalanuvchilar, zaxira nusxa |
+
+**Profil rasmi** (Telegram'dagi kabi): «Sozlamalar → Profil»da doira ichidagi belgini bosib, rasm tanlanadi; u yon menyuda ko'rinadi va umumiy baza orqali boshqa kompyuterlarga ham o'tadi.
 
 Omborchi parolini unutsa, rahbar «Sozlamalar»da yangisini o'rnatadi. Rahbar unutsa — kirish oynasidagi
 «Parolni unutdim» tugmasi va tiklash kodi orqali. Kod yo'qolgan bo'lsa, «Sozlamalar → Yangi tiklash kodi».

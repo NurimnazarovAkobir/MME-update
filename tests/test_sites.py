@@ -210,20 +210,20 @@ class SitePagesTests(SitesTestCase):
             [(TODAY, "", "Chilonzor", "Truba 40x40", 15, "metr", 15_000, "Ali", "Asosiy ombor", "")],
         )
         self.assertIn("15 000", page.footer.text())
-        self.assertEqual(
-            self.shown_rows(page._show_by_site), [("Chilonzor", "Truba 40x40", "metr", 40, 15, 15_000)]
-        )
+        self.assertEqual(self.shown_rows(page._show_by_site), [("Chilonzor", "Truba 40x40", "metr", 40, 15, 15_000)])
 
     def test_returns_page_edits_and_deletes(self):
         by_keeper = self._return(self.pipe, 5, author="Vali")
         by_admin = self._return(self.pipe, 5)
         keeper_page = ReturnsPage(self.sites, self.warehouse, Session(self.keeper))
-        self.assertTrue(keeper_page.can_change(by_keeper))
+        self.assertFalse(keeper_page.can_change(by_keeper))  # omborchi o'zinikini ham tahrirlamaydi
         self.assertFalse(keeper_page.can_change(by_admin))
         page = ReturnsPage(self.sites, self.warehouse, Session(self.admin))
         dialog = page.edit_dialog(by_admin)
         self.assertIsInstance(dialog, ReturnDialog)
-        self.assertEqual((dialog._site.combo.currentText(), dialog._product.currentText()), ("Chilonzor", "Truba 40x40"))
+        self.assertEqual(
+            (dialog._site.combo.currentText(), dialog._product.currentText()), ("Chilonzor", "Truba 40x40")
+        )
         dialog._quantity.setValue(7)
         dialog.accept()
         self.assertEqual(self.warehouse.movement(by_admin).quantity, 7)

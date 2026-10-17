@@ -72,17 +72,15 @@ def _row(movement: MovementDetails) -> tuple:
 
 
 class MovementsPage(ListPage):
-    locked_message = tr("Omborchi faqat o'zi bugun kiritgan yozuvni o'zgartira oladi. Boshqasini rahbar tuzatadi.")
-
     def __init__(self, warehouse: Warehouse, sites: Sites, labels: KindLabels, session: Session):
-        # Omborchida ham qator tugmalari bor, lekin faqat o'zi bugun kiritgan yozuvlarda.
+        # Tahrirlash va o'chirish tugmalari — faqat rahbarda; omborchi faqat qo'shadi.
         is_receipt = labels.kind is MovementKind.IN
         super().__init__(
             labels.title,
             labels.new_action,
             _columns(labels),
             session,
-            row_actions=session.can_add,
+            row_actions=session.can_modify,
             glyph=Glyph.RECEIPT if is_receipt else Glyph.ISSUE,
             subtitle=(
                 tr("Omborga kelgan mahsulotlar va xarajatlar")

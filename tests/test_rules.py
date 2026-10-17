@@ -274,17 +274,15 @@ class PermissionTests(RulesTestCase):
         self.assertEqual([s.can_add for s in (self.admin, self.keeper, self.viewer)], [True, True, False])
         self.assertEqual([s.can_modify for s in (self.admin, self.keeper, self.viewer)], [True, False, False])
 
-    def test_keeper_changes_only_own_records_entered_today(self):
+    def test_keeper_cannot_change_any_record(self):
         own, foreign = self._receipt("Vali"), self._receipt("Rahbar")
-        entered = own.created_on
-        self.assertTrue(self.keeper.can_change(own, today=entered))
-        self.assertFalse(self.keeper.can_change(foreign, today=entered))
-        self.assertFalse(self.keeper.can_change(own, today=entered + timedelta(days=1)))
+        self.assertFalse(self.keeper.can_change(own))
+        self.assertFalse(self.keeper.can_change(foreign))
 
     def test_admin_changes_everything_and_viewer_nothing(self):
         record = self._receipt("Vali")
-        self.assertTrue(self.admin.can_change(record, today=record.created_on + timedelta(days=30)))
-        self.assertFalse(self.viewer.can_change(record, today=record.created_on))
+        self.assertTrue(self.admin.can_change(record))
+        self.assertFalse(self.viewer.can_change(record))
 
 
 VERSION_3_SCHEMA = """

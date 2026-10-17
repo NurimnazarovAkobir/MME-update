@@ -18,7 +18,7 @@ from .widgets import button, label
 
 DEFAULT_ADMIN_NAME = tr("Rahbar")
 ROLES_HINT = tr(
-    "Omborchi kirim, chiqim va mahsulot qo'shadi, o'zi bugun kiritgan yozuvni tuzata oladi. "
+    "Omborchi kirim, chiqim va mahsulot qo'shadi; kiritilgan yozuvni tahrirlay olmaydi. "
     "Kuzatuvchi (masalan, buxgalter) faqat ko'radi. Qolgan hammasi — tahrirlash, o'chirish, "
     "inventarizatsiya, o'chirilganni tiklash va sozlamalar — faqat rahbarda."
 )

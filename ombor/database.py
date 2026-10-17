@@ -108,7 +108,8 @@ CREATE TABLE IF NOT EXISTS users (
     id       INTEGER PRIMARY KEY,
     name     TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password TEXT NOT NULL,
-    role     TEXT NOT NULL
+    role     TEXT NOT NULL,
+    photo    TEXT NOT NULL DEFAULT ''  -- profil rasmi: kvadrat JPEG, base64; bo'sh — rasm yo'q
 );
 
 -- O'zgarishlar tarixi: kim, qachon, qaysi yozuvni qo'shdi, o'zgartirdi, o'chirdi yoki tikladi.
@@ -143,6 +144,7 @@ ADDED_COLUMNS = {
         "warehouse_id": "INTEGER NOT NULL DEFAULT 1",
     },
     "history": {"actor_role": "TEXT NOT NULL DEFAULT ''"},
+    "users": {"photo": "TEXT NOT NULL DEFAULT ''"},
     "sites": {"latitude": "REAL", "longitude": "REAL"},
     "products": {
         "is_service": "INTEGER NOT NULL DEFAULT 0",
@@ -258,16 +260,25 @@ def prepare(conn: sqlite3.Connection) -> None:
     if version == SCHEMA_VERSION and views >= set(VIEW_NAMES):
         return
     conn.executescript(TABLES)
-    for table, columns in ADDED_COLUMNS.items():
-        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
-        for column, definition in columns.items():
-            if column not in existing:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+    _add_columns(conn)
     conn.execute("INSERT OR IGNORE INTO warehouses (id, name) VALUES (?, ?)", (MAIN_WAREHOUSE_ID, MAIN_WAREHOUSE_NAME))
     replication.install(conn, main_warehouse_id=MAIN_WAREHOUSE_ID)
     conn.commit()
     conn.executescript(f"BEGIN IMMEDIATE;{VIEWS}COMMIT;")
     migrate(conn)
+    # O'tkazish jadvalni qayta yaratgan bo'lishi mumkin (masalan, juda eski bazada `users`): qo'shilgan
+    # ustunlar va sinxronlash triggerlari yo'qolmasligi uchun yana bir bor tekshiriladi.
+    _add_columns(conn)
+    replication.install(conn, main_warehouse_id=MAIN_WAREHOUSE_ID)
+    conn.commit()
+
+
+def _add_columns(conn: sqlite3.Connection) -> None:
+    for table, columns in ADDED_COLUMNS.items():
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for column, definition in columns.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def period_filter(period: Period, column: str = "date") -> tuple[str, list[str]]:

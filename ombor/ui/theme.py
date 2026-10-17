@@ -505,6 +505,8 @@ QPushButton[role="sidebarToggle"] {{
 QPushButton[role="sidebarToggle"][collapsed="true"] {{ text-align: center; padding: 0; }}
 QPushButton[role="sidebarToggle"]:hover {{ background: {sidebar_hover}; }}
 #dialogTitle {{ font-size: 15pt; font-weight: 700; }}
+QPushButton#avatarButton {{ background: transparent; border: none; padding: 0; border-radius: 44px; }}
+QPushButton#avatarButton:hover {{ background: {hover}; }}
 #fieldCaption {{ font-weight: 600; }}
 QLineEdit#bigInput {{ font-size: 12pt; padding: 9px 12px; }}
 """
