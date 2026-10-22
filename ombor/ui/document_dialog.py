@@ -11,7 +11,6 @@ from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
-    QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -47,8 +46,8 @@ from .site_dialogs import SitePicker
 from .widgets import button, date_input, label, number_input, suggestion_box
 
 DIALOG_WIDTH = 1180
-LINES_HEIGHT = 250  # to'rtta qator ko'rinadi; ko'pi aylantiriladi
 ROW_HEIGHT = 48  # son maydoni sig'ishi uchun
+VISIBLE_ROWS = (2, 6)  # jadval bo'yi qatorlar soniga qarab shu oraliqda o'zgaradi; ko'pi aylantiriladi
 # Jadval ustunlari (Excel hisobidagi tartibda) va (cho'ziladigan «Mahsulot»dan boshqa) ularning kengliklari.
 PRODUCT, STOCK, UNIT, QUANTITY, PRICE, AMOUNT, GROUP, REMOVE = range(8)
 COLUMN_WIDTHS = {STOCK: 100, UNIT: 90, QUANTITY: 105, PRICE: 125, AMOUNT: 140, GROUP: 210, REMOVE: 48}
@@ -76,6 +75,32 @@ def can_edit_as_document(movements: Sequence[MovementDetails]) -> bool:
         for m in movements
     }
     return len(shared) == 1
+
+
+def lines_table(headers: Sequence[str], widths: dict[int, int], stretch: int) -> QTableWidget:
+    """Hujjat qatorlari jadvali: har bir katakda maydon; `stretch` ustuni qolgan joyni egallaydi."""
+    table = QTableWidget(0, len(headers))
+    table.setHorizontalHeaderLabels(list(headers))
+    table.verticalHeader().hide()
+    table.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)
+    table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.setShowGrid(False)
+    header = table.horizontalHeader()
+    header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+    header.setSectionResizeMode(stretch, QHeaderView.ResizeMode.Stretch)
+    for column, width in widths.items():
+        table.setColumnWidth(column, width)
+    fit_lines_height(table)
+    return table
+
+
+def fit_lines_height(table: QTableWidget) -> None:
+    """Jadval bo'yi qatorlar soniga moslanadi: bo'sh joy qolmaydi, ko'p qator bo'lsa — aylantiriladi."""
+    low, high = VISIBLE_ROWS
+    rows = min(max(table.rowCount(), low), high)
+    frame = 2 * table.frameWidth()
+    table.setFixedHeight(table.horizontalHeader().sizeHint().height() + rows * ROW_HEIGHT + frame)
 
 
 def group_box() -> QComboBox:
@@ -111,6 +136,7 @@ class DocumentLine(QObject):
         self._suggested_price = 0.0
         self._suggested_subcategory = ("", "")  # (guruh, kategoriya): taklif qilingan guruhning kategoriyasi
         self._syncing = False  # narx ↔ summa bir-birini hisoblayotganda qayta chaqirilmasin
+        self._shows_cost = False  # obyektga chiqimda: narx o'rnida tannarx (o'zgartirilmaydi)
         self.product = product_box()
         self.stock = label("", "muted")
         self.unit = QComboBox()
@@ -190,6 +216,20 @@ class DocumentLine(QObject):
     def total(self) -> float:
         return self.amount.value()
 
+    def show_cost(self, shown: bool) -> None:
+        """Narxsiz chiqimda (obyektga, obyektsiz) narx o'rniga tannarx ko'rsatiladi — summasi ko'rinib tursin.
+
+        Tannarxni dastur o'zi hisoblaydi, shuning uchun maydonlar o'zgartirilmaydi va u saqlanmaydi.
+        """
+        was_shown, self._shows_cost = self._shows_cost, shown
+        for field in (self.price, self.amount):
+            field.setReadOnly(shown)
+            field.setFocusPolicy(Qt.FocusPolicy.NoFocus if shown else Qt.FocusPolicy.StrongFocus)
+        if shown:
+            self._show_cost()
+        elif was_shown:
+            self.price.setValue(0)  # tannarx sotuv narxi bo'lib qolmasin
+
     def unit_price(self) -> float:
         """1 asosiy birlik narxi; summa yozilgan bo'lsa — undan aniq hisoblanadi (narx maydoni yaxlitlangan)."""
         quantity = self.quantity.value() * self.factor()
@@ -250,8 +290,22 @@ class DocumentLine(QObject):
         self.unit.setEnabled(self.unit.count() > 1)
         self._suggest_price()
 
+    def _show_cost(self) -> None:
+        """1 birlik tannarxi: tahrirlanayotgan yozuvda — saqlangani, yangisida — hozirgi o'rtacha narx."""
+        product = self.selected()
+        if product is None:
+            cost = 0.0
+        elif self.movement is not None and self.movement.product_id == product.id:
+            cost = self.movement.price
+        else:
+            cost = product.average_price
+        self.price.setValue(round(cost * self.factor(), 2))
+
     def _suggest_price(self) -> None:
         """Kirimda oldingi o'rtacha narxni taklif qiladi; qo'lda yozilgan narxga tegmaydi."""
+        if self._shows_cost:
+            self._show_cost()
+            return
         product = self.selected()
         if self._suggests_price and product is not None and self.price.value() in (0, self._suggested_price):
             self._suggested_price = round(product.average_price * self.factor(), 2)
@@ -305,15 +359,12 @@ class DocumentDialog(FormDialog):
         self._site = SitePicker(sites)
         self._supplier = suggestion_box(warehouse.suggestions(MovementKind.IN, "counterparty"))
         self._customer = suggestion_box(warehouse.customers())
-        self._payment = PaymentFields(warehouse.suggestions(labels.kind, "payment"))
+        self._payment = PaymentFields(warehouse.suggestions(labels.kind, "payment"), warehouse.last_payment(labels.kind))
         self._table = self._build_table()
         self._total = label("", "total")
         self._doc_number = QLineEdit()
         self._doc_number.setPlaceholderText(tr("Nakladnoy raqami (ixtiyoriy)"))
         self._person = suggestion_box(warehouse.suggestions(labels.kind, "person"))
-        self._on_credit = QCheckBox(tr("Qarzga (to'lov keyin bo'ladi)"))
-        self._on_credit.setToolTip(tr("Belgilansa, summa «Qarzlar» bo'limida shu kontragent hisobiga yoziladi."))
-        self._on_credit.toggled.connect(lambda checked: checked and self._payment.status.setCurrentIndex(1))
         self._note = QLineEdit()
 
         # 1) Kimdan / qayerga va qachon; to'lov. 2) Mahsulotlar jadvali. 3) Qo'shimcha maydonlar (yig'iq).
@@ -365,7 +416,7 @@ class DocumentDialog(FormDialog):
         self.add_extra_row(
             "", side_by_side(captioned(tr("Hujjat №"), self._doc_number), captioned(labels.person, self._person))
         )
-        self.add_extra_row("", side_by_side(captioned(tr("Izoh"), self._note), captioned(" ", self._on_credit)))
+        self.add_extra_row("", captioned(tr("Izoh"), self._note))
 
         if not document:
             full_form = button(tr("Qaytarish yoki boshqa holat"), "link")
@@ -398,8 +449,11 @@ class DocumentDialog(FormDialog):
 
     def save(self) -> None:
         counterparty = self._counterparty()
+        # To'lov holati — kirimda va sotuvda (tanlanmagan bo'lsa — xato); ichki rasxodda to'lov yo'q.
+        unpaid = self._payment.unpaid() if self._has_prices() else False
         self.saved_ids = self._warehouse.save_document(
-            [self._movement(line, counterparty) for line in self._lines if not line.is_blank()], self._removed_ids
+            [self._movement(line, counterparty, unpaid) for line in self._lines if not line.is_blank()],
+            self._removed_ids,
         )
         if self._prints:
             print_waybill(self, self._warehouse.document(self.saved_ids[0]), self._labels)
@@ -431,8 +485,7 @@ class DocumentDialog(FormDialog):
             self._customer.setCurrentText(first.counterparty if target is IssueTarget.SALE else "")
         self._doc_number.setText(first.doc_number)
         self._person.setCurrentText(first.person)
-        self._on_credit.setChecked(first.on_credit)
-        self._payment.select(first.payment, first.unpaid)
+        self._payment.select(first.payment, first.unpaid or first.on_credit)
         self._note.setText(first.note)
         for movement in document:
             self._add_line(movement)
@@ -454,7 +507,7 @@ class DocumentDialog(FormDialog):
             return self._site.site_name()
         return self._customer.currentText() if target is IssueTarget.SALE else ""
 
-    def _movement(self, line: DocumentLine, counterparty: str) -> Movement:
+    def _movement(self, line: DocumentLine, counterparty: str, unpaid: bool) -> Movement:
         product = line.selected()
         if product is None:
             raise WarehouseError(
@@ -483,15 +536,14 @@ class DocumentDialog(FormDialog):
             note=self._note.text(),
             created_by=self._author,
             doc_number=self._doc_number.text(),
-            on_credit=self._on_credit.isChecked(),
             warehouse_id=self._store.currentData(),
             id=line.movement.id if line.movement is not None else None,
             payment=self._payment.payment() if priced else "",
-            unpaid=self._payment.unpaid() if priced else False,
+            unpaid=unpaid,
         )
 
     def _show_target(self) -> None:
-        """Chiqim turiga qarab: obyekt yoki xaridor maydoni, narx ustunlari, to'lov va jami."""
+        """Chiqim turiga qarab: obyekt yoki xaridor maydoni, narx yoki tannarx ustunlari, to'lov va jami."""
         target = self._target_kind()
         if not self._is_receipt:
             self._site_field.setVisible(target is IssueTarget.SITE)
@@ -499,11 +551,10 @@ class DocumentDialog(FormDialog):
             for button_target, choice in self._target_choices.items():
                 choice.setChecked(button_target is target)
         priced = self._has_prices()
-        for column in (PRICE, AMOUNT):
-            self._table.setColumnHidden(column, not priced)
+        for line in self._lines:
+            line.show_cost(not priced)
         self._payment_fields.setVisible(priced)
-        self._total.setVisible(priced)
-        price_title = tr("Narxi") if self._is_receipt else tr("Sotuv narxi")
+        price_title = tr("Narxi") if self._is_receipt else tr("Sotuv narxi") if priced else tr("Tannarx")
         self._table.horizontalHeaderItem(PRICE).setText(price_title)
         self._show_total()
         self.adjustSize()
@@ -550,32 +601,20 @@ class DocumentDialog(FormDialog):
     # --- Qatorlar ------------------------------------------------------------
 
     def _build_table(self) -> QTableWidget:
-        table = QTableWidget(0, len(COLUMN_WIDTHS) + 1)
-        table.setHorizontalHeaderLabels(
-            [tr("Mahsulot"), tr("Omborda"), tr("Birlik"), tr("Miqdor"), tr("Narxi"), tr("Summa"), tr("Guruh"), ""]
-        )
-        table.verticalHeader().hide()
-        table.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)
-        table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        table.setShowGrid(False)
-        table.setFixedHeight(LINES_HEIGHT)
-        header = table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(PRODUCT, QHeaderView.ResizeMode.Stretch)
-        for column, width in COLUMN_WIDTHS.items():
-            table.setColumnWidth(column, width)
-        return table
+        headers = [tr("Mahsulot"), tr("Omborda"), tr("Birlik"), tr("Miqdor"), tr("Narxi"), tr("Summa"), tr("Guruh")]
+        return lines_table([*headers, ""], COLUMN_WIDTHS, PRODUCT)
 
     def _products(self) -> list[ProductStock]:
         return self._warehouse.products(warehouse_id=self._store.currentData())
 
     def _add_line(self, movement: MovementDetails | None = None) -> DocumentLine:
         line = DocumentLine(self._products(), self._is_receipt, self._warehouse.default_group, movement)
+        line.show_cost(not self._has_prices())
         row = self._table.rowCount()
         self._table.insertRow(row)
         for column, widget in enumerate(line.widgets):
             self._table.setCellWidget(row, column, widget)
+        fit_lines_height(self._table)
         self._lines.append(line)
         line.changed.connect(self._on_line_changed)
         line.remove.clicked.connect(lambda: self._remove_line(line))
@@ -587,6 +626,7 @@ class DocumentDialog(FormDialog):
         row = self._lines.index(line)
         self._lines.pop(row)
         self._table.removeRow(row)
+        fit_lines_height(self._table)
         self._on_line_changed()
 
     def _on_line_changed(self) -> None:
@@ -602,7 +642,8 @@ class DocumentDialog(FormDialog):
 
     def _show_total(self) -> None:
         total = sum(line.total() for line in self._lines)
-        self._total.setText(tr("Jami: {0} {1}").format(fmt_money(total), CURRENCY))
+        text = tr("Jami: {0} {1}") if self._has_prices() else tr("Tannarx jami: {0} {1}")
+        self._total.setText(text.format(fmt_money(total), CURRENCY))
 
     def _select_by_barcode(self) -> bool:
         """Mahsulot maydoniga shtrix-kod yozilgan (o'qitilgan) qatorlarda shu mahsulotni tanlaydi."""

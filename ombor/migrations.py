@@ -6,8 +6,8 @@ from .driver import sqlite3
 from .models import Role
 
 # 11: buxgalteriya sinxronlashdan chiqarildi; 12: umumiy papka orqali almashish; 13: profil rasmi;
-# 14: to'lov turi va holati
-SCHEMA_VERSION = 14
+# 14: to'lov turi va holati; 15: qarzga yozilganlar — to'lanmagan
+SCHEMA_VERSION = 15
 LEGACY_PASSWORD_KEY = "password"
 LEGACY_ADMIN_NAME = "Rahbar"
 # 3-versiyagacha «boshlang'ich qoldiq» belgisi o'sha paytdagi tilda yozilgan; endi bitta ko'rinishda saqlanadi.
@@ -33,6 +33,8 @@ def migrate(conn: sqlite3.Connection) -> None:
         conn.execute(
             "UPDATE movements SET counterparty = ? WHERE counterparty = ?", (OPENING_BALANCE, LEGACY_OPENING_BALANCE)
         )
+        # 15-versiyadan «Qarzga» alohida belgi emas: qarzga yozilgan — demak, to'lanmagan.
+        conn.execute("UPDATE movements SET unpaid = 1 WHERE on_credit AND NOT unpaid")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 

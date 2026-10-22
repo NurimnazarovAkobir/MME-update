@@ -327,7 +327,37 @@ class Warehouse:
         self._check_group(movement, require_group)
         return self._store(movement)
 
-    def save_document(self, movements: Sequence[Movement], removed_ids: Sequence[int] = ()) -> list[int]:
+    def mark_paid(self, movement_ids: Sequence[int]) -> int:
+        """To'lanmagan yozuvlarni «to'langan» qiladi (qarzi ham yopiladi); o'zgargan yozuvlar sonini qaytaradi."""
+        changed = 0
+        with self._conn:
+            for movement_id in movement_ids:
+                previous = self.movement(movement_id)
+                if not (previous.unpaid or previous.on_credit):
+                    continue
+                self._conn.execute("UPDATE movements SET unpaid = 0, on_credit = 0 WHERE id = ?", (movement_id,))
+                self._log(
+                    HistoryAction.EDIT,
+                    previous.kind.value,
+                    movement_id,
+                    _describe_movement(self.movement(movement_id)),
+                    _describe_movement(previous),
+                )
+                changed += 1
+        return changed
+
+    def last_payment(self, kind: MovementKind) -> str:
+        """Shu turdagi oxirgi yozuvning to'lov turi — yangi hujjatda taklif qilinadi."""
+        row = self._conn.execute(
+            "SELECT payment FROM movements WHERE kind = ? AND payment <> '' AND deleted_at IS NULL"
+            " ORDER BY id DESC LIMIT 1",
+            (kind.value,),
+        ).fetchone()
+        return row[0] if row else ""
+
+    def save_document(
+        self, movements: Sequence[Movement], removed_ids: Sequence[int] = (), require_group: bool = True
+    ) -> list[int]:
         """Bitta hujjatdagi (nakladnoydagi) bir nechta yozuvni birga saqlaydi: yo hammasi, yo hech biri.
 
         `id` si bor yozuvlar yangilanadi, yo'qlari qo'shiladi; `removed_ids` — hujjatdan olib tashlangan
@@ -345,7 +375,7 @@ class Warehouse:
             saved = []
             for number, movement in enumerate(movements, start=1):
                 try:
-                    self._check_group(movement)
+                    self._check_group(movement, require_group)
                     saved.append(self._write(movement))
                 except WarehouseError as error:
                     raise WarehouseError(tr("{0}-qator: {1}").format(number, error)) from error
@@ -666,6 +696,10 @@ class Warehouse:
             raise WarehouseError(tr("Qarzga yozish uchun kimdan olingani yoki kimga berilgani ko'rsatilishi kerak."))
         # Sotuv narxi: chiqimda, shuningdek xaridordan qaytgan mahsulotda (qaytariladigan narx).
         keeps_sale_price = movement.kind is MovementKind.OUT or movement.is_return
+        # «To'lanmagan» va «Qarzga» — bitta holat: kontragenti bor to'lanmagan yozuv «Qarzlar»ga tushadi.
+        counterparty = movement.counterparty.strip()
+        unpaid = movement.unpaid or movement.on_credit
+        on_credit = movement.on_credit or (unpaid and bool(counterparty) and counterparty not in _SYSTEM_COUNTERPARTIES)
 
         values = (
             movement.kind.value,
@@ -681,10 +715,10 @@ class Warehouse:
             movement.note.strip(),
             movement.doc_number.strip(),
             int(movement.is_return),
-            int(movement.on_credit),
+            int(on_credit),
             movement.warehouse_id,
             normalize_method(movement.payment),
-            int(movement.unpaid),
+            int(unpaid),
         )
         previous = self.movement(movement.id) if movement.id is not None else None
         # Eski yozuvning sanasi o'zgarmasa, uni tahrirlashga to'sqinlik qilinmaydi.

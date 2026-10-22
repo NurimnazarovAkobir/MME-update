@@ -49,7 +49,7 @@ from .products_page import ProductsPage
 from .reports_page import ReportsPage
 from .returns_page import ReturnsPage
 from .settings_page import PROFILE, SettingsPage
-from .site_dialogs import ReturnDialog
+from .return_dialog import ReturnDialog
 from .sites_page import SitesPage
 from .statistics_page import StatisticsPage
 from .sync_controller import SyncController, describe

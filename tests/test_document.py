@@ -12,13 +12,13 @@ from ombor.session import Session
 from ombor.ui import printing
 from ombor.ui.dashboard_page import DashboardPage
 from ombor.ui.dialogs import MovementDialog
-from ombor.ui.document_dialog import AMOUNT, GROUP, PRICE, DocumentDialog, IssueTarget
+from ombor.ui.document_dialog import GROUP, PRICE, DocumentDialog, IssueTarget
 from ombor.ui.labels import LABELS
 from ombor.ui.main_window import DIVIDER_ROLE
 from ombor.ui.movements_page import MovementsPage
 from ombor.ui.products_page import ProductsPage
 from ombor.ui.reports_page import ReportsPage
-from ombor.ui.site_dialogs import ReturnDialog
+from ombor.ui.return_dialog import ReturnDialog
 from tests.test_ui import TODAY, UiTestCase
 
 
@@ -31,7 +31,9 @@ class DocumentTestCase(UiTestCase):
         self.site = self.sites.save(Site("Chilonzor"))
 
     def dialog(self, kind=MovementKind.IN) -> DocumentDialog:
-        return DocumentDialog(self.warehouse, self.sites, LABELS[kind], "Rahbar")
+        dialog = DocumentDialog(self.warehouse, self.sites, LABELS[kind], "Rahbar")
+        dialog._payment.status.setCurrentIndex(0)  # foydalanuvchi «To'langan»ni tanlagan
+        return dialog
 
     @staticmethod
     def fill(dialog: DocumentDialog, *lines) -> None:
@@ -184,10 +186,11 @@ class ReceiptDocumentTests(DocumentTestCase):
 
 
 class IssueDocumentTests(DocumentTestCase):
-    def test_issue_to_a_site_needs_the_site_and_has_no_prices(self):
+    def test_issue_to_a_site_needs_the_site_and_has_no_price_to_enter(self):
         dialog = self.dialog(MovementKind.OUT)
         self.assertIs(dialog._target.currentData(), IssueTarget.SITE)
-        self.assertTrue(dialog._table.isColumnHidden(PRICE) and dialog._table.isColumnHidden(AMOUNT))
+        self.assertEqual(dialog._table.horizontalHeaderItem(PRICE).text(), "Tannarx")  # faqat ko'rsatiladi
+        self.assertTrue(dialog._payment_fields.isHidden())
         self.fill(dialog, ("Truba 40x40", 40), ("List 2mm", 5))
         with self.assertRaises(WarehouseError):
             dialog.save()  # obyekt tanlanmagan
@@ -286,9 +289,9 @@ class PagesTests(DocumentTestCase):
         self.warehouse.save_movement(Movement(MovementKind.OUT, TODAY, cement, 3000, counterparty="Chilonzor"))
         dialog = ReturnDialog(self.sites, self.warehouse, "Rahbar")
         dialog._site.combo.setCurrentIndex(0)
-        dialog._product.setCurrentIndex(dialog._product.findText("Sement"))
-        dialog._unit.setCurrentIndex(1)
-        dialog._quantity.setValue(2)
+        dialog.line(0).select("Sement")
+        dialog.line(0).unit.setCurrentIndex(1)
+        dialog.line(0).quantity.setValue(2)
         dialog.accept()
         self.assertEqual(self.sites.returns()[0].quantity, 2000)
 

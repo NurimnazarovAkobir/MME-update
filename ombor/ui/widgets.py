@@ -6,7 +6,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from PySide6.QtCore import QDate, QPointF, QRectF, QSize, QStandardPaths, Qt, QUrl, Signal
+from PySide6.QtCore import QDate, QLocale, QPointF, QRectF, QSize, QStandardPaths, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QLinearGradient, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -100,12 +100,34 @@ def date_input(day: date | None = None, allow_future: bool = True) -> QDateEdit:
 
 
 class NumberInput(QDoubleSpinBox):
-    """Son maydoni: «25,000» ming deb o'qilmasligi uchun ortiqcha nollarni ko'rsatmaydi."""
+    """Son maydoni, ro'yxatlardagi kabi yoziladi: «1 250 000», «78 714,29» (ortiqcha nollarsiz).
+
+    Kasr qismi vergul bilan ham, nuqta bilan ham yozilaveradi; minglar orasiga oddiy bo'sh joy ham bo'ladi.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.setLocale(NUMBER_LOCALE)
 
     def textFromValue(self, value: float) -> str:
         text = self.locale().toString(value, "f", self.decimals())
         decimal_point = self.locale().decimalPoint()
         return text.rstrip("0").rstrip(decimal_point) if decimal_point in text else text
+
+    def validate(self, text: str, position: int):
+        return super().validate(_as_locale_number(text), position)
+
+    def valueFromText(self, text: str) -> float:
+        return super().valueFromText(_as_locale_number(text))
+
+
+# Minglar orasida bo'sh joy, kasr — vergul bilan (fmt_qty, fmt_money bilan bir xil).
+NUMBER_LOCALE = QLocale(QLocale.Language.Russian, QLocale.Country.Russia)
+
+
+def _as_locale_number(text: str) -> str:
+    """Nuqtani vergulga, oddiy bo'sh joyni NUMBER_LOCALE ning minglar ajratgichiga almashtiradi."""
+    return text.replace(".", NUMBER_LOCALE.decimalPoint()).replace(" ", NUMBER_LOCALE.groupSeparator())
 
 
 def number_input(decimals: int, value: float = 0.0) -> NumberInput:

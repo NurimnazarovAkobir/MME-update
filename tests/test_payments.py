@@ -2,10 +2,13 @@
 
 import unittest
 from datetime import date
+from unittest import mock
 
 from ombor import payments
 from ombor.models import Movement, MovementKind, Product
 from ombor.session import Session
+from ombor.errors import WarehouseError
+from ombor.ui.document_dialog import DocumentDialog, IssueTarget
 from ombor.ui.labels import LABELS
 from ombor.ui.movements_page import MovementsPage
 from tests.test_document import DocumentTestCase
@@ -88,6 +91,55 @@ class DocumentPaymentTests(DocumentTestCase):
         saved = self.warehouse.movement(dialog.saved_ids[0])
         self.assertAlmostEqual(saved.amount, 2_755_000, places=2)  # summa yaxlitlanmay saqlanadi
         self.assertEqual((saved.payment, saved.unpaid), (payments.CORPORATE_CARD, True))
+
+    def test_status_is_not_paid_by_default_and_must_be_chosen(self):
+        dialog = DocumentDialog(self.warehouse, self.sites, LABELS[MovementKind.IN], "Rahbar")
+        self.assertEqual(dialog._payment.status.currentIndex(), -1)
+        self.fill(dialog, ("Truba 40x40", 1, 1000))
+        with self.assertRaises(WarehouseError):
+            dialog.save()
+        dialog._payment.status.setCurrentIndex(1)
+        dialog._supplier.setCurrentText("Temir bozor")
+        dialog.save()
+        saved = self.warehouse.movement(dialog.saved_ids[0])
+        self.assertEqual((saved.unpaid, saved.on_credit), (True, True))  # kontragent bor — «Qarzlar»ga ham
+
+    def test_last_payment_method_is_offered(self):
+        self.warehouse.save_movement(Movement(MovementKind.IN, TODAY, self.pipe, 1, 10, payment="KPK"))
+        self.assertEqual(self.dialog()._payment.payment(), payments.CORPORATE_CARD)
+
+    def test_issue_to_a_site_shows_the_cost(self):
+        dialog = self.issue_to(IssueTarget.SITE)
+        self.fill(dialog, ("Truba 40x40", 4))
+        line = dialog.line(0)
+        self.assertTrue(line.price.isReadOnly())
+        self.assertEqual((line.price.value(), line.amount.value()), (1000, 4000))
+        self.assertIn("4 000", dialog._total.text())
+        dialog._target.setCurrentIndex(dialog._target.findData(IssueTarget.SALE))
+        self.assertEqual(line.price.value(), 0)  # tannarx sotuv narxi bo'lib qolmaydi
+        self.assertFalse(line.price.isReadOnly())
+
+    def test_table_grows_with_its_lines(self):
+        dialog = self.dialog()
+        short = dialog._table.height()
+        self.fill(dialog, ("Truba 40x40", 1, 1), ("List 2mm", 1, 1), ("Truba 40x40", 1, 1))
+        self.assertGreater(dialog._table.height(), short)
+
+    def test_marking_paid_closes_the_debt(self):
+        unpaid = self.warehouse.save_movement(
+            Movement(MovementKind.IN, TODAY, self.pipe, 2, 500, counterparty="Temir bozor", unpaid=True)
+        )
+        page = MovementsPage(self.warehouse, self.sites, LABELS[MovementKind.IN], Session(self.admin))
+        page.refresh()
+        page._status_filter.setCurrentIndex(page._status_filter.findData(True))
+        self.assertEqual(page.table.total_rows(), 1)
+        self.assertIn("to'lanmagan: 1 000", page.footer.text())
+        page.table.selectRow(0)
+        with mock.patch("ombor.ui.movements_page.confirm", return_value=True):
+            page._mark_paid()
+        saved = self.warehouse.movement(unpaid)
+        self.assertEqual((saved.unpaid, saved.on_credit), (False, False))
+        self.assertEqual(page.table.total_rows(), 0)
 
     def test_price_and_quantity_give_the_amount(self):
         dialog = self.dialog()

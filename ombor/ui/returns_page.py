@@ -16,7 +16,8 @@ from .dialogs import MovementDialog
 from .icons import Glyph
 from .labels import LABELS
 from .list_page import ListPage
-from .site_dialogs import ReturnDialog, TableDialog
+from .return_dialog import ReturnDialog
+from .site_dialogs import TableDialog
 from .widgets import Column, ColumnKind, PeriodFilter, button
 
 _COLUMNS = (

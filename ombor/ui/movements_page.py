@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Callable
 
-from PySide6.QtWidgets import QDialog, QMessageBox
+from PySide6.QtWidgets import QComboBox, QDialog, QMessageBox
 
 from ..catalog import display_name
 from ..config import CURRENCY
@@ -20,7 +20,7 @@ from .icons import Glyph
 from .labels import KindLabels
 from .list_page import ListPage
 from .printing import print_waybill
-from .widgets import Column, ColumnKind, PeriodFilter, button
+from .widgets import Column, ColumnKind, PeriodFilter, button, confirm
 
 # Jadvalda bir vaqtda ko'rsatiladigan eng ko'p qator: juda katta bazada ham sahifa tez ochilishi uchun.
 MAX_ROWS_SHOWN = 2000
@@ -64,13 +64,24 @@ def _marks(movement: MovementDetails) -> str:
     return " · ".join(mark for mark in marks if mark)
 
 
+def _has_payment(movement: MovementDetails) -> bool:
+    """To'lov — kirimda va sotuvda; obyektga berilgan chiqimda to'lov yo'q."""
+    return movement.kind is MovementKind.IN or movement.sale_price > 0
+
+
+def _is_unpaid(movement: MovementDetails) -> bool:
+    return _has_payment(movement) and (movement.unpaid or movement.on_credit)
+
+
+def _payment_amount(movement: MovementDetails) -> float:
+    return movement.amount if movement.kind is MovementKind.IN else movement.revenue
+
+
 def _row(movement: MovementDetails) -> tuple:
     m = movement
     start = (m.date, m.doc_number, store_name(m.warehouse_name), m.product_name, m.unit, m.quantity)
     money = (m.price, m.amount) if m.kind is MovementKind.IN else (m.sale_price, m.revenue, m.profit)
-    # To'lov — kirimda va sotuvda; obyektga berilgan chiqimda to'lov yo'q.
-    paid = m.kind is MovementKind.IN or m.sale_price > 0
-    payment = (method_title(m.payment), status_title(m.unpaid)) if paid else ("", "")
+    payment = (method_title(m.payment), status_title(_is_unpaid(m))) if _has_payment(m) else ("", "")
     group = " / ".join(display_name(name) for name in (m.category, m.subcategory) if name)
     end = (m.person, display_counterparty(m.counterparty), _marks(m), m.note, m.created_by)
     return (*start, *money, *payment, group, *end)
@@ -120,8 +131,25 @@ class MovementsPage(ListPage):
         self.table.set_badges(titles.index(tr("Holati")), {status_title(False): "good", status_title(True): "danger"})
         self._period = PeriodFilter()
         self._period.changed.connect(self.refresh)
+        # To'lov bo'yicha filtrlar: masalan, faqat to'lanmaganlar va ularning jami.
+        self._status_filter = QComboBox()
+        self._status_filter.setToolTip(tr("To'lov holati bo'yicha"))
+        self._status_filter.addItem(tr("Barcha holatlar"), None)
+        self._status_filter.addItem(status_title(True), True)
+        self._status_filter.addItem(status_title(False), False)
+        self._method_filter = QComboBox()
+        self._method_filter.setToolTip(tr("To'lov turi bo'yicha"))
+        for combo in (self._status_filter, self._method_filter):
+            combo.currentIndexChanged.connect(self.refresh)
+            self.header_tools.addWidget(combo)
         self.header_tools.addWidget(self._period)
         self._recent = self.add_recent_cards(self._period)
+
+        if session.can_modify:
+            mark_paid = button(tr("To'landi"), glyph=Glyph.CHECK)
+            mark_paid.setToolTip(tr("Tanlangan yozuv (va uning nakladnoyi) to'langan deb belgilanadi; qarzi yopiladi"))
+            mark_paid.clicked.connect(self._mark_paid)
+            self.toolbar_tools.addWidget(mark_paid)
 
         waybill = button(tr("Nakladnoy"), glyph=Glyph.DOCUMENT)
         waybill.setToolTip(tr("Tanlangan yozuvning hujjatini chop etish (bir xil raqamli yozuvlar birga chiqadi)"))
@@ -129,8 +157,9 @@ class MovementsPage(ListPage):
         self.toolbar_tools.addWidget(waybill)
 
     def refresh(self) -> None:
-        movements = self._warehouse.movements(
-            self._labels.kind, self._period.period(), self.search.text(), returns=self._returns
+        self._fill_methods()
+        movements = self._filtered(
+            self._warehouse.movements(self._labels.kind, self._period.period(), self.search.text(), returns=self._returns)
         )
         shown = movements[:MAX_ROWS_SHOWN]
         self.table.set_rows(
@@ -142,6 +171,41 @@ class MovementsPage(ListPage):
         self.table.hide_column(STORE_COLUMN, len(self._warehouse.stores()) < 2)
         self.footer.setText(self._totals(movements))
         self._show_recent()
+
+    def _filtered(self, movements: list[MovementDetails]) -> list[MovementDetails]:
+        """Holat va to'lov turi filtrlari bo'yicha."""
+        status, method = self._status_filter.currentData(), self._method_filter.currentData()
+        if status is not None:
+            movements = [m for m in movements if _has_payment(m) and _is_unpaid(m) == status]
+        if method:
+            movements = [m for m in movements if m.payment == method]
+        return movements
+
+    def _fill_methods(self) -> None:
+        """To'lov turi filtri: shu bo'limda ishlatilgan turlar (tanlangani o'z joyida qoladi)."""
+        selected = self._method_filter.currentData()
+        self._method_filter.blockSignals(True)
+        self._method_filter.clear()
+        self._method_filter.addItem(tr("Barcha to'lov turlari"), "")
+        for method in self._warehouse.suggestions(self._labels.kind, "payment"):
+            self._method_filter.addItem(method_title(method), method)
+        self._method_filter.setCurrentIndex(max(self._method_filter.findData(selected), 0))
+        self._method_filter.blockSignals(False)
+        self._method_filter.setVisible(self._method_filter.count() > 1)
+
+    def _mark_paid(self) -> None:
+        movement_id = self.selected_id()
+        if movement_id is None:
+            QMessageBox.information(self, tr("To'landi"), tr("Avval jadvaldan yozuvni tanlang."))
+            return
+        unpaid = [m.id for m in self._warehouse.document(movement_id) if _is_unpaid(m)]
+        if not unpaid:
+            QMessageBox.information(self, tr("To'landi"), tr("Bu yozuv allaqachon to'langan."))
+            return
+        question = tr("{0} ta yozuv «To'langan» deb belgilansinmi? Qarzga yozilgan bo'lsa, qarzi ham yopiladi.")
+        if confirm(self, tr("To'landi"), question.format(len(unpaid)), tr("Ha, to'landi")):
+            self._warehouse.mark_paid(unpaid)
+            self.refresh()
 
     def _show_recent(self) -> None:
         """Bugun, shu hafta va shu oy bo'yicha jami (qidiruv va davr filtridan qat'i nazar)."""
@@ -208,10 +272,14 @@ class MovementsPage(ListPage):
                 MAX_ROWS_SHOWN
             )
         cost = sum(m.amount for m in movements)
+        unpaid = sum(_payment_amount(m) for m in movements if _is_unpaid(m))
+        # To'lanmagan qismi — oxirida, alohida: «Qarzlar» bilan solishtirish oson bo'lsin.
+        unpaid_text = tr("  ·  to'lanmagan: {0} {1}").format(fmt_money(unpaid), CURRENCY) if unpaid else ""
         if self._labels.kind is MovementKind.IN:
-            return f"{count}  ·  {fmt_money(cost)} {CURRENCY}"
+            return f"{count}  ·  {fmt_money(cost)} {CURRENCY}{unpaid_text}"
         revenue = sum(m.revenue for m in movements)
         profit = sum(m.profit for m in movements)
-        return tr("{0}  ·  tannarx {1}  ·  sotuv {2}  ·  foyda {3} {4}").format(
+        totals = tr("{0}  ·  tannarx {1}  ·  sotuv {2}  ·  foyda {3} {4}").format(
             count, fmt_money(cost), fmt_money(revenue), fmt_money(profit), CURRENCY
         )
+        return totals + unpaid_text

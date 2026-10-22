@@ -57,6 +57,7 @@ class ProductAndMovementDialogTests(UiTestCase):
         dialog._unit.setCurrentIndex(1)
         dialog._quantity.setValue(2)
         dialog._price.setValue(900_000)
+        dialog._payment.status.setCurrentIndex(0)
         dialog.save()
         product = self.warehouse.product(self.cement)
         self.assertEqual((product.stock, product.average_price), (2000, 900))
@@ -74,20 +75,28 @@ class ProductAndMovementDialogTests(UiTestCase):
         dialog._price.setValue(1000)
         dialog._is_return.setChecked(True)
         dialog._sale_price.setValue(1500)
-        dialog._on_credit.setChecked(True)
+        dialog._payment.status.setCurrentIndex(1)  # to'lanmagan + kontragent — qarzga
         dialog._counterparty.setCurrentText("Obyekt-1")
         dialog.save()
         saved = max(self.warehouse.movements(MovementKind.IN), key=lambda m: m.id)
         self.assertEqual((saved.is_return, saved.on_credit, saved.sale_price, saved.revenue), (True, True, 1500, -3000))
 
-    def test_credit_without_counterparty_is_refused(self):
+    def test_payment_status_must_be_chosen(self):
         dialog = self.dialog()
         dialog._product.setCurrentIndex(dialog._product.findText("Truba 40x40"))
         dialog._quantity.setValue(1)
-        dialog._on_credit.setChecked(True)
         with mock.patch.object(QMessageBox, "warning") as warning:
             dialog.accept()
         warning.assert_called_once()
+
+    def test_unpaid_without_counterparty_is_not_a_debt(self):
+        dialog = self.dialog()
+        dialog._product.setCurrentIndex(dialog._product.findText("Truba 40x40"))
+        dialog._quantity.setValue(1)
+        dialog._payment.status.setCurrentIndex(1)
+        dialog.save()
+        saved = max(self.warehouse.movements(MovementKind.IN), key=lambda m: m.id)
+        self.assertEqual((saved.unpaid, saved.on_credit), (True, False))
 
     def test_editing_keeps_return_credit_and_store(self):
         site = self.warehouse.save_store("Obyekt ombori")
@@ -104,7 +113,7 @@ class ProductAndMovementDialogTests(UiTestCase):
             )
         )
         dialog = self.dialog(movement=self.warehouse.movement(movement_id))
-        self.assertTrue(dialog._on_credit.isChecked())
+        self.assertIs(dialog._payment.status.currentData(), True)  # qarzga — to'lanmagan
         self.assertEqual(dialog._store.currentData(), site)
         dialog._quantity.setValue(4)
         dialog.save()

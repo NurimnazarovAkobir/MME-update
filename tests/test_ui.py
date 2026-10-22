@@ -166,6 +166,7 @@ class DialogTests(UiTestCase):
 
     def test_save_and_continue_keeps_the_document_fields(self):
         dialog = self.dialog()
+        dialog._payment.status.setCurrentIndex(0)  # to'langan — keyingi mahsulotlarda ham saqlanib qoladi
         dialog._doc_number.setText("25")
         dialog._counterparty.setCurrentText("Temir bozor")
         for name, quantity in (("Truba 40x40", 10), ("List 2mm", 4)):

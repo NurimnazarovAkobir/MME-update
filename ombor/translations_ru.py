@@ -377,7 +377,6 @@ TRANSLATIONS = {
     "Bazani umumiy papkaga ko'chirish": "Перенести базу в общую папку",
     "Bazaning yangi nusxasini tekshirib bo'lmadi. Hech narsa o'zgartirilmadi.": "Не удалось проверить новую копию базы. Ничего не изменено.",
     "Belgi": "Отметка",
-    "Belgilansa, summa «Qarzlar» bo'limida shu kontragent hisobiga yoziladi.": "Если отмечено, сумма записывается на счёт этого контрагента в разделе «Долги».",
     "Bir nechta ombor bo'lsa, kirim va chiqimda ombor tanlanadi, «Mahsulotlar»da esa mahsulotni ombordan omborga ko'chirish mumkin. Tannarx barcha omborlar uchun bitta.": "Если складов несколько, в приходе и расходе выбирается склад, а в «Товарах» можно перемещать товар между складами. Себестоимость общая для всех складов.",
     "Biz qarzmiz (yetkazib beruvchilar)": "Мы должны (поставщики)",
     "Biz qarzmiz: {0} {2}  ·  bizga qarz: {1} {2}": "Мы должны: {0} {2}  ·  нам должны: {1} {2}",
@@ -434,7 +433,6 @@ TRANSLATIONS = {
     "Parolingizni kiriting": "Введите ваш пароль",
     "Qarz kirim yoki chiqimda «Qarzga» belgisi qo'yilgan yozuvlardan hosil bo'ladi; to'lov uni kamaytiradi.": "Долг образуется из записей прихода и расхода с отметкой «В долг»; оплата его уменьшает.",
     "Qarzga": "В долг",
-    "Qarzga (to'lov keyin bo'ladi)": "В долг (оплата позже)",
     "Qarzga berilgan": "Отпущено в долг",
     "Qarzga olingan": "Получено в долг",
     "Qarzga yozish uchun kimdan olingani yoki kimga berilgani ko'rsatilishi kerak.": "Чтобы записать в долг, укажите, у кого получено или кому отпущено.",
@@ -550,8 +548,6 @@ TRANSLATIONS = {
     "+ Yangi obyekt": "+ Новый объект",
     "+ Yangi vozvrat": "+ Новый возврат",
     "Berilgan": "Выдано",
-    "Berilgan: {0}  ·  qaytgan: {1}  ·  obyektda: {2} {3}": "Выдано: {0}  ·  возвращено: {1}  ·  на объекте: {2} {3}",
-    "Bu mahsulot shu obyektga berilmagan": "Этот товар на данный объект не выдавался",
     "Bu obyekt bo'yicha yozuvlar bor, shuning uchun uni o'chirib bo'lmaydi.": "По этому объекту есть записи, поэтому удалить его нельзя.",
     "Bu obyekt ro'yxatdan o'chirilsinmi?": "Удалить этот объект из списка?",
     "Bu vozvrat o'chirilsinmi? Mahsulot ombor qoldig'idan chiqariladi.": "Удалить этот возврат? Товар будет снят с остатка склада.",
@@ -560,7 +556,6 @@ TRANSLATIONS = {
     "Jami: {0} ta yozuv  ·  {1} {2}": "Всего записей: {0}  ·  {1} {2}",
     "Mahsulot beriladigan joylar: har biriga qancha berilgan va qanchasi qaytgan": "Места, куда выдаётся товар: сколько выдано на каждый и сколько возвращено",
     "Mahsulotlari": "Товары объекта",
-    "Mahsulotni ro'yxatdan tanlang.": "Выберите товар из списка.",
     "Manzil": "Адрес",
     "Mas'ul shaxs": "Ответственный",
     "Masalan: Chilonzor, 12-uy": "Например: Чиланзар, дом 12",
@@ -569,7 +564,6 @@ TRANSLATIONS = {
     "Obyekt nomini kiriting.": "Введите название объекта.",
     "Obyekt topilmadi.": "Объект не найден.",
     "Obyektda": "На объекте",
-    "Obyektda turganidan ko'p mahsulot qaytarilmoqda. Shunday saqlansinmi?": "Возвращается больше товара, чем числится на объекте. Сохранить так?",
     "Obyektga berilgan va undan omborga qaytgan mahsulotlar (butun davr bo'yicha)": "Товары, выданные на объект и возвращённые с него на склад (за всё время)",
     "Obyektlar": "Объекты",
     "Obyektlar bo'yicha": "По объектам",
@@ -579,7 +573,6 @@ TRANSLATIONS = {
     "Obyektni tanlang": "Выберите объект",
     "Obyektni tanlang. Ro'yxatda bo'lmasa, «Yangi obyekt» tugmasi bilan qo'shing.": "Выберите объект. Если его нет в списке, добавьте кнопкой «Новый объект».",
     "Qaytgan": "Возвращено",
-    "Qaytgan miqdor *": "Возвращённое количество *",
     "Qaytgan summa": "Сумма возврата",
     "Tanlang yoki nomini yozing": "Выберите или введите название",
     "Tanlangan davrda qaysi obyektdan qaysi mahsulot qancha qaytgani": "Сколько какого товара возвращено с каждого объекта за выбранный период",
@@ -888,4 +881,37 @@ TRANSLATIONS = {
     ),
     "Summani yozsangiz, narx o'zi hisoblanadi": 'Если ввести сумму, цена рассчитается сама',
     '«{0}»: guruhni tanlang.': '«{0}»: выберите группу.',
+    "  ·  to'lanmagan: {0} {1}": '  ·  не оплачено: {0} {1}',
+    'Avval jadvaldan yozuvni tanlang.': 'Сначала выберите запись в таблице.',
+    "Avval obyektni tanlang: unda turgan mahsulotlar ro'yxat boshida chiqadi.": (
+        'Сначала выберите объект: товары, которые на нём есть, будут в начале списка.'
+    ),
+    'Barcha holatlar': 'Все статусы',
+    "Barcha to'lov turlari": 'Все виды оплаты',
+    "Bu yozuv allaqachon to'langan.": 'Эта запись уже оплачена.',
+    "Ha, to'landi": 'Да, оплачено',
+    "Obyektda turganidan ko'p qaytarilmoqda: {0}. Shunday saqlansinmi?": (
+        'Возвращается больше, чем есть на объекте: {0}. Сохранить так?'
+    ),
+    'Obyektdan omborga qaytgan mahsulotlar': 'Товары, вернувшиеся с объекта на склад',
+    'Tanlang': 'Выберите',
+    "Tanlangan yozuv (va uning nakladnoyi) to'langan deb belgilanadi; qarzi yopiladi": (
+        'Выбранная запись (и её накладная) отмечается как оплаченная; долг закрывается'
+    ),
+    'Tannarx': 'Себестоимость',
+    'Tannarx jami: {0} {1}': 'Себестоимость, итого: {0} {1}',
+    "To'landi": 'Оплачено',
+    "To'lanmagan: yetkazib beruvchi yoki xaridor yozilgan bo'lsa, summa «Qarzlar»ga ham tushadi.": (
+        'Не оплачено: если указан поставщик или покупатель, сумма попадёт и в «Долги».'
+    ),
+    "To'lov holati bo'yicha": 'По статусу оплаты',
+    "To'lov holatini tanlang: to'langanmi yoki to'lanmaganmi.": (
+        'Выберите статус оплаты: оплачено или не оплачено.'
+    ),
+    "To'lov turi bo'yicha": 'По виду оплаты',
+    'berilmagan': 'не выдавался',
+    "{0} ta yozuv «To'langan» deb belgilansinmi? Qarzga yozilgan bo'lsa, qarzi ham yopiladi.": (
+        'Отметить записи как оплаченные ({0} шт.)? Если они были в долг, долг тоже закроется.'
+    ),
+    "«{0}» ro'yxatda yo'q. Mahsulotni ro'yxatdan tanlang.": '«{0}» нет в списке. Выберите товар из списка.',
 }

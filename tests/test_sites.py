@@ -11,7 +11,8 @@ from ombor.session import Session
 from ombor.sites import SITE_ENTITY
 from ombor.ui.dialogs import MovementDialog
 from ombor.ui.returns_page import ReturnsPage
-from ombor.ui.site_dialogs import ReturnDialog, SiteDialog, TableDialog
+from ombor.ui.return_dialog import ReturnDialog
+from ombor.ui.site_dialogs import SiteDialog, TableDialog
 from ombor.ui.sites_page import SitesPage
 from tests.test_ui import TODAY, UiTestCase
 
@@ -157,10 +158,12 @@ class SitePagesTests(SitesTestCase):
         with self.assertRaises(WarehouseError):
             dialog.save()  # obyekt tanlanmagan
         dialog._site.combo.setCurrentIndex(dialog._site.combo.findText("Chilonzor"))
-        self.assertEqual(dialog._product.itemText(0), "Truba 40x40")  # obyektda turgan mahsulot — birinchi
-        dialog._product.setCurrentIndex(0)
-        self.assertIn("40", dialog._balance_hint.text())
-        dialog._quantity.setValue(10)
+        line = dialog.line(0)
+        self.assertEqual(line.product.itemText(0), "Truba 40x40")  # obyektda turgan mahsulot — birinchi
+        line.product.setCurrentIndex(0)
+        self.assertEqual(line.at_site.text(), "40 metr")
+        line.quantity.setValue(10)
+        self.assertEqual((line.price.text(), line.amount.text()), ("1 000", "10 000"))  # berilgandagi tannarx
         dialog.accept()
         (saved,) = self.sites.returns()
         self.assertEqual((saved.quantity, saved.counterparty, saved.created_by), (10, "Chilonzor", "Vali"))
@@ -168,26 +171,43 @@ class SitePagesTests(SitesTestCase):
     def test_returning_more_than_the_site_has_needs_confirmation(self):
         dialog = ReturnDialog(self.sites, self.warehouse, "Rahbar")
         dialog._site.combo.setCurrentIndex(0)
-        dialog._product.setCurrentIndex(0)
-        dialog._quantity.setValue(41)
-        with mock.patch("ombor.ui.site_dialogs.confirm", return_value=False):
+        dialog.line(0).product.setCurrentIndex(0)
+        dialog.line(0).quantity.setValue(41)
+        with mock.patch("ombor.ui.return_dialog.confirm", return_value=False):
             dialog.accept()
         self.assertEqual(self.sites.returns(), [])
-        with mock.patch("ombor.ui.site_dialogs.confirm", return_value=True):
+        with mock.patch("ombor.ui.return_dialog.confirm", return_value=True):
             dialog.accept()
         self.assertEqual(len(self.sites.returns()), 1)
 
-    def test_several_products_are_returned_without_closing_the_dialog(self):
+    def test_several_products_are_returned_in_one_document(self):
         self._issue(self.sheet, 5)
         dialog = ReturnDialog(self.sites, self.warehouse, "Rahbar")
         dialog._site.combo.setCurrentIndex(0)
-        for name, quantity in (("Truba 40x40", 3), ("List 2mm", 2)):
-            dialog._product.setCurrentIndex(dialog._product.findText(name))
-            dialog._quantity.setValue(quantity)
-            dialog._save_and_continue()
-        self.assertEqual(dialog.saved_count, 2)
-        self.assertEqual(dialog._site.combo.currentText(), "Chilonzor")
-        self.assertEqual(sorted(m.quantity for m in self.sites.returns()), [2, 3])
+        for index, (name, quantity) in enumerate((("Truba 40x40", 3), ("List 2mm", 2))):
+            dialog.line(index).select(name)
+            dialog.line(index).quantity.setValue(quantity)
+        self.assertTrue(dialog.line(2).is_blank())  # ostidan yangi bo'sh qator ochilgan
+        dialog.accept()
+        returns = self.sites.returns()
+        self.assertEqual(sorted(m.quantity for m in returns), [2, 3])
+        self.assertEqual(len({m.doc_number for m in returns}), 1)  # bitta hujjat
+
+    def test_editing_a_return_opens_its_whole_document(self):
+        self._issue(self.sheet, 5)
+        dialog = ReturnDialog(self.sites, self.warehouse, "Rahbar")
+        dialog._site.combo.setCurrentIndex(0)
+        dialog.line(0).select("Truba 40x40")
+        dialog.line(0).quantity.setValue(3)
+        dialog.line(1).select("List 2mm")
+        dialog.line(1).quantity.setValue(2)
+        dialog.accept()
+        edit = ReturnDialog(self.sites, self.warehouse, "Rahbar", self.warehouse.movement(dialog.saved_ids[0]))
+        self.assertEqual([edit.line(i).selected().name for i in range(2)], ["Truba 40x40", "List 2mm"])
+        self.assertEqual(edit.line(0).at_site.text(), "40 metr")  # o'zi qaytargani hisobga olingan
+        edit.line(1).remove.click()
+        edit.accept()
+        self.assertEqual([m.product_name for m in self.sites.returns()], ["Truba 40x40"])
 
     def test_new_site_can_be_added_from_the_return_dialog(self):
         dialog = ReturnDialog(self.sites, self.warehouse, "Rahbar")
@@ -222,9 +242,9 @@ class SitePagesTests(SitesTestCase):
         dialog = page.edit_dialog(by_admin)
         self.assertIsInstance(dialog, ReturnDialog)
         self.assertEqual(
-            (dialog._site.combo.currentText(), dialog._product.currentText()), ("Chilonzor", "Truba 40x40")
+            (dialog._site.combo.currentText(), dialog.line(0).product.currentText()), ("Chilonzor", "Truba 40x40")
         )
-        dialog._quantity.setValue(7)
+        dialog.line(0).quantity.setValue(7)
         dialog.accept()
         self.assertEqual(self.warehouse.movement(by_admin).quantity, 7)
         page.delete_item(by_admin)

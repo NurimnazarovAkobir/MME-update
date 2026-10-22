@@ -218,10 +218,14 @@ class GroupFields:
 
 
 class PaymentFields:
-    """To'lov turi (ro'yxatdan tanlanadi yoki yoziladi) va holati: to'langan / to'lanmagan."""
+    """To'lov turi (ro'yxatdan tanlanadi yoki yoziladi) va holati: to'langan / to'lanmagan.
 
-    def __init__(self, used: Sequence[str] = (), payment: str = "", unpaid: bool = False):
-        """`used` — avval yozilgan to'lov turlari (ro'yxatga qo'shiladi)."""
+    Holati o'zicha «to'langan» bo'lib turmaydi — tanlanishi shart: unutilgan to'lanmagan xarid to'langan
+    bo'lib yozilib qolmasin. To'lanmagan yozuv kontragenti bilan «Qarzlar»ga ham tushadi (warehouse.py).
+    """
+
+    def __init__(self, used: Sequence[str] = (), payment: str = "", unpaid: bool | None = None):
+        """`used` — avval yozilgan to'lov turlari (ro'yxatga qo'shiladi); `unpaid` None — holati tanlanmagan."""
         self.method = QComboBox()
         self.method.setEditable(True)
         self.method.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
@@ -230,21 +234,28 @@ class PaymentFields:
         for method in dict.fromkeys((*payments.METHODS, *used)):
             self.method.addItem(payments.method_title(method), method)
         self.status = QComboBox()
+        self.status.setPlaceholderText(tr("Tanlang"))
+        self.status.setToolTip(
+            tr("To'lanmagan: yetkazib beruvchi yoki xaridor yozilgan bo'lsa, summa «Qarzlar»ga ham tushadi.")
+        )
         self.status.addItem(payments.status_title(False), False)
         self.status.addItem(payments.status_title(True), True)
         self.select(payment, unpaid)
 
-    def select(self, payment: str, unpaid: bool) -> None:
+    def select(self, payment: str, unpaid: bool | None) -> None:
         index = self.method.findData(payment) if payment else -1
         self.method.setCurrentIndex(index)
         self.method.setEditText(payments.method_title(payment))
-        self.status.setCurrentIndex(self.status.findData(bool(unpaid)))
+        self.status.setCurrentIndex(-1 if unpaid is None else self.status.findData(bool(unpaid)))
 
     def payment(self) -> str:
         """Saqlanadigan nomi: ro'yxatdagisi — o'z nomi, yozilgani — tanilsa o'sha nom, bo'lmasa o'zi."""
         return payments.normalize_method(self.method.currentText())
 
     def unpaid(self) -> bool:
+        """Tanlangan holat; tanlanmagan bo'lsa — foydalanuvchiga tushunarli xato."""
+        if self.status.currentIndex() < 0:
+            raise WarehouseError(tr("To'lov holatini tanlang: to'langanmi yoki to'lanmaganmi."))
         return bool(self.status.currentData())
 
 
@@ -397,9 +408,6 @@ class MovementDialog(FormDialog):
             else tr("Qaytarish: yetkazib beruvchiga qaytarilmoqda")
         )
         self._is_return.setChecked(bool(movement and movement.is_return))
-        self._on_credit = QCheckBox(tr("Qarzga (to'lov keyin bo'ladi)"))
-        self._on_credit.setToolTip(tr("Belgilansa, summa «Qarzlar» bo'limida shu kontragent hisobiga yoziladi."))
-        self._on_credit.setChecked(bool(movement and movement.on_credit))
         self._groups = GroupFields()
         if movement:
             self._groups.select(movement.category, movement.subcategory)
@@ -410,8 +418,8 @@ class MovementDialog(FormDialog):
         self._note = QLineEdit(movement.note if movement else "")
         self._payment = PaymentFields(
             warehouse.suggestions(labels.kind, "payment"),
-            movement.payment if movement else "",
-            bool(movement and movement.unpaid),
+            movement.payment if movement else warehouse.last_payment(labels.kind),
+            (movement.unpaid or movement.on_credit) if movement else None,
         )
 
         quantity_row = QHBoxLayout()
@@ -444,7 +452,6 @@ class MovementDialog(FormDialog):
         self.add_extra_row("", self._is_return)
         if self._has_price:
             self.add_extra_row(tr("Xaridorga qaytariladigan narx"), self._sale_price)
-        self.add_extra_row("", self._on_credit)
         if not warehouse.group_required:
             self.add_extra_row(tr("Guruh"), self._groups.group)
             self.add_extra_row(tr("Kategoriya"), self._groups.subgroup)
@@ -483,6 +490,9 @@ class MovementDialog(FormDialog):
                 tr("Mahsulotni ro'yxatdan tanlang. Ro'yxatda bo'lmasa, avval «Yangi mahsulot» tugmasi bilan qo'shing.")
             )
         factor = self._factor()
+        # To'lov — kirimda va sotuvda; ichki rasxodda (sotuv narxi yo'q) holat so'ralmaydi.
+        paid_for = self._has_price or self._sale_price.value() > 0
+        unpaid = self._payment.unpaid() if paid_for else False
         self._warehouse.save_movement(
             Movement(
                 kind=self._kind,
@@ -499,11 +509,10 @@ class MovementDialog(FormDialog):
                 created_by=self._author,
                 doc_number=self._doc_number.text(),
                 is_return=self._is_return.isChecked(),
-                on_credit=self._on_credit.isChecked(),
                 warehouse_id=self._store.currentData(),
                 id=self._movement_id,
-                payment=self._payment.payment(),
-                unpaid=self._payment.unpaid(),
+                payment=self._payment.payment() if paid_for else "",
+                unpaid=unpaid,
             )
         )
 

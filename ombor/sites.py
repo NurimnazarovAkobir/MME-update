@@ -5,6 +5,8 @@ Obyekt yozuvlar bilan nomi orqali bog'lanadi (katta-kichik harf farqsiz):
 - obyektdan qaytgan — `counterparty` shu nom bo'lgan, «qaytarish» belgili kirim.
 """
 
+from typing import Sequence
+
 from .database import period_filter
 from .driver import sqlite3
 from .errors import WarehouseError
@@ -162,39 +164,47 @@ class Sites:
         Narxi — mahsulot shu obyektga berilgandagi o'rtacha tannarx: qaytgan mahsulot omborga
         o'sha qiymatda qaytadi. Guruhi mahsulotning oxirgi yozuvidan olinadi.
         """
-        site = self.get(site_return.site_id)
-        category, subcategory = self._warehouse.default_group(site_return.product_id)
-        return self._warehouse.save_movement(
-            Movement(
-                kind=MovementKind.IN,
-                date=site_return.date,
-                product_id=site_return.product_id,
-                quantity=site_return.quantity,
-                price=self._issue_cost(site.name, site_return.product_id),
-                category=category,
-                subcategory=subcategory,
-                person=site_return.person,
-                counterparty=site.name,
-                note=site_return.note,
-                created_by=site_return.created_by,
-                doc_number=site_return.doc_number,
-                is_return=True,
-                warehouse_id=site_return.warehouse_id,
-                id=site_return.id,
-            ),
-            require_group=False,
+        return self._warehouse.save_movement(self._return_movement(site_return), require_group=False)
+
+    def save_returns(self, site_returns: Sequence[SiteReturn], removed_ids: Sequence[int] = ()) -> list[int]:
+        """Bitta vozvrat hujjatidagi bir nechta mahsulotni birga saqlaydi: yo hammasi, yo hech biri."""
+        return self._warehouse.save_document(
+            [self._return_movement(site_return) for site_return in site_returns], removed_ids, require_group=False
         )
 
-    # --- Ichki yordamchilar ------------------------------------------------
+    def issue_cost(self, site_name: str, product_id: int) -> float:
+        """Mahsulot obyektga berilgandagi o'rtacha tannarx; berilmagan bo'lsa — hozirgi o'rtacha narxi.
 
-    def _issue_cost(self, site_name: str, product_id: int) -> float:
-        """Mahsulot obyektga berilgandagi o'rtacha tannarx; berilmagan bo'lsa — hozirgi o'rtacha narxi."""
+        Obyektdan qaytgan mahsulot omborga shu narxda qaytadi."""
         row = self._conn.execute(
             "SELECT SUM(quantity * price) / SUM(quantity) FROM movements m"
             f" WHERE {_IS_ISSUE} AND deleted_at IS NULL AND product_id = ? AND counterparty = ? COLLATE NOCASE",
             (product_id, site_name),
         ).fetchone()
         return row[0] if row[0] is not None else self._warehouse.product(product_id).average_price
+
+    # --- Ichki yordamchilar ------------------------------------------------
+
+    def _return_movement(self, site_return: SiteReturn) -> Movement:
+        site = self.get(site_return.site_id)
+        category, subcategory = self._warehouse.default_group(site_return.product_id)
+        return Movement(
+            kind=MovementKind.IN,
+            date=site_return.date,
+            product_id=site_return.product_id,
+            quantity=site_return.quantity,
+            price=self.issue_cost(site.name, site_return.product_id),
+            category=category,
+            subcategory=subcategory,
+            person=site_return.person,
+            counterparty=site.name,
+            note=site_return.note,
+            created_by=site_return.created_by,
+            doc_number=site_return.doc_number,
+            is_return=True,
+            warehouse_id=site_return.warehouse_id,
+            id=site_return.id,
+        )
 
     def _rename_in_records(self, old: str, new: str) -> None:
         """Obyekt nomi o'zgarganda: unga tegishli yozuvlar va to'lovlar yangi nomga o'tadi."""

@@ -1,46 +1,31 @@
-"""Obyektlar va vozvrat oynalari: obyekt, obyektdan qaytgan mahsulot va obyektlar kesimidagi jadval."""
+"""Obyekt oynalari: obyekt, obyekt tanlash va obyektlar kesimidagi jadval (vozvrat — return_dialog.py)."""
 
 import threading
 from typing import Sequence
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QHBoxLayout,
     QLineEdit,
-    QMessageBox,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
 from ..errors import WarehouseError
-from ..formatting import fmt_qty
 from .. import geo
 from ..geo import FoundPlace, LookupFailed, parse_location
 from ..i18n import tr
-from ..models import MovementDetails, MovementKind, ProductStock, Site, SiteProduct, SiteReturn
+from ..models import Site
 from ..sites import Sites
-from ..warehouse import Warehouse
-from .dialogs import FormDialog, product_box
+from .dialogs import FormDialog
 from .icons import Glyph
 from .printing import print_table
-from .widgets import (
-    Column,
-    DataTable,
-    button,
-    confirm,
-    date_input,
-    export_to_excel,
-    label,
-    number_input,
-    suggestion_box,
-    table_card,
-)
+from .widgets import Column, DataTable, button, export_to_excel, label, table_card
 
 TABLE_DIALOG_SIZE = (860, 520)
-UNIT_WIDTH = 90
 
 
 class PlaceFinder(QObject):
@@ -234,187 +219,6 @@ class SitePicker(QWidget):
             self.combo.addItem(site.name, site.id)
         self.combo.setCurrentIndex(self.combo.findData(select_id))
         self.combo.blockSignals(False)
-
-
-class ReturnDialog(FormDialog):
-    """Obyektdan omborga qaytgan mahsulot (vozvrat); `movement` berilsa — tahrirlash.
-
-    Obyekt tanlangach, mahsulotlar ro'yxatida avval shu obyektda turganlari chiqadi va
-    qancha berilgani, qancha qaytgani ko'rsatiladi. Narx kiritilmaydi: dastur o'zi hisoblaydi.
-    """
-
-    def __init__(
-        self,
-        sites: Sites,
-        warehouse: Warehouse,
-        author: str,
-        movement: MovementDetails | None = None,
-        parent: QWidget | None = None,
-    ):
-        super().__init__(tr("Vozvratni tahrirlash") if movement else tr("Yangi vozvrat"), parent)
-        self._sites = sites
-        self._warehouse = warehouse
-        self._author = author
-        self._movement_id = movement.id if movement else None
-        self._at_site: dict[int, SiteProduct] = {}  # tanlangan obyektdagi mahsulotlar: id -> berilgan/qaytgan
-        self.saved_count = 0  # «Saqlash va yana qo'shish» bilan kiritilgan yozuvlar soni
-
-        self._date = date_input(movement.date if movement else None, allow_future=False)
-        self._doc_number = QLineEdit(movement.doc_number if movement else "")
-        self._doc_number.setPlaceholderText(tr("Nakladnoy raqami (ixtiyoriy)"))
-        self._store = QComboBox()
-        for store in warehouse.stores():
-            self._store.addItem(store.name, store.id)
-        self._store.setCurrentIndex(max(self._store.findData(movement.warehouse_id if movement else None), 0))
-        current = sites.find(movement.counterparty) if movement else None
-        self._site = SitePicker(sites, current.id if current else None)
-        self._product = product_box(tr("Tanlang yoki nomini yozing"))
-        self._balance_hint = label("", "muted")
-        self._quantity = number_input(3, movement.quantity if movement else 0)
-        self._unit = QComboBox()  # mahsulotning qo'shimcha birligi bo'lsa, miqdorni shu birlikda kiritish mumkin
-        self._unit.setMinimumWidth(UNIT_WIDTH)
-        self._person = suggestion_box(
-            warehouse.suggestions(MovementKind.IN, "person"), movement.person if movement else ""
-        )
-        self._note = QLineEdit(movement.note if movement else "")
-
-        quantity_row = QHBoxLayout()
-        quantity_row.addWidget(self._quantity, stretch=1)
-        quantity_row.addWidget(self._unit)
-
-        self.form.addRow(tr("Sana *"), self._date)
-        self.form.addRow(tr("Qaysi omborga"), self._store)
-        self.form.setRowVisible(self._store, self._store.count() > 1)
-        self.form.addRow(tr("Obyekt *"), self._site)
-        self.form.addRow(tr("Mahsulot *"), self._product)
-        self.form.addRow("", self._balance_hint)
-        self.form.addRow(tr("Qaytgan miqdor *"), quantity_row)
-        self.add_extra_row(tr("Hujjat №"), self._doc_number)
-        self.add_extra_row(tr("Kim olib keldi"), self._person)
-        self.add_extra_row(tr("Izoh"), self._note)
-        self.show_extras(movement is not None)
-
-        self._saved_hint = label("", "muted")
-        if movement is None:
-            another = button(tr("Saqlash va yana qo'shish"))
-            another.setAutoDefault(False)
-            another.clicked.connect(self._save_and_continue)
-            self.extra_buttons.addWidget(another)
-            self.extra_buttons.addWidget(self._saved_hint)
-
-        self._load_products(movement.product_id if movement else None)
-        self._site.changed.connect(self._on_site_changed)
-        self._product.currentTextChanged.connect(self._on_product_changed)
-        self._on_product_changed()
-
-    def accept(self) -> None:
-        if self._quantity_accepted():
-            super().accept()
-
-    def save(self) -> None:
-        site_id = self._site.require_site_id()
-        product = self._selected_product()
-        if product is None:
-            raise WarehouseError(tr("Mahsulotni ro'yxatdan tanlang."))
-        self._sites.save_return(
-            SiteReturn(
-                date=self._date.date().toPython(),
-                site_id=site_id,
-                product_id=product.id,
-                quantity=self._base_quantity(),
-                person=self._person.currentText(),
-                note=self._note.text(),
-                doc_number=self._doc_number.text(),
-                created_by=self._author,
-                warehouse_id=self._store.currentData(),
-                id=self._movement_id,
-            )
-        )
-
-    def _save_and_continue(self) -> None:
-        """Yozuvni saqlab, oynani shu obyektning keyingi mahsuloti uchun ochiq qoldiradi."""
-        if not self._quantity_accepted():
-            return
-        try:
-            self.save()
-        except WarehouseError as error:
-            QMessageBox.warning(self, tr("Diqqat"), str(error))
-            return
-        self.saved_count += 1
-        self._saved_hint.setText(tr("Saqlandi: {0} ta").format(self.saved_count))
-        self._quantity.setValue(0)
-        self._note.clear()
-        self._load_products(None)
-        self._on_product_changed()
-        self._product.setFocus()
-
-    def _on_site_changed(self) -> None:
-        selected = self._selected_product()
-        self._load_products(selected.id if selected else None)
-        self._on_product_changed()
-
-    def _load_products(self, select_id: int | None) -> None:
-        """Mahsulotlar ro'yxati: avval tanlangan obyektda turganlari, keyin qolganlari."""
-        site_id = self._site.site_id()
-        self._at_site = {row.product_id: row for row in self._sites.products(site_id)} if site_id else {}
-        products = [product for product in self._warehouse.products() if not product.is_service]
-        products.sort(key=lambda product: (self._remaining(product.id) <= 0, product.name.casefold()))
-        self._product.blockSignals(True)
-        self._product.clear()
-        for product in products:
-            self._product.addItem(product.name, product)
-        ids = [product.id for product in products]
-        self._product.setCurrentIndex(ids.index(select_id) if select_id in ids else -1)
-        self._product.blockSignals(False)
-
-    def _selected_product(self) -> ProductStock | None:
-        index = self._product.findText(self._product.currentText().strip(), Qt.MatchFlag.MatchFixedString)
-        return self._product.itemData(index) if index >= 0 else None
-
-    def _remaining(self, product_id: int) -> float:
-        """Tanlangan obyektda shu mahsulotdan qancha turibdi (berilgan minus qaytgan), asosiy birlikda."""
-        row = self._at_site.get(product_id)
-        return row.remaining if row else 0.0
-
-    def _base_quantity(self) -> float:
-        """Kiritilgan miqdor asosiy birlikda (qo'shimcha birlik tanlangan bo'lsa — aylantirilgan)."""
-        return self._quantity.value() * (self._unit.currentData() or 1.0)
-
-    def _quantity_accepted(self) -> bool:
-        """Yangi vozvratda miqdor obyektda turganidan ko'p bo'lsa, tasdiq so'raydi (tahrirlashda tekshirilmaydi)."""
-        product = self._selected_product()
-        if self._movement_id is not None or product is None or self._site.site_id() is None:
-            return True
-        if self._base_quantity() <= self._remaining(product.id):
-            return True
-        return confirm(
-            self,
-            tr("Vozvrat"),
-            tr("Obyektda turganidan ko'p mahsulot qaytarilmoqda. Shunday saqlansinmi?"),
-            tr("Ha, saqlash"),
-        )
-
-    def _on_product_changed(self) -> None:
-        product = self._selected_product()
-        self._unit.clear()
-        if product is not None:
-            self._unit.addItem(product.unit, 1.0)
-            # Tahrirlashda miqdor asosiy birlikda saqlangan holicha ko'rsatiladi.
-            if product.has_alt_unit and self._movement_id is None:
-                self._unit.addItem(product.alt_unit, product.alt_factor)
-        self._unit.setVisible(self._unit.count() > 1)
-        self._quantity.setSuffix(f" {product.unit}" if product and self._unit.count() == 1 else "")
-        self._balance_hint.setText(self._balance_text(product))
-
-    def _balance_text(self, product: ProductStock | None) -> str:
-        if product is None or self._site.site_id() is None:
-            return ""
-        row = self._at_site.get(product.id)
-        if row is None:
-            return tr("Bu mahsulot shu obyektga berilmagan")
-        return tr("Berilgan: {0}  ·  qaytgan: {1}  ·  obyektda: {2} {3}").format(
-            fmt_qty(row.issued), fmt_qty(row.returned), fmt_qty(row.remaining), product.unit
-        )
 
 
 class TableDialog(QDialog):

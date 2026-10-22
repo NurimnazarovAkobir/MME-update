@@ -456,6 +456,8 @@ QPushButton[role="rowEdit"]:hover {{ background: {accent_soft}; border-color: {a
 QPushButton[role="rowDelete"]:hover {{ background: {danger_soft}; border-color: {danger}; }}
 
 QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox, QPlainTextEdit {{ border-radius: 10px; padding: 7px 10px; }}
+/* Faqat ko'rsatiladigan son (masalan, chiqimdagi tannarx) — maydon emas, oddiy matn bo'lib ko'rinadi. */
+QDoubleSpinBox[readOnly="true"] {{ background: transparent; border-color: transparent; color: {muted}; }}
 
 QTabBar::tab {{ padding: 10px 14px; margin-right: 2px; border-bottom: 3px solid transparent; }}
 QTabBar::tab:selected {{ border-bottom: 3px solid {accent}; }}
