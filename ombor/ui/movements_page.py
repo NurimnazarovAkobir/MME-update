@@ -10,6 +10,7 @@ from ..config import CURRENCY
 from ..formatting import fmt_compact, fmt_money
 from ..i18n import tr
 from ..models import MovementDetails, MovementKind
+from ..payments import method_title, status_title
 from ..session import Session
 from ..sites import Sites
 from ..warehouse import Warehouse, display_counterparty, store_name
@@ -33,8 +34,8 @@ def _columns(labels: KindLabels) -> tuple[Column, ...]:
         Column(tr("Hujjat №")),
         Column(tr("Ombor")),
         Column(tr("Mahsulot"), style="strong"),
-        Column(tr("Miqdor"), ColumnKind.QUANTITY, "strong"),
         Column(tr("Birlik")),
+        Column(tr("Miqdor"), ColumnKind.QUANTITY, "strong"),
     )
     if labels.kind is MovementKind.IN:
         money = (Column(tr("Narxi"), ColumnKind.MONEY), Column(tr("Summa"), ColumnKind.MONEY, "strong"))
@@ -45,8 +46,9 @@ def _columns(labels: KindLabels) -> tuple[Column, ...]:
             Column(tr("Foyda"), ColumnKind.MONEY, "signed"),
         )
     end = (
-        Column(tr("Guruh")),
-        Column(tr("Kategoriya")),
+        Column(tr("To'lov turi")),
+        Column(tr("Holati"), style="strong"),
+        Column(tr("Guruh / kategoriya")),
         Column(labels.person),
         Column(labels.counterparty),
         Column(tr("Belgi")),
@@ -64,11 +66,14 @@ def _marks(movement: MovementDetails) -> str:
 
 def _row(movement: MovementDetails) -> tuple:
     m = movement
-    start = (m.date, m.doc_number, store_name(m.warehouse_name), m.product_name, m.quantity, m.unit)
+    start = (m.date, m.doc_number, store_name(m.warehouse_name), m.product_name, m.unit, m.quantity)
     money = (m.price, m.amount) if m.kind is MovementKind.IN else (m.sale_price, m.revenue, m.profit)
-    groups = (display_name(m.category), display_name(m.subcategory))
+    # To'lov — kirimda va sotuvda; obyektga berilgan chiqimda to'lov yo'q.
+    paid = m.kind is MovementKind.IN or m.sale_price > 0
+    payment = (method_title(m.payment), status_title(m.unpaid)) if paid else ("", "")
+    group = " / ".join(display_name(name) for name in (m.category, m.subcategory) if name)
     end = (m.person, display_counterparty(m.counterparty), _marks(m), m.note, m.created_by)
-    return (*start, *money, *groups, *end)
+    return (*start, *money, *payment, group, *end)
 
 
 class MovementsPage(ListPage):
@@ -101,8 +106,18 @@ class MovementsPage(ListPage):
         # Hech bir yozuvda to'ldirilmagan bo'lsa, yashiriladigan ustunlar: jadval oynaga sig'ishi uchun.
         titles = [column.title for column in _columns(labels)]
         self._optional_columns = [
-            titles.index(title) for title in (tr("Hujjat №"), tr("Guruh"), tr("Kategoriya"), tr("Belgi"), tr("Izoh"))
+            titles.index(title)
+            for title in (
+                tr("Hujjat №"),
+                tr("To'lov turi"),
+                tr("Holati"),
+                tr("Guruh / kategoriya"),
+                tr("Belgi"),
+                tr("Izoh"),
+            )
         ]
+        # «Holati» — rangli yorliq: to'langan yashil, to'lanmagan qizil.
+        self.table.set_badges(titles.index(tr("Holati")), {status_title(False): "good", status_title(True): "danger"})
         self._period = PeriodFilter()
         self._period.changed.connect(self.refresh)
         self.header_tools.addWidget(self._period)

@@ -213,6 +213,8 @@ class ExcelImporter:
             is_return=movement.is_return,
             on_credit=movement.on_credit,
             warehouse_id=self._store(movement.warehouse, stores),
+            payment=movement.payment,
+            unpaid=movement.unpaid,
         )
 
     def _store(self, name: str, stores: dict[str, int]) -> int:

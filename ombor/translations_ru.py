@@ -614,7 +614,6 @@ TRANSLATIONS = {
     "Qo'shimcha maydonlar": "Дополнительные поля",
     "Sof xarajat, {0}": "Чистые затраты, {0}",
     "Sotuv (xaridorga)": "Продажа (покупателю)",
-    "Tanlanmasa, har bir mahsulotning oxirgi yozuvidagi guruhi olinadi.": "Если не выбрано, берётся группа из последней записи каждого товара.",
     "Xaridor": "Покупатель",
     "{0}  ·  {1} ta obyekt": "{0}  ·  объектов: {1}",
     "{0}-qator: {1}": "Строка {0}: {1}",
@@ -877,4 +876,16 @@ TRANSLATIONS = {
     "Rasmni sudrab suring, g'ildirak yoki surgich bilan kattalashtiring": (
         'Перетащите фото, увеличьте колёсиком мыши или ползунком'
     ),
+    'Perechisleniye': 'Перечисление',
+    'KPK': 'КПК',
+    'Naqd': 'Наличные',
+    'Karta': 'Карта',
+    "To'lanmagan": 'Не оплачено',
+    "To'lov turi": 'Вид оплаты',
+    'Tanlang yoki yozing': 'Выберите или введите',
+    'Masalan: perechisleniye, KPK (korporativ plastik karta), naqd': (
+        'Например: перечисление, КПК (корпоративная пластиковая карта), наличные'
+    ),
+    "Summani yozsangiz, narx o'zi hisoblanadi": 'Если ввести сумму, цена рассчитается сама',
+    '«{0}»: guruhni tanlang.': '«{0}»: выберите группу.',
 }

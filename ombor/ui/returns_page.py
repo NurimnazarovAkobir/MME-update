@@ -4,6 +4,7 @@ from datetime import date
 
 from PySide6.QtWidgets import QDialog
 
+from ..catalog import display_name
 from ..config import CURRENCY
 from ..formatting import fmt_compact, fmt_money
 from ..i18n import tr
@@ -23,15 +24,17 @@ _COLUMNS = (
     Column(tr("Hujjat №")),
     Column(tr("Obyekt"), style="strong"),
     Column(tr("Mahsulot"), style="strong"),
-    Column(tr("Miqdor"), ColumnKind.QUANTITY, "strong"),
     Column(tr("Birlik")),
-    Column(tr("Summa"), ColumnKind.MONEY),
+    Column(tr("Miqdor"), ColumnKind.QUANTITY, "strong"),
+    Column(tr("Narxi"), ColumnKind.MONEY),
+    Column(tr("Summa"), ColumnKind.MONEY, "strong"),
+    Column(tr("Guruh")),
     Column(tr("Kim olib keldi")),
     Column(tr("Ombor")),
     Column(tr("Izoh")),
 )
-_OPTIONAL_COLUMNS = (1, 7, 9)  # hech bir yozuvda to'ldirilmagan bo'lsa, yashiriladi
-_STORE_COLUMN = 8  # bitta ombor bo'lsa, yashiriladi
+_OPTIONAL_COLUMNS = (1, 8, 9, 11)  # hech bir yozuvda to'ldirilmagan bo'lsa, yashiriladi
+_STORE_COLUMN = 10  # bitta ombor bo'lsa, yashiriladi
 _BY_SITE_COLUMNS = (
     Column(tr("Obyekt"), style="strong"),
     Column(tr("Mahsulot"), style="strong"),
@@ -49,9 +52,11 @@ def _row(movement: MovementDetails) -> tuple:
         m.doc_number,
         display_counterparty(m.counterparty),
         m.product_name,
-        m.quantity,
         m.unit,
+        m.quantity,
+        m.price,
         m.amount,
+        display_name(m.category),
         m.person,
         store_name(m.warehouse_name),
         m.note,

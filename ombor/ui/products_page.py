@@ -53,9 +53,9 @@ class ProductsPage(ListPage):
         """`importer` berilsa — «Exceldan yuklash» tugmasi (mahsulot, kirim, chiqim, obyektlar); `backup` — undan oldin nusxa."""
         columns = (
             Column(tr("Mahsulot"), style="strong"),
+            Column(tr("Birlik")),
             Column(tr("Guruh / kategoriya")),
             Column(tr("Qoldiq"), ColumnKind.QUANTITY, "strong"),
-            Column(tr("Birlik")),
             Column(tr("Minimal qoldiq"), ColumnKind.QUANTITY),
             Column(tr("O'rtacha narx"), ColumnKind.MONEY),
             Column(tr("Qiymati"), ColumnKind.MONEY, "strong"),
@@ -135,7 +135,7 @@ class ProductsPage(ListPage):
         products = self._shown_products()
         self.table.set_rows(
             [
-                (p.name, _group_title(p), p.stock, p.unit, p.min_stock, p.average_price, p.value, p.status.value)
+                (p.name, p.unit, _group_title(p), p.stock, p.min_stock, p.average_price, p.value, p.status.value)
                 for p in products
             ],
             ids=[p.id for p in products],

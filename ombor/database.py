@@ -51,7 +51,9 @@ CREATE TABLE IF NOT EXISTS movements (
     deleted_by   TEXT NOT NULL DEFAULT '',
     is_return    INTEGER NOT NULL DEFAULT 0,  -- kirimda: xaridordan qaytdi; chiqimda: yetkazib beruvchiga qaytarildi
     on_credit    INTEGER NOT NULL DEFAULT 0,  -- qarzga: summasi kontragent bilan hisob-kitobga tushadi
-    warehouse_id INTEGER NOT NULL DEFAULT 1 REFERENCES warehouses(id)
+    warehouse_id INTEGER NOT NULL DEFAULT 1 REFERENCES warehouses(id),
+    payment      TEXT NOT NULL DEFAULT '',    -- to'lov turi (payments.py): perechisleniye, KPK, naqd…
+    unpaid       INTEGER NOT NULL DEFAULT 0   -- to'lov holati: 1 — to'lanmagan
 );
 
 -- Obyektlar: mahsulot beriladigan va undan qaytadigan joylar. Yozuvlar bilan nomi orqali bog'lanadi:
@@ -142,6 +144,8 @@ ADDED_COLUMNS = {
         "is_return": "INTEGER NOT NULL DEFAULT 0",
         "on_credit": "INTEGER NOT NULL DEFAULT 0",
         "warehouse_id": "INTEGER NOT NULL DEFAULT 1",
+        "payment": "TEXT NOT NULL DEFAULT ''",
+        "unpaid": "INTEGER NOT NULL DEFAULT 0",
     },
     "history": {"actor_role": "TEXT NOT NULL DEFAULT ''"},
     "users": {"photo": "TEXT NOT NULL DEFAULT ''"},
@@ -163,7 +167,7 @@ _IS_SALE_RETURN = "(m.kind = 'IN' AND m.is_return AND m.sale_price > 0)"
 _MOVEMENT_DETAILS = f"""
 SELECT m.id, m.kind, m.date, m.product_id, m.quantity, m.price, m.sale_price,
        m.category, m.subcategory, m.person, m.counterparty, m.note, m.created_by, m.doc_number,
-       m.created_at, m.deleted_at, m.deleted_by, m.is_return, m.on_credit, m.warehouse_id,
+       m.created_at, m.deleted_at, m.deleted_by, m.is_return, m.on_credit, m.warehouse_id, m.payment, m.unpaid,
        p.name AS product_name, p.unit, p.is_service, w.name AS warehouse_name,
        m.quantity * m.price AS amount,
        CASE WHEN {_IS_SALE} THEN m.quantity * m.sale_price

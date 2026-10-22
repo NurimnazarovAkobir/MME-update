@@ -203,6 +203,7 @@ class Movement:
     `sale_price` — xaridorga qaytariladigan narx); chiqimda yetkazib beruvchiga qaytarilgan mahsulot
     (`sale_price` — yetkazib beruvchi qaytaradigan narx).
     `on_credit` — qarzga: summasi kontragent bilan hisob-kitobga (debts.py) tushadi.
+    `payment` — to'lov turi (payments.py); `unpaid` — to'lov holati: to'lanmagan.
     """
 
     kind: MovementKind
@@ -222,6 +223,8 @@ class Movement:
     on_credit: bool = False
     warehouse_id: int = 1
     id: int | None = None
+    payment: str = ""
+    unpaid: bool = False
 
 
 @dataclass

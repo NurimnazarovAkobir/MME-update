@@ -135,7 +135,7 @@ class StoreUiTests(UiTestCase):
         self.assertEqual(page._store.count(), 3)  # «Barcha omborlar» + ikkita ombor
         page._store.setCurrentIndex(page._store.findData(self.site))
         stocks = {
-            page.table.item(row, 1).text(): page.table.item(row, 3).text() for row in range(page.table.rowCount())
+            page.table.item(row, 1).text(): page.table.item(row, 4).text() for row in range(page.table.rowCount())
         }
         self.assertEqual(stocks["Truba 40x40"], "30")
         self.assertEqual(stocks["List 2mm"], "0")
@@ -217,7 +217,7 @@ class FitAndHistoryTests(UiTestCase):
     def test_columns_nobody_filled_are_hidden(self):
         page = self.page()
         titles = {page.table.horizontalHeaderItem(c).text(): c for c in range(page.table.columnCount())}
-        for title in ("Hujjat №", "Guruh", "Kategoriya", "Belgi", "Izoh"):
+        for title in ("Hujjat №", "Guruh / kategoriya", "Belgi", "Izoh"):
             self.assertTrue(page.table.isColumnHidden(titles[title]), title)
         self.assertFalse(page.table.isColumnHidden(titles["Mahsulot"]))
         self.warehouse.save_movement(Movement(MovementKind.IN, TODAY, self.pipe, 1, 10, doc_number="7"))

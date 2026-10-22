@@ -207,7 +207,7 @@ class SitePagesTests(SitesTestCase):
         page.refresh()
         self.assertEqual(
             page.table.export_data()[1],
-            [(TODAY, "", "Chilonzor", "Truba 40x40", 15, "metr", 15_000, "Ali", "Asosiy ombor", "")],
+            [(TODAY, "", "Chilonzor", "Truba 40x40", "metr", 15, 1000, 15_000, "", "Ali", "Asosiy ombor", "")],
         )
         self.assertIn("15 000", page.footer.text())
         self.assertEqual(self.shown_rows(page._show_by_site), [("Chilonzor", "Truba 40x40", "metr", 40, 15, 15_000)])

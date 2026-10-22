@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import payments
 from ..catalog import display_name, find_group, groups
 from ..config import CURRENCY, UNITS
 from ..database import MAIN_WAREHOUSE_ID
@@ -216,6 +217,37 @@ class GroupFields:
         self.subgroup.setEnabled(self.subgroup.count() > 0)
 
 
+class PaymentFields:
+    """To'lov turi (ro'yxatdan tanlanadi yoki yoziladi) va holati: to'langan / to'lanmagan."""
+
+    def __init__(self, used: Sequence[str] = (), payment: str = "", unpaid: bool = False):
+        """`used` — avval yozilgan to'lov turlari (ro'yxatga qo'shiladi)."""
+        self.method = QComboBox()
+        self.method.setEditable(True)
+        self.method.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.method.lineEdit().setPlaceholderText(tr("Tanlang yoki yozing"))
+        self.method.setToolTip(tr("Masalan: perechisleniye, KPK (korporativ plastik karta), naqd"))
+        for method in dict.fromkeys((*payments.METHODS, *used)):
+            self.method.addItem(payments.method_title(method), method)
+        self.status = QComboBox()
+        self.status.addItem(payments.status_title(False), False)
+        self.status.addItem(payments.status_title(True), True)
+        self.select(payment, unpaid)
+
+    def select(self, payment: str, unpaid: bool) -> None:
+        index = self.method.findData(payment) if payment else -1
+        self.method.setCurrentIndex(index)
+        self.method.setEditText(payments.method_title(payment))
+        self.status.setCurrentIndex(self.status.findData(bool(unpaid)))
+
+    def payment(self) -> str:
+        """Saqlanadigan nomi: ro'yxatdagisi — o'z nomi, yozilgani — tanilsa o'sha nom, bo'lmasa o'zi."""
+        return payments.normalize_method(self.method.currentText())
+
+    def unpaid(self) -> bool:
+        return bool(self.status.currentData())
+
+
 class ProductDialog(FormDialog):
     def __init__(self, warehouse: Warehouse, product: Product | None = None, parent: QWidget | None = None):
         title = tr("Mahsulotni tahrirlash") if product else tr("Yangi mahsulot")
@@ -376,6 +408,11 @@ class MovementDialog(FormDialog):
             warehouse.suggestions(labels.kind, "counterparty"), movement.counterparty if movement else ""
         )
         self._note = QLineEdit(movement.note if movement else "")
+        self._payment = PaymentFields(
+            warehouse.suggestions(labels.kind, "payment"),
+            movement.payment if movement else "",
+            bool(movement and movement.unpaid),
+        )
 
         quantity_row = QHBoxLayout()
         quantity_row.addWidget(self._quantity, stretch=1)
@@ -391,6 +428,8 @@ class MovementDialog(FormDialog):
         if self._has_price:
             self.form.addRow(tr("Narxi (1 birlik)"), self._price)
             self.form.addRow(tr("Summa"), self._amount)
+            self.form.addRow(tr("To'lov turi"), self._payment.method)
+            self.form.addRow(tr("Holati"), self._payment.status)
         self.form.addRow(labels.counterparty, self._counterparty)
         if warehouse.group_required:
             self.form.addRow(tr("Guruh *"), self._groups.group)
@@ -400,6 +439,8 @@ class MovementDialog(FormDialog):
         if not self._has_price:
             self.add_extra_row(tr("Sotuv narxi (1 birlik)"), self._sale_price)
             self.add_extra_row("", self._profit_hint)
+            self.add_extra_row(tr("To'lov turi"), self._payment.method)
+            self.add_extra_row(tr("Holati"), self._payment.status)
         self.add_extra_row("", self._is_return)
         if self._has_price:
             self.add_extra_row(tr("Xaridorga qaytariladigan narx"), self._sale_price)
@@ -461,6 +502,8 @@ class MovementDialog(FormDialog):
                 on_credit=self._on_credit.isChecked(),
                 warehouse_id=self._store.currentData(),
                 id=self._movement_id,
+                payment=self._payment.payment(),
+                unpaid=self._payment.unpaid(),
             )
         )
 

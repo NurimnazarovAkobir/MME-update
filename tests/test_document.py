@@ -12,7 +12,7 @@ from ombor.session import Session
 from ombor.ui import printing
 from ombor.ui.dashboard_page import DashboardPage
 from ombor.ui.dialogs import MovementDialog
-from ombor.ui.document_dialog import AMOUNT, PRICE, DocumentDialog, IssueTarget
+from ombor.ui.document_dialog import AMOUNT, GROUP, PRICE, DocumentDialog, IssueTarget
 from ombor.ui.labels import LABELS
 from ombor.ui.main_window import DIVIDER_ROLE
 from ombor.ui.movements_page import MovementsPage
@@ -169,11 +169,11 @@ class ReceiptDocumentTests(DocumentTestCase):
     def test_group_comes_from_the_product_unless_chosen(self):
         self.warehouse.group_required = True
         first = self.dialog()
-        self.assertTrue(first.extras_shown)  # majburiy guruh darhol ko'rinadi
+        self.assertFalse(first._table.isColumnHidden(GROUP))  # guruh — har bir qatorda, darhol ko'rinadi
         self.fill(first, ("Truba 40x40", 1, 1000))
         with self.assertRaises(WarehouseError):
             first.save()
-        first._groups.group.setCurrentIndex(1)
+        first.line(0).group.setCurrentIndex(1)
         first.accept()
         category = self.warehouse.movement(first.saved_ids[0]).category
         self.assertTrue(category)

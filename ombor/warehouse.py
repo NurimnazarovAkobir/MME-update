@@ -12,6 +12,7 @@ from .driver import sqlite3
 from .errors import WarehouseError
 from .formatting import fmt_date, fmt_money, fmt_qty
 from .i18n import tr
+from .payments import method_title, normalize_method
 from .models import (
     HistoryAction,
     HistoryEntry,
@@ -27,7 +28,7 @@ from .models import (
 )
 from .settings import Settings
 
-SUGGESTION_FIELDS = ("person", "counterparty")
+SUGGESTION_FIELDS = ("person", "counterparty", "payment")
 # Raqamsiz kiritilgan hujjatga dastur o'zi raqam beradi: K-1, K-2… (kirim), CH-1, CH-2… (chiqim).
 DOC_NUMBER_PREFIXES = {MovementKind.IN: "K-", MovementKind.OUT: "CH-"}
 PURCHASE_TARGET = 2  # xarid ro'yxati: qoldiq minimal qoldiqning shuncha barobarigacha to'ldiriladi
@@ -69,7 +70,7 @@ def _to_movement(row: sqlite3.Row) -> MovementDetails:
     values = dict(row)
     values["kind"] = MovementKind(values["kind"])
     values["date"] = date.fromisoformat(values["date"])
-    for flag in ("is_service", "is_return", "on_credit"):
+    for flag in ("is_service", "is_return", "on_credit", "unpaid"):
         values[flag] = bool(values[flag])
     return MovementDetails(**values)
 
@@ -91,6 +92,8 @@ def _describe_movement(movement: MovementDetails) -> str:
         f"№ {m.doc_number}" if m.doc_number else "",
         tr("Qaytarish") if m.is_return else "",
         tr("Qarzga") if m.on_credit else "",
+        method_title(m.payment),
+        tr("To'lanmagan") if m.unpaid else "",
         m.person,
         display_counterparty(m.counterparty),
     )
@@ -680,6 +683,8 @@ class Warehouse:
             int(movement.is_return),
             int(movement.on_credit),
             movement.warehouse_id,
+            normalize_method(movement.payment),
+            int(movement.unpaid),
         )
         previous = self.movement(movement.id) if movement.id is not None else None
         # Eski yozuvning sanasi o'zgarmasa, uni tahrirlashga to'sqinlik qilinmaydi.
@@ -690,7 +695,8 @@ class Warehouse:
             cursor = self._conn.execute(
                 "INSERT INTO movements (kind, date, product_id, quantity, price, sale_price,"
                 " category, subcategory, person, counterparty, note, doc_number, is_return, on_credit,"
-                " warehouse_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " warehouse_id, payment, unpaid, created_by)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (*values, movement.created_by),
             )
             movement_id = cursor.lastrowid
@@ -699,7 +705,7 @@ class Warehouse:
             self._conn.execute(
                 "UPDATE movements SET kind = ?, date = ?, product_id = ?, quantity = ?, price = ?, sale_price = ?,"
                 " category = ?, subcategory = ?, person = ?, counterparty = ?, note = ?, doc_number = ?,"
-                " is_return = ?, on_credit = ?, warehouse_id = ? WHERE id = ?",
+                " is_return = ?, on_credit = ?, warehouse_id = ?, payment = ?, unpaid = ? WHERE id = ?",
                 (*values, movement.id),
             )
             movement_id = movement.id

@@ -23,6 +23,7 @@ from openpyxl.utils.exceptions import InvalidFileException
 from .errors import WarehouseError
 from .i18n import tr
 from .models import MovementKind
+from .payments import is_unpaid
 from .translations_ru import TRANSLATIONS
 
 DEFAULT_UNIT = tr("dona")
@@ -44,6 +45,9 @@ _ALIASES = {
         "Название",
         "Номенклатура",
         "Наименование товара",
+        "Наименование расхода",
+        "Наименование расходов",
+        "Xarajat nomi",
         "Ismi",
         "Obyekt nomi",
     ),
@@ -58,7 +62,7 @@ _ALIASES = {
         "Единица",
         "Единица измерения",
     ),
-    "category": ("Guruh", "Группа"),
+    "category": ("Guruh", "Группа", "Группа расхода", "Группа расходов", "Xarajat guruhi"),
     "subcategory": ("Kategoriya", "Kichik guruh", "Категория", "Подгруппа"),
     "min_stock": ("Minimal qoldiq", "Min qoldiq", "Min. qoldiq", "Минимальный остаток", "Мин. остаток"),
     "stock": ("Qoldiq", "Boshlang'ich qoldiq", "Остаток", "Начальный остаток"),
@@ -105,6 +109,8 @@ _ALIASES = {
     ),
     "warehouse": ("Ombor", "Склад"),
     "credit": ("Qarzga", "Qarz", "В долг"),
+    "payment": ("To'lov turi", "Вид оплаты", "Вид оплата", "Способ оплаты", "Тип оплаты", "Форма оплаты", "Оплата"),
+    "status": ("Holati", "To'lov holati", "Статус", "Статус оплаты"),
     "marks": ("Belgi", "Отметка"),
     "kind": ("Turi", "Amal", "Тип", "Операция", "Вид операции"),
     "address": ("Manzil", "Адрес"),
@@ -120,6 +126,8 @@ _IN_WORDS = {"kirim", "приход", "in", "+", "поступление", "keli
 _OUT_WORDS = {"chiqim", "расход", "out", "-", "отпуск", "rasxod", "sotuv", "продажа", "списание"}
 _YES_WORDS = {"ha", "xa", "yes", "1", "+", "да", "true", "x", "✓", "✔", "qarzga", "в долг", "qarz", "долг"}
 _TOTAL_WORDS = ("jami", "итого", "всего", "total")
+# Sarlavhasida shular bo'lsa — xarajatlar (xaridlar) hisobi: varaq nomi «Расход» bo'lsa ham, bu — kirim.
+_EXPENSE_HEADERS = ("наименование расход", "группа расход", "xarajat nomi", "xarajat guruhi")
 
 
 def _normalize(text) -> str:
@@ -180,6 +188,8 @@ class ImportedMovement:
     on_credit: bool = False
     is_return: bool = False
     source: str = ""
+    payment: str = ""  # to'lov turi, yozilganicha (warehouse.py tanish nomlarni bir xil qiladi)
+    unpaid: bool = False  # «статус»: to'lanmagan
 
 
 @dataclass(frozen=True)
@@ -239,7 +249,11 @@ def _read_sheet(title: str, rows: list[tuple], book: ExcelBook) -> None:
     header_index, columns = found
     # Varaq nomi va sarlavhadan oldingi qatorlar (dastur chiqargan faylda — «Kirim», «Chiqim» kabi nom).
     caption = " ".join([title, *(_text(cell) for row in rows[:header_index] for cell in row or () if cell)])
-    kind = _sheet_kind(caption, columns)
+    header = _normalize(" ".join(_text(cell) for cell in rows[header_index] or () if cell))
+    if "quantity" in columns and any(word in header for word in _EXPENSE_HEADERS):
+        kind = "receipts"
+    else:
+        kind = _sheet_kind(caption, columns)
     if kind is None:
         book.problems.append(tr("«{0}» varag'i: nima ekanini aniqlab bo'lmadi — o'tkazib yuborildi.").format(title))
         return
@@ -361,6 +375,8 @@ def _movement(values: dict, source: str, kind: MovementKind | None) -> ImportedM
         on_credit=_yes(values.get("credit")) or "qarz" in marks or "долг" in marks,
         is_return="qaytarish" in marks or "возврат" in marks,
         source=source,
+        payment=_text(values.get("payment")),
+        unpaid=is_unpaid(_text(values.get("status"))),
     )
 
 
@@ -466,10 +482,30 @@ _TEMPLATE = (
             tr("Guruh"),
             tr("Kategoriya"),
             tr("Ombor"),
+            tr("To'lov turi"),
+            tr("Holati"),
             tr("Qarzga"),
             tr("Izoh"),
         ),
-        (("01.09.2026", "45", "Sement M400", 2000, tr("kg"), 1500, "Qurilish bozori", "Ali", "", "", "", "", ""),),
+        (
+            (
+                "01.09.2026",
+                "45",
+                "Sement M400",
+                2000,
+                tr("kg"),
+                1500,
+                "Qurilish bozori",
+                "Ali",
+                "",
+                "",
+                "",
+                tr("Perechisleniye"),
+                tr("To'langan"),
+                "",
+                "",
+            ),
+        ),
     ),
     (
         tr("Chiqim"),

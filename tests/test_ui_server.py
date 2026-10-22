@@ -33,7 +33,7 @@ class ProductGroupUiTests(UiTestCase):
         self.assertEqual(page.table.total_rows(), 2)
         page._category.setCurrentIndex(page._category.findData("Цемент"))
         self.assertEqual(page.table.total_rows(), 1)
-        self.assertEqual(page.table.item(0, 2).text(), "Qurilish materiallari / Sement")
+        self.assertEqual(page.table.item(0, 3).text(), "Qurilish materiallari / Sement")
 
 
 class SimpleProductDialogTests(UiTestCase):
