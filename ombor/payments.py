@@ -72,6 +72,19 @@ def normalize_method(text: str) -> str:
     return text
 
 
+# Rahbarning Excel jadvalidagi yozilishi (eksportda dastur tilidan qat'i nazar shunday yoziladi).
+_RUSSIAN = {TRANSFER: "перечисление", CORPORATE_CARD: "кпк", CASH: "наличные", CARD: "карта"}
+
+
+def method_russian(stored: str) -> str:
+    """To'lov turi Excel jadvalidagi kabi: «KPK» → «кпк»; ro'yxatda yo'q tur o'zgarishsiz."""
+    return _RUSSIAN.get(stored, stored)
+
+
+def status_russian(unpaid: bool) -> str:
+    return "не оплачено" if unpaid else "оплачено"
+
+
 def status_title(unpaid: bool) -> str:
     return tr("To'lanmagan") if unpaid else tr("To'langan")
 

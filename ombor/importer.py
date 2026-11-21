@@ -11,6 +11,7 @@ Bitta qator xato bo'lsa (masalan, chiqimga qoldiq yetmasa), qolganlari baribir y
 hisobotda varaq va qator raqami bilan ko'rsatiladi.
 """
 
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
@@ -22,9 +23,15 @@ from .errors import WarehouseError
 from .excel_import import DEFAULT_UNIT, ExcelBook, ImportedMovement, ImportedProduct
 from .models import Movement, MovementKind, Product, ProductStock, Site
 from .sites import Sites
+from .units import normalize_unit
 from .warehouse import OPENING_BALANCE, Warehouse
 
 _DuplicateKey = tuple
+STEM_LENGTH = 5  # «административный» va «административные» — bitta so'z: shuncha harfi solishtiriladi
+# Excel'da guruh nomi o'rniga yoziladigan umumiy so'zlar -> dasturdagi guruh.
+_GROUP_SYNONYMS = {
+    word: catalog.OTHER_EXPENSES.name.ru for word in ("прочее", "прочие", "другое", "boshqa", "boshqalar")
+}
 
 
 @dataclass(frozen=True)
@@ -289,8 +296,19 @@ class ExcelImporter:
 
 
 def _find(name: str, groups) -> "catalog.Group | None":
+    """Guruh nomi bo'yicha: aynan shu nom, bo'lmasa — so'zlari bir xil o'zakli nom (birlik/ko'plik farqi)."""
     key = name.strip().casefold()
-    return next((g for g in groups if key in (g.name.ru.casefold(), g.name.uz.casefold())), None)
+    key = _GROUP_SYNONYMS.get(key, key).casefold()
+    exact = next((g for g in groups if key in (g.name.ru.casefold(), g.name.uz.casefold())), None)
+    if exact is not None:
+        return exact
+    stems = _stems(key)
+    return next((g for g in groups if stems in (_stems(g.name.ru), _stems(g.name.uz))), None)
+
+
+def _stems(name: str) -> tuple[str, ...]:
+    """«Административные расходы» -> («админ», «расхо»): qo'shimchalari farq qiladigan nomlar bir xil chiqadi."""
+    return tuple(word[:STEM_LENGTH] for word in re.findall(r"\w+", name.casefold()))
 
 
 def _find_name(name: str, names) -> "catalog.Name | None":
@@ -300,7 +318,7 @@ def _find_name(name: str, names) -> "catalog.Name | None":
 
 def _unit_factor(unit: str, product: ProductStock) -> float:
     """Yozuv mahsulotning qo'shimcha birligida (masalan, tonna) berilgan bo'lsa — asosiy birlikka o'tkazish."""
-    if unit and product.has_alt_unit and unit.casefold() == product.alt_unit.casefold():
+    if unit and product.has_alt_unit and normalize_unit(unit).casefold() == product.alt_unit.casefold():
         return product.alt_factor
     return 1.0
 

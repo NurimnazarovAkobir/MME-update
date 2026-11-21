@@ -325,11 +325,12 @@ class GroupUiTests(UiTestCase):
 
     def test_groups_dialog_lists_and_adds_groups(self):
         dialog = GroupsDialog(self.services.groups)
-        self.assertEqual(dialog._tree.topLevelItemCount(), 12)
+        count = len(catalog.GROUPS)
+        self.assertEqual(dialog._tree.topLevelItemCount(), count)
         with mock.patch.object(dialog, "_ask_names", return_value=["Bo'yoqlar", "Краски"]):
             dialog._add_group()
-        self.assertEqual(dialog._tree.topLevelItemCount(), 13)
-        dialog._tree.setCurrentItem(dialog._tree.topLevelItem(12))
+        self.assertEqual(dialog._tree.topLevelItemCount(), count + 1)
+        dialog._tree.setCurrentItem(dialog._tree.topLevelItem(count))
         with mock.patch.object(dialog, "_ask_names", return_value=["Emal", ""]):
             dialog._add_subgroup()
         self.assertEqual([s.uz for s in catalog.find_group("Краски").subgroups], ["Emal"])
@@ -347,7 +348,7 @@ class GroupUiTests(UiTestCase):
         ):
             dialog._add_group()
         warning.assert_called_once()
-        self.assertEqual(dialog._tree.topLevelItemCount(), 12)
+        self.assertEqual(dialog._tree.topLevelItemCount(), len(catalog.GROUPS))
         self.assertEqual(dialog._tree.topLevelItem(0).data(0, Qt.ItemDataRole.UserRole), catalog.groups()[0].id)
 
 

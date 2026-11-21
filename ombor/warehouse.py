@@ -12,7 +12,8 @@ from .driver import sqlite3
 from .errors import WarehouseError
 from .formatting import fmt_date, fmt_money, fmt_qty
 from .i18n import tr
-from .payments import method_title, normalize_method
+from .payments import method_title, normalize_method, status_title
+from .units import normalize_unit
 from .models import (
     HistoryAction,
     HistoryEntry,
@@ -73,6 +74,11 @@ def _to_movement(row: sqlite3.Row) -> MovementDetails:
     for flag in ("is_service", "is_return", "on_credit", "unpaid"):
         values[flag] = bool(values[flag])
     return MovementDetails(**values)
+
+
+def has_payment(movement: MovementDetails) -> bool:
+    """To'lov — kirimda (xarid) va sotuvda; obyektga berilgan chiqimda to'lov yo'q."""
+    return movement.kind is MovementKind.IN or movement.sale_price > 0
 
 
 def store_name(name: str) -> str:
@@ -165,14 +171,15 @@ class Warehouse:
         name = product.name.strip()
         if not name:
             raise WarehouseError(tr("Mahsulot nomini kiriting."))
-        if not product.unit.strip():
+        unit = normalize_unit(product.unit)  # «шт» va «dona» — bitta birlik
+        if not unit:
             raise WarehouseError(tr("O'lchov birligini tanlang."))
         if product.min_stock < 0:
             raise WarehouseError(tr("Minimal qoldiq manfiy bo'lishi mumkin emas."))
-        barcode, alt_unit = product.barcode.strip(), product.alt_unit.strip()
+        barcode, alt_unit = product.barcode.strip(), normalize_unit(product.alt_unit)
         if alt_unit and product.alt_factor <= 0:
             raise WarehouseError(tr("Qo'shimcha birlik necha asosiy birlikka tengligini kiriting."))
-        if alt_unit.casefold() == product.unit.strip().casefold():
+        if alt_unit.casefold() == unit.casefold():
             alt_unit = ""
         owner = self.product_by_barcode(barcode)
         if owner is not None and owner.id != product.id:
@@ -180,7 +187,7 @@ class Warehouse:
 
         values = (
             name,
-            product.unit.strip(),
+            unit,
             0 if product.is_service else product.min_stock,
             product.note.strip(),
             int(product.is_service),
@@ -190,7 +197,7 @@ class Warehouse:
             product.category.strip(),
             product.subcategory.strip() if product.category.strip() else "",
         )
-        saved = replace(product, name=name, unit=product.unit.strip())
+        saved = replace(product, name=name, unit=unit)
         try:
             with self._conn:
                 if product.id is None:
@@ -292,6 +299,8 @@ class Warehouse:
                 m.subcategory,
                 display_name(m.category),
                 display_name(m.subcategory),
+                method_title(m.payment),
+                status_title(m.unpaid or m.on_credit) if has_payment(m) else "",
             )
         ]
         return found[:limit] if limit else found
@@ -745,6 +754,7 @@ class Warehouse:
             movement_id = movement.id
         self._recalculate(affected_products)
         self._remember_site(movement)
+        self._remember_group(movement)
         self._log(
             HistoryAction.ADD if previous is None else HistoryAction.EDIT,
             movement.kind.value,
@@ -760,6 +770,14 @@ class Warehouse:
         is_issue = movement.kind is MovementKind.OUT and not movement.is_return and not movement.sale_price
         if is_issue and name and name not in _SYSTEM_COUNTERPARTIES:
             self._conn.execute("INSERT OR IGNORE INTO sites (name) VALUES (?)", (name,))
+
+    def _remember_group(self, movement: Movement) -> None:
+        """Guruhi berilmagan mahsulotga yozuvdagi guruh yoziladi: keyingi safar o'zi taklif qilinadi."""
+        if movement.category.strip():
+            self._conn.execute(
+                "UPDATE products SET category = ?, subcategory = ? WHERE id = ? AND category = ''",
+                (movement.category.strip(), movement.subcategory.strip(), movement.product_id),
+            )
 
     def _has_movements(self, product_id: int) -> bool:
         row = self._conn.execute("SELECT 1 FROM movements WHERE product_id = ? LIMIT 1", (product_id,)).fetchone()

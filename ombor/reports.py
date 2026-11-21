@@ -78,6 +78,20 @@ class GroupTotal:
 
 
 @dataclass(frozen=True)
+class PaymentTotal:
+    """Xaridlar (kirim) bitta to'lov turi bo'yicha: qanchasi to'langan, qanchasi to'lanmagan."""
+
+    method: str  # bazadagi nomi (payments.py); bo'sh — ko'rsatilmagan
+    operations: int
+    paid: float
+    unpaid: float
+
+    @property
+    def total(self) -> float:
+        return self.paid + self.unpaid
+
+
+@dataclass(frozen=True)
 class PeriodTotal:
     """Bitta kun, hafta, oy yoki yil bo'yicha jami."""
 
@@ -171,6 +185,21 @@ class Reports:
             params,
         )
         return [CategoryTotal(**dict(row)) for row in rows]
+
+    def by_payment(self, period: Period = Period()) -> list[PaymentTotal]:
+        """Xaridlar to'lov turlari kesimida (masalan, KPK bilan qancha, naqd qancha; to'langan va to'lanmagan)."""
+        where, params = period_filter(period)
+        rows = self._conn.execute(
+            f"""
+            SELECT payment AS method, COUNT(*) AS operations,
+                   COALESCE(SUM(CASE WHEN unpaid OR on_credit THEN 0 ELSE amount END), 0) AS paid,
+                   COALESCE(SUM(CASE WHEN unpaid OR on_credit THEN amount ELSE 0 END), 0) AS unpaid
+            FROM movement_details WHERE {_IS_RECEIPT} AND {where}
+            GROUP BY payment ORDER BY paid + unpaid DESC, payment
+            """,
+            params,
+        )
+        return [PaymentTotal(**dict(row)) for row in rows]
 
     def dynamics(self, period: Period, step: Granularity) -> list[PeriodTotal]:
         """Davrni `step` bo'laklariga (kun, hafta, oy, yil) bo'lib, har biri bo'yicha jami.

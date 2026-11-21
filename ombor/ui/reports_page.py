@@ -12,6 +12,7 @@ from ..config import CURRENCY
 from ..formatting import fmt_money, fmt_period
 from ..i18n import tr
 from ..models import Granularity, MovementKind, Period
+from ..payments import method_title
 from ..reports import UNNAMED, GroupBy, Reports
 from ..sites import Sites
 from ..warehouse import Warehouse
@@ -45,6 +46,7 @@ _TAB_GLYPHS = (
     Glyph.DOCUMENT,
     Glyph.CALENDAR,
     Glyph.TAG,
+    Glyph.CHECK,
     Glyph.MONEY,
     Glyph.PERSON,
     Glyph.SHOP,
@@ -211,6 +213,20 @@ class ReportsPage(QWidget):
                         row.amount_out,
                     )
                     for row in self._reports.by_category(period)
+                ],
+            ),
+            ReportTab(
+                tr("To'lov turlari"),
+                (
+                    Column(tr("To'lov turi")),
+                    Column(tr("Kirimlar soni"), ColumnKind.QUANTITY),
+                    Column(tr("To'langan, {0}").format(CURRENCY), ColumnKind.MONEY),
+                    Column(tr("To'lanmagan, {0}").format(CURRENCY), ColumnKind.MONEY),
+                    Column(tr("Jami, {0}").format(CURRENCY), ColumnKind.MONEY),
+                ),
+                lambda period: [
+                    (method_title(row.method) or UNNAMED, row.operations, row.paid, row.unpaid, row.total)
+                    for row in self._reports.by_payment(period)
                 ],
             ),
             ReportTab(

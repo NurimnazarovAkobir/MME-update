@@ -7,20 +7,21 @@ from PySide6.QtWidgets import QComboBox, QDialog, QMessageBox
 
 from ..catalog import display_name
 from ..config import CURRENCY
+from ..excel_export import LEDGER_HEADERS, ledger_rows
 from ..formatting import fmt_compact, fmt_money
 from ..i18n import tr
 from ..models import MovementDetails, MovementKind
 from ..payments import method_title, status_title
 from ..session import Session
 from ..sites import Sites
-from ..warehouse import Warehouse, display_counterparty, store_name
+from ..warehouse import Warehouse, display_counterparty, has_payment, store_name
 from .dialogs import MovementDialog
 from .document_dialog import DocumentDialog, can_edit_as_document
 from .icons import Glyph
 from .labels import KindLabels
 from .list_page import ListPage
 from .printing import print_waybill
-from .widgets import Column, ColumnKind, PeriodFilter, button, confirm
+from .widgets import Column, ColumnKind, PeriodFilter, button, confirm, save_to_excel
 
 # Jadvalda bir vaqtda ko'rsatiladigan eng ko'p qator: juda katta bazada ham sahifa tez ochilishi uchun.
 MAX_ROWS_SHOWN = 2000
@@ -64,13 +65,8 @@ def _marks(movement: MovementDetails) -> str:
     return " · ".join(mark for mark in marks if mark)
 
 
-def _has_payment(movement: MovementDetails) -> bool:
-    """To'lov — kirimda va sotuvda; obyektga berilgan chiqimda to'lov yo'q."""
-    return movement.kind is MovementKind.IN or movement.sale_price > 0
-
-
 def _is_unpaid(movement: MovementDetails) -> bool:
-    return _has_payment(movement) and (movement.unpaid or movement.on_credit)
+    return has_payment(movement) and (movement.unpaid or movement.on_credit)
 
 
 def _payment_amount(movement: MovementDetails) -> float:
@@ -81,7 +77,7 @@ def _row(movement: MovementDetails) -> tuple:
     m = movement
     start = (m.date, m.doc_number, store_name(m.warehouse_name), m.product_name, m.unit, m.quantity)
     money = (m.price, m.amount) if m.kind is MovementKind.IN else (m.sale_price, m.revenue, m.profit)
-    payment = (method_title(m.payment), status_title(_is_unpaid(m))) if _has_payment(m) else ("", "")
+    payment = (method_title(m.payment), status_title(_is_unpaid(m))) if has_payment(m) else ("", "")
     group = " / ".join(display_name(name) for name in (m.category, m.subcategory) if name)
     end = (m.person, display_counterparty(m.counterparty), _marks(m), m.note, m.created_by)
     return (*start, *money, *payment, group, *end)
@@ -151,6 +147,15 @@ class MovementsPage(ListPage):
             mark_paid.clicked.connect(self._mark_paid)
             self.toolbar_tools.addWidget(mark_paid)
 
+        self._found: list[MovementDetails] = []  # filtrlardan o'tgan barcha yozuvlar (jadvalga sig'maganlari ham)
+        if is_receipt:
+            ledger = button(tr("Xarajatlar jadvali"), "excel", Glyph.EXPORT)
+            ledger.setToolTip(
+                tr("Ro'yxatdagi kirimlarni Excel'dagi xarajatlar jadvali shaklida saqlash: № … «Группа расхода»")
+            )
+            ledger.clicked.connect(self._export_ledger)
+            self.toolbar_tools.addWidget(ledger)
+
         waybill = button(tr("Nakladnoy"), glyph=Glyph.DOCUMENT)
         waybill.setToolTip(tr("Tanlangan yozuvning hujjatini chop etish (bir xil raqamli yozuvlar birga chiqadi)"))
         waybill.clicked.connect(self._print_waybill)
@@ -159,8 +164,11 @@ class MovementsPage(ListPage):
     def refresh(self) -> None:
         self._fill_methods()
         movements = self._filtered(
-            self._warehouse.movements(self._labels.kind, self._period.period(), self.search.text(), returns=self._returns)
+            self._warehouse.movements(
+                self._labels.kind, self._period.period(), self.search.text(), returns=self._returns
+            )
         )
+        self._found = movements
         shown = movements[:MAX_ROWS_SHOWN]
         self.table.set_rows(
             [_row(m) for m in shown],
@@ -176,7 +184,7 @@ class MovementsPage(ListPage):
         """Holat va to'lov turi filtrlari bo'yicha."""
         status, method = self._status_filter.currentData(), self._method_filter.currentData()
         if status is not None:
-            movements = [m for m in movements if _has_payment(m) and _is_unpaid(m) == status]
+            movements = [m for m in movements if has_payment(m) and _is_unpaid(m) == status]
         if method:
             movements = [m for m in movements if m.payment == method]
         return movements
@@ -192,6 +200,10 @@ class MovementsPage(ListPage):
         self._method_filter.setCurrentIndex(max(self._method_filter.findData(selected), 0))
         self._method_filter.blockSignals(False)
         self._method_filter.setVisible(self._method_filter.count() > 1)
+
+    def _export_ledger(self) -> None:
+        """Filtrlangan kirimlar — rahbarning Excel jadvali ustunlarida; bu fayl qayta yuklansa ham tanilinadi."""
+        save_to_excel(self, tr("Xarajatlar jadvali"), LEDGER_HEADERS, ledger_rows(self._found))
 
     def _mark_paid(self) -> None:
         movement_id = self.selected_id()

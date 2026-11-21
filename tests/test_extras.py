@@ -95,9 +95,10 @@ class GroupCatalogTests(ExtrasTestCase):
         self.warehouse.save_movement(Movement(MovementKind.IN, TODAY, self.pipe, 1, 100, category="ГСМ"))
         self.groups.delete(catalog.find_group("ГСМ").id)
         self.assertIsNone(catalog.find_group("ГСМ"))
-        self.assertEqual(len(catalog.groups()), 11)
+        self.assertEqual(len(catalog.groups()), len(catalog.GROUPS) - 1)
         self.assertEqual(self.warehouse.movements()[0].category, "ГСМ")
-        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM groups WHERE parent_id IS NULL").fetchone()[0], 11)
+        top_level = self.conn.execute("SELECT COUNT(*) FROM groups WHERE parent_id IS NULL").fetchone()[0]
+        self.assertEqual(top_level, len(catalog.GROUPS) - 1)
 
     def test_changes_survive_reconnect(self):
         import tempfile
@@ -112,7 +113,7 @@ class GroupCatalogTests(ExtrasTestCase):
             conn = connect(path)
             try:
                 self.assertIsNotNone(catalog.find_group("Bo'yoqlar"))
-                self.assertEqual(len(catalog.groups()), 13)
+                self.assertEqual(len(catalog.groups()), len(catalog.GROUPS) + 1)
             finally:
                 conn.close()
 

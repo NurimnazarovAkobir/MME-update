@@ -63,12 +63,12 @@ class ExpenseLedgerImportTests(ExcelImportTestCase):
         movements = {m.product_name: m for m in self.warehouse.movements()}
         carpet = movements["ковролин"]
         self.assertAlmostEqual(carpet.amount, 2_755_000, places=2)  # narx yo'q — summadan
-        self.assertEqual((carpet.unit, carpet.quantity), ("м2", 35))
+        self.assertEqual((carpet.unit, carpet.quantity), ("m²", 35))  # «м2» — dasturdagi «m²»
         self.assertEqual((carpet.payment, carpet.unpaid), (payments.CORPORATE_CARD, False))
-        self.assertEqual(carpet.category, "административный расход")
+        self.assertEqual(carpet.category, "Административные расходы")  # mavjud guruh, yangisi ochilmaydi
         welding = movements["сварка ойна"]
         self.assertEqual((welding.payment, welding.unpaid, welding.price), (payments.CASH, True, 8000))
-        self.assertEqual(welding.category, "прочее")
+        self.assertEqual(welding.category, "Прочие расходы")
 
     def test_loading_the_same_expenses_again_adds_nothing(self):
         self.load(EXPENSES)

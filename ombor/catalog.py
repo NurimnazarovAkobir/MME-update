@@ -136,6 +136,9 @@ GROUPS = (
         ("Автотранспорт", "Avtotransport"),
     ),
 )
+# Asl ro'yxatda yo'q, lekin xarajatlar hisobida (Excel'dagi «прочее») kerak: 16-versiyadan eski bazalarga ham qo'shiladi.
+OTHER_EXPENSES = _group("Прочие расходы", "Boshqa xarajatlar", ("Прочие расходы", "Boshqa xarajatlar"))
+GROUPS = (*GROUPS, OTHER_EXPENSES)
 
 _current: tuple[Group, ...] = GROUPS
 _by_stored: dict[str, Group] = {}
@@ -178,6 +181,18 @@ def seed(conn: sqlite3.Connection) -> None:
             "INSERT INTO groups (parent_id, ru, uz) VALUES (?, ?, ?)",
             [(cursor.lastrowid, subgroup.ru, subgroup.uz) for subgroup in group.subgroups],
         )
+
+
+def add_other_expenses(conn: sqlite3.Connection) -> None:
+    """«Прочие расходы» guruhi yo'q bo'lsa (yoki «прочее» degan guruh), qo'shadi (tranzaksiya ichida chaqiriladi)."""
+    names = {row["ru"].casefold() for row in conn.execute("SELECT ru FROM groups WHERE parent_id IS NULL")}
+    if names & {OTHER_EXPENSES.name.ru.casefold(), "прочее"}:
+        return
+    cursor = conn.execute("INSERT INTO groups (ru, uz) VALUES (?, ?)", (OTHER_EXPENSES.name.ru, OTHER_EXPENSES.name.uz))
+    conn.executemany(
+        "INSERT INTO groups (parent_id, ru, uz) VALUES (?, ?, ?)",
+        [(cursor.lastrowid, subgroup.ru, subgroup.uz) for subgroup in OTHER_EXPENSES.subgroups],
+    )
 
 
 def load(conn: sqlite3.Connection) -> None:

@@ -16,17 +16,18 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QWidget,
 )
 
 from ..catalog import display_name, groups
-from ..config import CURRENCY
+from ..config import CURRENCY, UNITS
 from ..errors import WarehouseError
 from ..formatting import fmt_money, fmt_qty
 from ..i18n import tr
-from ..models import Movement, MovementDetails, MovementKind, ProductStock
+from ..models import Movement, MovementDetails, MovementKind, Product, ProductStock
 from ..sites import Sites
 from ..warehouse import Warehouse
 from .dialogs import (
@@ -43,14 +44,14 @@ from .icons import Glyph
 from .labels import KindLabels
 from .printing import print_waybill
 from .site_dialogs import SitePicker
-from .widgets import button, date_input, label, number_input, suggestion_box
+from .widgets import button, confirm, date_input, label, number_input, suggestion_box
 
 DIALOG_WIDTH = 1180
 ROW_HEIGHT = 48  # son maydoni sig'ishi uchun
 VISIBLE_ROWS = (2, 6)  # jadval bo'yi qatorlar soniga qarab shu oraliqda o'zgaradi; ko'pi aylantiriladi
 # Jadval ustunlari (Excel hisobidagi tartibda) va (cho'ziladigan «Mahsulot»dan boshqa) ularning kengliklari.
 PRODUCT, STOCK, UNIT, QUANTITY, PRICE, AMOUNT, GROUP, REMOVE = range(8)
-COLUMN_WIDTHS = {STOCK: 100, UNIT: 90, QUANTITY: 105, PRICE: 125, AMOUNT: 140, GROUP: 210, REMOVE: 48}
+COLUMN_WIDTHS = {STOCK: 100, UNIT: 105, QUANTITY: 105, PRICE: 125, AMOUNT: 140, GROUP: 195, REMOVE: 48}
 EMPTY_NUMBER = " "  # 0 o'rniga bo'sh ko'rinadi: yozishni boshlash oson
 
 
@@ -205,6 +206,11 @@ class DocumentLine(QObject):
         suggested_group, suggested_subcategory = self._suggested_subcategory
         return suggested_subcategory if category and category == suggested_group else ""
 
+    def new_name(self) -> str:
+        """Kirimda ro'yxatda yo'q, yozilgan mahsulot nomi (saqlashda yangi mahsulot bo'ladi); aks holda bo'sh."""
+        name = " ".join(self.product.currentText().split())
+        return name if self._suggests_price and name and self.selected() is None else ""
+
     def is_blank(self) -> bool:
         """Hech narsa kiritilmagan qator: saqlashda hisobga olinmaydi."""
         return not self.product.currentText().strip() and not self.quantity.value()
@@ -277,9 +283,16 @@ class DocumentLine(QObject):
     def _show_product(self) -> None:
         """Tanlangan mahsulotning qoldig'i va birliklarini ko'rsatadi."""
         product = self.selected()
+        previous_unit = self.unit.currentText()
         self.unit.blockSignals(True)
         self.unit.clear()
-        if product is None:
+        if product is None and self.new_name():
+            # Ro'yxatda yo'q nom (kirimda): saqlashda yangi mahsulot bo'ladi — birligi shu yerda tanlanadi.
+            self.stock.setText(tr("yangi"))
+            for unit in UNITS:
+                self.unit.addItem(unit, 1.0)
+            self.unit.setCurrentIndex(max(self.unit.findText(previous_unit), 0))
+        elif product is None:
             self.stock.setText("")
         else:
             self.stock.setText(tr("Xizmat") if product.is_service else f"{fmt_qty(product.stock)} {product.unit}")
@@ -359,7 +372,9 @@ class DocumentDialog(FormDialog):
         self._site = SitePicker(sites)
         self._supplier = suggestion_box(warehouse.suggestions(MovementKind.IN, "counterparty"))
         self._customer = suggestion_box(warehouse.customers())
-        self._payment = PaymentFields(warehouse.suggestions(labels.kind, "payment"), warehouse.last_payment(labels.kind))
+        self._payment = PaymentFields(
+            warehouse.suggestions(labels.kind, "payment"), warehouse.last_payment(labels.kind)
+        )
         self._table = self._build_table()
         self._total = label("", "total")
         self._doc_number = QLineEdit()
@@ -404,7 +419,12 @@ class DocumentDialog(FormDialog):
         new_product = button(tr("Ro'yxatda yo'q mahsulot qo'shish"), "link", Glyph.ADD)
         new_product.setAutoDefault(False)
         new_product.clicked.connect(self._add_product)
-        hint = label(tr("Mahsulotni tanlang yoki nomini yozing — ostidan yangi qator o'zi ochiladi."), "muted")
+        hint_text = (
+            tr("Mahsulotni tanlang yoki yangi nomini yozing — saqlashda ro'yxatga qo'shiladi.")
+            if self._is_receipt
+            else tr("Mahsulotni tanlang yoki nomini yozing — ostidan yangi qator o'zi ochiladi.")
+        )
+        hint = label(hint_text, "muted")
         below = QWidget()
         below_row = QHBoxLayout(below)
         below_row.setContentsMargins(0, 0, 0, 0)
@@ -445,7 +465,36 @@ class DocumentDialog(FormDialog):
     def accept(self) -> None:
         if self._select_by_barcode():
             return  # skaner koddan keyin Enter yuboradi: mahsulot tanlanadi, oyna yopilmaydi
+        if not self._add_new_products():
+            return
         super().accept()
+
+    def _add_new_products(self) -> bool:
+        """Kirimda ro'yxatda yo'q nomlar — so'rab, qatordagi birlik va guruh bilan yangi mahsulot qilib qo'shiladi.
+
+        Excel'dagi kabi xarajatlarning ko'pi yangi nom (ковролин, диван…): alohida oyna ochish shart emas.
+        Rad etilsa — False, oyna ochiq qoladi.
+        """
+        new: dict[str, DocumentLine] = {}
+        for line in self._lines:
+            if line.new_name():
+                new.setdefault(line.new_name().casefold(), line)
+        if not new:
+            return True
+        names = ", ".join(f"«{line.new_name()}»" for line in new.values())
+        question = tr("Ro'yxatda yo'q: {0}. Yangi mahsulot sifatida qo'shilsinmi?").format(names)
+        if not confirm(self, tr("Yangi mahsulot"), question, tr("Ha, qo'shish")):
+            return False
+        try:
+            for line in new.values():
+                self._warehouse.save_product(
+                    Product(name=line.new_name(), unit=line.unit.currentText() or UNITS[0], category=line.category())
+                )
+        except WarehouseError as error:
+            QMessageBox.warning(self, tr("Diqqat"), str(error))
+            return False
+        self._reload_products()
+        return True
 
     def save(self) -> None:
         counterparty = self._counterparty()

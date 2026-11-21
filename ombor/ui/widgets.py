@@ -830,13 +830,18 @@ def table_card(table: DataTable, paged: bool = True) -> QFrame:
 
 def export_to_excel(parent: QWidget, table: DataTable, title: str) -> None:
     """Fayl nomini so'raydi, jadvalni saqlaydi va faylni ochadi."""
+    save_to_excel(parent, title, *table.export_data())
+
+
+def save_to_excel(parent: QWidget, title: str, headers: Sequence[str], rows: Sequence[Sequence]) -> None:
+    """Fayl nomini so'raydi, sarlavha va qatorlarni Excel fayliga yozadi va faylni ochadi."""
     documents = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
     default_path = Path(documents) / f"{title} {date.today():%d.%m.%Y}.xlsx"
     path, _ = QFileDialog.getSaveFileName(parent, tr("Excelga saqlash"), str(default_path), tr("Excel fayli (*.xlsx)"))
     if not path:
         return
     try:
-        write_table(path, title, *table.export_data())
+        write_table(path, title, headers, rows)
     except OSError:
         QMessageBox.warning(
             parent,

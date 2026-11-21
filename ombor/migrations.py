@@ -6,8 +6,8 @@ from .driver import sqlite3
 from .models import Role
 
 # 11: buxgalteriya sinxronlashdan chiqarildi; 12: umumiy papka orqali almashish; 13: profil rasmi;
-# 14: to'lov turi va holati; 15: qarzga yozilganlar — to'lanmagan
-SCHEMA_VERSION = 15
+# 14: to'lov turi va holati; 15: qarzga yozilganlar — to'lanmagan; 16: «Прочие расходы» guruhi
+SCHEMA_VERSION = 16
 LEGACY_PASSWORD_KEY = "password"
 LEGACY_ADMIN_NAME = "Rahbar"
 # 3-versiyagacha «boshlang'ich qoldiq» belgisi o'sha paytdagi tilda yozilgan; endi bitta ko'rinishda saqlanadi.
@@ -27,6 +27,7 @@ def migrate(conn: sqlite3.Connection) -> None:
         _move_groups_to_movements(conn)
         _allow_new_roles(conn)
         catalog.seed(conn)
+        catalog.add_other_expenses(conn)
         _collect_sites(conn)
         _drop_customer_sites(conn)
         _give_products_groups(conn)

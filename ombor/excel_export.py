@@ -7,12 +7,28 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from . import payments
 from .i18n import tr
+from .models import MovementDetails
+from .units import russian_unit
 
 NUMBER_FORMAT = "#,##0.###"
 DATE_FORMAT = "DD.MM.YYYY"
 HEADER_FILL = PatternFill("solid", start_color="DCE6F2")
 MAX_COLUMN_WIDTH = 50
+# Rahbarning Excel'dagi xarajatlar jadvali ustunlari — aynan shunday (rus tilida), shu fayl qayta yuklansa ham tanilsin.
+LEDGER_HEADERS = (
+    "№",
+    "дата",
+    "Наименование расхода",
+    "ед изм",
+    "кол-во",
+    "цена",
+    "сумма",
+    "вид оплаты",
+    "статус",
+    "Группа расхода",
+)
 
 
 def write_table(path: Path | str, title: str, headers: Sequence[str], rows: Sequence[Sequence]) -> None:
@@ -45,3 +61,23 @@ def write_table(path: Path | str, title: str, headers: Sequence[str], rows: Sequ
     sheet.freeze_panes = sheet.cell(row=header_row + 1, column=1)
 
     workbook.save(path)
+
+
+def ledger_rows(movements: Sequence[MovementDetails]) -> list[tuple]:
+    """Kirimlar xarajatlar jadvali ko'rinishida (`LEDGER_HEADERS`): sana tartibida, raqamlangan, rus tilida."""
+    ordered = sorted(movements, key=lambda m: (m.date, m.id or 0))
+    return [
+        (
+            number,
+            m.date,
+            m.product_name,
+            russian_unit(m.unit),
+            m.quantity,
+            round(m.price, 2),
+            round(m.amount, 2),
+            payments.method_russian(m.payment),
+            payments.status_russian(m.unpaid or m.on_credit),
+            m.category,  # guruhning ruscha nomi saqlanadi (catalog.py)
+        )
+        for number, m in enumerate(ordered, start=1)
+    ]

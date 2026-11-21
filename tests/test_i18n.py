@@ -80,10 +80,11 @@ class CatalogTests(unittest.TestCase):
     def setUp(self):
         self.addCleanup(i18n.set_language, i18n.UZBEK)
 
-    def test_twelve_groups_as_in_the_source_list(self):
-        self.assertEqual(len(catalog.GROUPS), 12)
+    def test_twelve_groups_as_in_the_source_list_and_other_expenses(self):
+        self.assertEqual(len(catalog.GROUPS), 13)  # asl ro'yxatdagi 12 ta va «Прочие расходы»
         self.assertEqual(catalog.GROUPS[0].name.ru, "Административные расходы")
-        self.assertEqual([len(group.subgroups) for group in catalog.GROUPS], [4, 6, 4, 3, 7, 4, 6, 1, 1, 1, 12, 3])
+        self.assertEqual([len(group.subgroups) for group in catalog.GROUPS], [4, 6, 4, 3, 7, 4, 6, 1, 1, 1, 12, 3, 1])
+        self.assertIs(catalog.GROUPS[-1], catalog.OTHER_EXPENSES)
 
     def test_stored_names_are_unique_within_each_group(self):
         for group in catalog.GROUPS:

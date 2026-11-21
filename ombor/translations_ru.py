@@ -914,4 +914,18 @@ TRANSLATIONS = {
         'Отметить записи как оплаченные ({0} шт.)? Если они были в долг, долг тоже закроется.'
     ),
     "«{0}» ro'yxatda yo'q. Mahsulotni ro'yxatdan tanlang.": '«{0}» нет в списке. Выберите товар из списка.',
+    "Ha, qo'shish": 'Да, добавить',
+    'Jami, {0}': 'Итого, {0}',
+    "Ro'yxatda yo'q: {0}. Yangi mahsulot sifatida qo'shilsinmi?": 'Нет в списке: {0}. Добавить как новый товар?',
+    "Ro'yxatdagi kirimlarni Excel'dagi xarajatlar jadvali shaklida saqlash: № … «Группа расхода»": (
+        'Сохранить приходы из списка в виде таблицы расходов Excel: № … «Группа расхода»'
+    ),
+    "To'langan, {0}": 'Оплачено, {0}',
+    "To'lanmagan, {0}": 'Не оплачено, {0}',
+    "To'lov turlari": 'Виды оплаты',
+    'Xarajatlar jadvali': 'Таблица расходов',
+    'yangi': 'новый',
+    "Mahsulotni tanlang yoki yangi nomini yozing — saqlashda ro'yxatga qo'shiladi.": (
+        'Выберите товар или введите новое название — при сохранении он будет добавлен в список.'
+    ),
 }
