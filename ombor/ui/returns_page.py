@@ -88,7 +88,7 @@ class ReturnsPage(ListPage):
         by_site = button(tr("Obyektlar bo'yicha"), glyph=Glyph.PIN)
         by_site.setToolTip(tr("Tanlangan davrda qaysi obyektdan qaysi mahsulot qancha qaytgani"))
         by_site.clicked.connect(self._show_by_site)
-        self.toolbar_tools.addWidget(by_site)
+        self.add_to_more(by_site)
 
     def refresh(self) -> None:
         returns = self._sites.returns(self._period.period(), self.search.text())

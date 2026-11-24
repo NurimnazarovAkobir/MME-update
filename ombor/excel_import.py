@@ -11,7 +11,7 @@ Excelda yuritilgan hisob bir yo'la dasturga o'tkazilishi uchun o'qish iloji bori
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zipfile import BadZipFile
@@ -243,7 +243,9 @@ def read_book(path: Path | str) -> ExcelBook:
 def _read_sheet(title: str, rows: list[tuple], book: ExcelBook) -> None:
     found = _find_header(rows)
     if found is None:
-        if any(any(cell not in (None, "") for cell in row) for row in rows):
+        # «Итоги» kabi jamlama varaqlar boshqa varaqdan hisoblangan: yuklanmaydi va xato ham emas.
+        summary = any(word in _normalize(title) for word in _SUMMARY_TITLES)
+        if not summary and any(any(cell not in (None, "") for cell in row) for row in rows):
             book.problems.append(tr("«{0}» varag'i: sarlavha qatori topilmadi — o'tkazib yuborildi.").format(title))
         return
     header_index, columns = found
@@ -251,7 +253,7 @@ def _read_sheet(title: str, rows: list[tuple], book: ExcelBook) -> None:
     caption = " ".join([title, *(_text(cell) for row in rows[:header_index] for cell in row or () if cell)])
     header = _normalize(" ".join(_text(cell) for cell in rows[header_index] or () if cell))
     if "quantity" in columns and any(word in header for word in _EXPENSE_HEADERS):
-        kind = "receipts"
+        kind = "expenses"
     else:
         kind = _sheet_kind(caption, columns)
     if kind is None:
@@ -263,6 +265,7 @@ def _read_sheet(title: str, rows: list[tuple], book: ExcelBook) -> None:
         "issues": (lambda values, source: _movement(values, source, MovementKind.OUT), book.movements),
         "journal": (lambda values, source: _movement(values, source, None), book.movements),
         "sites": (_site, book.sites),
+        "expenses": (lambda values, source: _expense_movements(_movement(values, source, MovementKind.IN)), book.movements),
     }
     reader, target = readers[kind]
     count = 0
@@ -272,7 +275,11 @@ def _read_sheet(title: str, rows: list[tuple], book: ExcelBook) -> None:
             continue
         source = tr("«{0}», {1}-qator").format(title, number)
         try:
-            target.append(reader(values, source))
+            item = reader(values, source)
+            if isinstance(item, list):
+                target.extend(item)
+            else:
+                target.append(item)
             count += 1
         except _RowError as error:
             book.problems.append(f"{source}: {error}")
@@ -285,7 +292,32 @@ _SHEET_TITLES = {
     "issues": tr("chiqim"),
     "journal": tr("kirim va chiqim"),
     "sites": tr("obyektlar"),
+    "expenses": tr("xarajatlar (har qator: kirim va shu kuni chiqim)"),
 }
+_SUMMARY_TITLES = ("итог", "jami", "свод", "yakun")
+
+
+def _expense_movements(receipt: ImportedMovement) -> list[ImportedMovement]:
+    """Xarajatlar reestrining qatori: mol (yoki xizmat) sotib olindi va shu kuni ishlatildi.
+
+    Shuning uchun ikkita yozuv: kirim (narx, to'lov turi, holati — yetkazib beruvchi bilan hisob) va xuddi shu
+    miqdorda chiqim (tannarxini dastur hisoblaydi). Xarajat «Chiqim»da ko'rinadi, ombor qoldig'i o'zgarmaydi.
+    Sayt (src/lib/excel-read.ts) ham xuddi shunday o'qiydi — ikkala joyda yuklangan fayl bir xil natija beradi.
+    """
+    issue = replace(
+        receipt,
+        kind=MovementKind.OUT,
+        price=0.0,
+        sale_price=0.0,
+        person="",
+        counterparty="",
+        on_credit=False,
+        is_return=False,
+        payment="",
+        unpaid=False,
+        source=tr("{0} (chiqim)").format(receipt.source),
+    )
+    return [receipt, issue]
 
 
 def _find_header(rows: list[tuple]) -> tuple[int, dict[str, int]] | None:

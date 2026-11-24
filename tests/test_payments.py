@@ -12,7 +12,8 @@ from ombor.ui.document_dialog import DocumentDialog, IssueTarget
 from ombor.ui.labels import LABELS
 from ombor.ui.movements_page import MovementsPage
 from tests.test_document import DocumentTestCase
-from tests.test_excel_import import ExcelImportTestCase
+from ombor.excel_import import read_book
+from tests.test_excel_import import ExcelImportTestCase, save_workbook
 from tests.test_ui import TODAY
 
 # Rahbar yuborgan Excel: tepada ikkita bo'sh qator, «№» ustuni bo'sh, narxi yozilmagan qatorlarda — faqat summa.
@@ -56,11 +57,18 @@ class PaymentWordTests(unittest.TestCase):
 
 
 class ExpenseLedgerImportTests(ExcelImportTestCase):
-    def test_expense_sheet_is_read_as_receipts_with_payment_and_group(self):
+    def test_expense_sheet_is_read_as_receipt_and_same_day_issue(self):
         book, report = self.load(EXPENSES)
         self.assertEqual(report.failed, [])
-        self.assertEqual([m.kind for m in book.movements], [MovementKind.IN] * 4)  # «Расход» — xarid, chiqim emas
-        movements = {m.product_name: m for m in self.warehouse.movements()}
+        # Har qator: xarid (kirim) va shu kuni ishlatildi (chiqim) — xarajat «Chiqim»da ko'rinadi.
+        self.assertEqual([m.kind for m in book.movements], [MovementKind.IN, MovementKind.OUT] * 4)
+        issues = {m.product_name: m for m in self.warehouse.movements(MovementKind.OUT)}
+        self.assertEqual(set(issues), {"ковролин", "диван-кресло", "перчатки простые", "сварка ойна"})
+        self.assertAlmostEqual(issues["ковролин"].amount, 2_755_000, places=2)  # tannarx — xarid narxi
+        self.assertEqual((issues["ковролин"].quantity, issues["ковролин"].unpaid), (35, False))
+        self.assertEqual(issues["ковролин"].category, "Административные расходы")
+        self.assertEqual(self.stock("ковролин"), 0)  # ishlatib bo'lingan: omborda qolmaydi
+        movements = {m.product_name: m for m in self.warehouse.movements(MovementKind.IN)}
         carpet = movements["ковролин"]
         self.assertAlmostEqual(carpet.amount, 2_755_000, places=2)  # narx yo'q — summadan
         self.assertEqual((carpet.unit, carpet.quantity), ("m²", 35))  # «м2» — dasturdagi «m²»
@@ -73,7 +81,16 @@ class ExpenseLedgerImportTests(ExcelImportTestCase):
     def test_loading_the_same_expenses_again_adds_nothing(self):
         self.load(EXPENSES)
         _, again = self.load(EXPENSES)
-        self.assertEqual((again.movements, again.duplicates), (0, 4))
+        self.assertEqual((again.movements, again.duplicates), (0, 8))
+
+    def test_file_loaded_earlier_as_receipts_only_gets_its_issues(self):
+        """Avvalgi versiya bu faylni faqat kirim qilib yozgan bo'lsa, qayta yuklanganda faqat chiqimlar qo'shiladi."""
+        book = read_book(save_workbook(self.folder, EXPENSES))
+        book.movements = [m for m in book.movements if m.kind is MovementKind.IN]
+        self.importer.apply(book, "Rahbar", TODAY)
+        _, again = self.load(EXPENSES)
+        self.assertEqual((again.movements, again.duplicates), (4, 4))
+        self.assertEqual(len(self.warehouse.movements(MovementKind.OUT)), 4)
 
 
 class DocumentPaymentTests(DocumentTestCase):

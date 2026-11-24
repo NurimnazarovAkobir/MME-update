@@ -94,7 +94,7 @@ class SitesPage(ListPage):
         products = button(tr("Mahsulotlari"), glyph=Glyph.BOX)
         products.setToolTip(tr("Tanlangan obyektga qaysi mahsulotdan qancha berilgani va qanchasi qaytgani"))
         products.clicked.connect(self._show_products)
-        self.toolbar_tools.addWidget(products)
+        self.add_to_more(products)
 
         self._map = SiteMap(tiles)
         self._map.selected.connect(self.table.select_id)

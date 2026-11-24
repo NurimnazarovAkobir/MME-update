@@ -51,7 +51,6 @@ from .returns_page import ReturnsPage
 from .settings_page import PROFILE, SettingsPage
 from .return_dialog import ReturnDialog
 from .sites_page import SitesPage
-from .statistics_page import StatisticsPage
 from .sync_controller import SyncController, describe
 from .tile_loader import TileLoader
 from .update_page import UpdatePage
@@ -213,7 +212,6 @@ class MainWindow(QMainWindow):
                 ReportsPage(services.reports, services.analytics, self._warehouse, services.sites),
                 Destination.REPORTS,
             ),
-            (tr("Statistika"), Glyph.CHART, StatisticsPage(services.statistics, services.reports), None),
             (tr("Qarzlar"), Glyph.MONEY, DebtsPage(services.debts, session), None),
         ]
         service_row = len(pages)  # shu qatordan boshlab — kam ishlatiladigan bo'limlar (chiziq bilan ajratiladi)

@@ -145,7 +145,7 @@ class MovementsPage(ListPage):
             mark_paid = button(tr("To'landi"), glyph=Glyph.CHECK)
             mark_paid.setToolTip(tr("Tanlangan yozuv (va uning nakladnoyi) to'langan deb belgilanadi; qarzi yopiladi"))
             mark_paid.clicked.connect(self._mark_paid)
-            self.toolbar_tools.addWidget(mark_paid)
+            self.add_to_more(mark_paid)
 
         self._found: list[MovementDetails] = []  # filtrlardan o'tgan barcha yozuvlar (jadvalga sig'maganlari ham)
         if is_receipt:
@@ -154,12 +154,12 @@ class MovementsPage(ListPage):
                 tr("Ro'yxatdagi kirimlarni Excel'dagi xarajatlar jadvali shaklida saqlash: № … «Группа расхода»")
             )
             ledger.clicked.connect(self._export_ledger)
-            self.toolbar_tools.addWidget(ledger)
+            self.add_to_more(ledger)
 
         waybill = button(tr("Nakladnoy"), glyph=Glyph.DOCUMENT)
         waybill.setToolTip(tr("Tanlangan yozuvning hujjatini chop etish (bir xil raqamli yozuvlar birga chiqadi)"))
         waybill.clicked.connect(self._print_waybill)
-        self.toolbar_tools.addWidget(waybill)
+        self.add_to_more(waybill)
 
     def refresh(self) -> None:
         self._fill_methods()

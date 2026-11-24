@@ -107,11 +107,11 @@ class ProductsPage(ListPage):
         self._transfer.setToolTip(tr("Mahsulotni bir ombordan boshqasiga ko'chirish"))
         self._transfer.clicked.connect(self._move_between_stores)
         if session.can_add:
-            self.toolbar_tools.addWidget(self._transfer)
+            self.add_to_more(self._transfer)
         purchases = button(tr("Xarid ro'yxati"), glyph=Glyph.SHOP)
         purchases.setToolTip(tr("Kam qolgan va tugagan mahsulotlar: nimani, qancha va qanchadan olish kerak"))
         purchases.clicked.connect(self._show_purchase_list)
-        self.toolbar_tools.addWidget(purchases)
+        self.add_to_more(purchases)
         self.table.setToolTip(tr("Mahsulot kartochkasi — qatorni ikki marta bosing"))
         if session.can_add and importer is not None:
             # «Yangi mahsulot» yonida, Excel rangida: ish ko'pincha Exceldagi hisobni yuklashdan boshlanadi.
@@ -127,7 +127,7 @@ class ProductsPage(ListPage):
             inventory = button(tr("Inventarizatsiya"), glyph=Glyph.CLIPBOARD)
             inventory.setToolTip(tr("Jadvaldagi mahsulotlarning sanab chiqilgan haqiqiy qoldig'ini kiritish"))
             inventory.clicked.connect(self._take_inventory)
-            self.header_tools.addWidget(inventory)
+            self.add_to_more(inventory)
 
     def refresh(self) -> None:
         self._fill_stores()

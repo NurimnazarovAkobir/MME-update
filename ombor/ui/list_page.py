@@ -3,7 +3,8 @@
 from datetime import date
 from typing import Callable, Sequence
 
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QLineEdit, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QLineEdit, QMenu, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from ..errors import WarehouseError
 from ..i18n import tr
@@ -83,12 +84,26 @@ class ListPage(QWidget):
             self.table.edit_requested.connect(self._open)
             self.table.delete_requested.connect(self._delete)
 
+        # Kam ishlatiladigan amallar bitta «Boshqa amallar» menyusida: sahifada faqat asosiy tugma va qidiruv
+        # ko'rinadi (saytdagi kabi sodda). Tugmalarning o'zi yashirin konteynerda qoladi — menyudagi band ularni bosadi.
+        self._more_buttons: list[QPushButton] = []
+        self._more_holder = QWidget(self)
+        self._more_holder.hide()
+        QHBoxLayout(self._more_holder)
+        self._more_menu = QMenu(self)
+        self._more_menu.aboutToShow.connect(self._fill_more_menu)
+        self.more = button(tr("Boshqa amallar"), glyph=Glyph.MENU)
+        self.more.setToolTip(tr("Chop etish, Excelga chiqarish va boshqa amallar"))
+        self.more.setMenu(self._more_menu)
+
         print_button = button(tr("Chop etish"), "print", Glyph.PRINT)
         print_button.clicked.connect(lambda: print_table(self, self.table, self.export_title()))
         excel = button(tr("Excelga chiqarish"), "excel", Glyph.EXPORT)
         excel.clicked.connect(lambda: export_to_excel(self, self.table, self.export_title()))
+        self.add_to_more(print_button)
+        self.add_to_more(excel)
         toolbar.addStretch()
-        for widget in (self.search, print_button, excel):
+        for widget in (self.search, self.more):
             toolbar.addWidget(widget)
 
         header, self.header_tools = page_header(glyph, title, subtitle)
@@ -106,6 +121,23 @@ class ListPage(QWidget):
         self.body.addWidget(table_card(self.table), stretch=3)
         layout.addLayout(self.body, stretch=1)
         layout.addWidget(self.footer)
+
+    def add_to_more(self, widget: QPushButton) -> None:
+        """Tugmani «Boshqa amallar» menyusiga o'tkazadi. Tugmaning ko'rinishi (`setVisible`) va faolligi
+        (`setEnabled`) menyudagi bandga o'tadi, shuning uchun sahifa kodi uni avvalgidek boshqaraveradi."""
+        self._more_holder.layout().addWidget(widget)
+        self._more_buttons.append(widget)
+
+    def _fill_more_menu(self) -> None:
+        self._more_menu.clear()
+        for widget in self._more_buttons:
+            if widget.isHidden():
+                continue
+            action = QAction(widget.icon(), widget.text(), self._more_menu)
+            action.setToolTip(widget.toolTip())
+            action.setEnabled(widget.isEnabled())
+            action.triggered.connect(widget.click)
+            self._more_menu.addAction(action)
 
     def add_recent_cards(self, period: PeriodFilter) -> dict[StatCard, Callable[[date], Period]]:
         """«Bugun», «Shu hafta», «Shu oy» kartochkalari — jadvaldagi sanalar bilan bir xil ranglarda.

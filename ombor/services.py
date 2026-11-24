@@ -15,7 +15,6 @@ from .local import LocalPrefs
 from .reports import Reports
 from .settings import Settings
 from .sites import Sites
-from .statistics import Statistics
 from .vault import Vault
 from .warehouse import Warehouse
 
@@ -32,7 +31,6 @@ class Services:
     sites: Sites
     groups: GroupCatalog
     importer: ExcelImporter  # Exceldan mahsulot, kirim, chiqim va obyektlarni yuklash
-    statistics: Statistics  # mahsulotlar reytingi, narx o'zgarishi, obyektlar rasxodi
     prefs: LocalPrefs  # shu kompyuterning shaxsiy sozlamalari
     vault: Vault | None  # baza shifrlangan bo'lsa — uning kaliti
     conn: sqlite3.Connection
@@ -63,7 +61,6 @@ class Services:
             sites=sites,
             groups=groups,
             importer=ExcelImporter(warehouse, sites, groups),
-            statistics=Statistics(conn, sites),
             prefs=prefs or LocalPrefs(),
             vault=vault,
             conn=conn,

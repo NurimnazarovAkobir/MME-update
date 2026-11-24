@@ -107,7 +107,8 @@ class LedgerExportTests(ExcelImportTestCase):
         path = self.folder / "jadval.xlsx"
         write_table(path, "Xarajatlar jadvali", LEDGER_HEADERS, rows)
         plan = self.importer.plan(read_book(path))
-        self.assertEqual((plan.new_movements, plan.duplicates, plan.new_products), (0, 4, 0))
+        # Har qator — kirim va shu kuni chiqim; ikkalasi ham bazada bor, hech biri takrorlanmaydi.
+        self.assertEqual((plan.new_movements, plan.duplicates, plan.new_products), (0, 8, 0))
 
     def test_russian_payment_names(self):
         self.assertEqual(payments.method_russian(payments.TRANSFER), "перечисление")
