@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QTableWidget,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -44,7 +45,7 @@ from .icons import Glyph
 from .labels import KindLabels
 from .printing import print_waybill
 from .site_dialogs import SitePicker
-from .widgets import button, confirm, date_input, label, number_input, suggestion_box
+from .widgets import button, confirm, date_input, label, number_input, section_header, suggestion_box
 
 DIALOG_WIDTH = 1180
 ROW_HEIGHT = 48  # son maydoni sig'ishi uchun
@@ -388,8 +389,15 @@ class DocumentDialog(FormDialog):
         self._payment_fields = side_by_side(
             captioned(tr("To'lov turi"), self._payment.method), captioned(tr("Holati"), self._payment.status)
         )
+
+        top_card = QFrame()
+        top_card.setObjectName("card")
+        top_layout = QVBoxLayout(top_card)
+        top_layout.setContentsMargins(16, 14, 16, 14)
+        top_layout.setSpacing(12)
+
         if self._is_receipt:
-            self.form.addRow(
+            top_layout.addWidget(
                 side_by_side(
                     captioned(labels.counterparty, self._supplier),
                     captioned(tr("Sana"), self._date),
@@ -400,10 +408,10 @@ class DocumentDialog(FormDialog):
             )
         else:
             self._target.setVisible(False)  # o'rniga yaqqol tugmalar; ro'yxat holatni saqlaydi
-            self.form.addRow(captioned(tr("Mahsulot qayerga ketyapti?"), self._target_buttons()))
+            top_layout.addWidget(captioned(tr("Mahsulot qayerga ketyapti?"), self._target_buttons()))
             self._site_field = captioned(tr("Obyekt *"), self._site)
             self._customer_field = captioned(tr("Xaridor"), self._customer)
-            self.form.addRow(
+            top_layout.addWidget(
                 side_by_side(
                     self._site_field,
                     self._customer_field,
@@ -413,8 +421,10 @@ class DocumentDialog(FormDialog):
                     stretches=(3, 3, 1, 2, 1),
                 )
             )
-            self.form.addRow(self._target)
-        self.form.addRow(label(tr("Mahsulotlar"), "fieldCaption"))
+            top_layout.addWidget(self._target)
+
+        self.form.addRow(top_card)
+        self.form.addRow(section_header(Glyph.BOX, tr("Mahsulotlar")))
         self.form.addRow(self._table)
         new_product = button(tr("Ro'yxatda yo'q mahsulot qo'shish"), "link", Glyph.ADD)
         new_product.setAutoDefault(False)
@@ -614,11 +624,16 @@ class DocumentDialog(FormDialog):
         bar.setObjectName("segmentBar")
         row = QHBoxLayout(bar)
         row.setContentsMargins(4, 4, 4, 4)
-        row.setSpacing(2)
+        row.setSpacing(4)
         group = QButtonGroup(bar)
         self._target_choices: dict[IssueTarget, QPushButton] = {}
+        target_glyphs = {
+            IssueTarget.SITE: Glyph.PIN,
+            IssueTarget.SALE: Glyph.MONEY,
+            IssueTarget.OTHER: Glyph.BOX,
+        }
         for target in IssueTarget:
-            choice = button(target.value, "segment")
+            choice = button(target.value, "segment", target_glyphs.get(target))
             choice.setCheckable(True)
             choice.setAutoDefault(False)
             choice.clicked.connect(

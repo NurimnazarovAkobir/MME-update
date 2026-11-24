@@ -7,7 +7,7 @@ qancha qolgani ko'rinadi. Narx kiritilmaydi: mahsulot omborga obyektga berilgand
 from typing import Callable, Sequence
 
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLineEdit, QWidget
+from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QLineEdit, QVBoxLayout, QWidget
 
 from ..config import CURRENCY
 from ..errors import WarehouseError
@@ -20,7 +20,7 @@ from .dialogs import FormDialog, captioned, product_box, side_by_side
 from .document_dialog import EMPTY_NUMBER, fit_lines_height, lines_table
 from .icons import Glyph
 from .site_dialogs import SitePicker
-from .widgets import button, confirm, date_input, label, number_input, suggestion_box
+from .widgets import button, confirm, date_input, label, number_input, section_header, suggestion_box
 
 DIALOG_WIDTH = 1000
 PRODUCT, AT_SITE, UNIT, QUANTITY, PRICE, AMOUNT, REMOVE = range(7)
@@ -190,12 +190,20 @@ class ReturnDialog(FormDialog):
 
         store = captioned(tr("Qaysi omborga"), self._store)
         store.setVisible(self._store.count() > 1)
-        self.form.addRow(
+
+        top_card = QFrame()
+        top_card.setObjectName("card")
+        top_layout = QVBoxLayout(top_card)
+        top_layout.setContentsMargins(16, 14, 16, 14)
+        top_layout.setSpacing(12)
+        top_layout.addWidget(
             side_by_side(
                 captioned(tr("Obyekt *"), self._site), captioned(tr("Sana"), self._date), store, stretches=(3, 1, 1)
             )
         )
-        self.form.addRow(label(tr("Mahsulotlar"), "fieldCaption"))
+
+        self.form.addRow(top_card)
+        self.form.addRow(section_header(Glyph.BOX, tr("Mahsulotlar")))
         self.form.addRow(self._table)
         hint = label(tr("Avval obyektni tanlang: unda turgan mahsulotlar ro'yxat boshida chiqadi."), "muted")
         below = QWidget()
